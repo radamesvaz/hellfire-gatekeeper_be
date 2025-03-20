@@ -42,6 +42,19 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"price",
 				"available",
 				"created_on",
+			}),
+			mockError: nil,
+			expected:  nil,
+		},
+		{
+			name: "HAPPY PATH: getting all products",
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"created_on",
 			}).AddRow(
 				"1",
 				"Torta de chocolate test",

@@ -34,7 +34,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 		expectedError bool
 	}{
 		{
-			name: "HAPPY PATH: getting all products",
+			name: "HAPPY PATH: empty DB",
 			mockRows: sqlmock.NewRows([]string{
 				"id_product",
 				"name",
@@ -114,4 +114,109 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 		})
 	}
 
+}
+
+func TestProductRepository_GetProductByID(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+
+	createdOn := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	tests := []struct {
+		name               string
+		mockRows           *sqlmock.Rows
+		mockError          error
+		expected           pModel.Product
+		expectedError      bool
+		idProductForLookup uint64
+	}{
+		{
+			name: "HAPPY PATH: getting a product wiht id 1",
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				createdOn,
+			),
+			mockError: nil,
+			expected: pModel.Product{
+				ID:          1,
+				Name:        "Torta de chocolate test",
+				Description: "Test descripcion de la torta test",
+				Price:       30,
+				Available:   true,
+				CreatedOn:   createdOn,
+			},
+			idProductForLookup: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.expectedError {
+				mock.ExpectQuery(
+					"SELECT id_product, name, description, price, available, created_on FROM products WHERE id_product = ?",
+				).
+					WithArgs(tt.idProductForLookup).
+					WillReturnError(sql.ErrNoRows)
+			} else {
+				mock.ExpectQuery(
+					"SELECT id_product, name, description, price, available, created_on FROM products WHERE id_product = ?",
+				).
+					WithArgs(tt.idProductForLookup).
+					WillReturnRows(sqlmock.NewRows([]string{
+						"id_product",
+						"name",
+						"description",
+						"price",
+						"available",
+						"created_on",
+					}).
+						AddRow(
+							tt.expected.ID,
+							tt.expected.Name,
+							tt.expected.Description,
+							tt.expected.Price,
+							tt.expected.Available,
+							createdOn.Time,
+						),
+					)
+			}
+
+			product, err := repo.GetProductByID(tt.idProductForLookup)
+			if tt.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, product)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }

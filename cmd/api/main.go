@@ -7,8 +7,8 @@ import (
 	"os"
 
 	"github.com/joho/godotenv"
-	h "github.com/radamesvaz/bakery-app/handlers"
-	productsRepository "github.com/radamesvaz/bakery-app/repository/products"
+	h "github.com/radamesvaz/bakery-app/internal/handlers"
+	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"

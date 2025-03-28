@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
-	productsRepository "github.com/radamesvaz/bakery-app/repository/products"
+	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 )
 
 type ProductHandler struct {
@@ -14,14 +14,22 @@ type ProductHandler struct {
 }
 
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
-	products, err := h.Repo.GetAll()
+	allProducts, err := h.Repo.GetAll()
 	if err != nil {
 		http.Error(w, "Error getting products", http.StatusInternalServerError)
 		return
 	}
 
+	response := []productsRepository.ProductResponse{}
+
+	for _, product := range allProducts {
+		entry := productsRepository.Marshal(&product)
+
+		response = append(response, entry)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(products)
+	json.NewEncoder(w).Encode(response)
 }
 
 func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +46,8 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	response := productsRepository.Marshal(&product)
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(product)
+	json.NewEncoder(w).Encode(response)
 }

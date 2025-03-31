@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/radamesvaz/bakery-app/internal/errors"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 )
 
@@ -64,10 +65,10 @@ func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, er
 	if err != nil {
 		if err == sql.ErrNoRows {
 			fmt.Println("Product not found")
-			return product, nil
+			return product, errors.NewNotFound(errors.ErrProductNotFound)
 		}
 		fmt.Printf("Error retrieving the product: %v", err)
-		return product, nil
+		return product, errors.NewNotFound(errors.ErrCouldNotGetTheProduct)
 	}
 
 	return product, nil

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gorilla/mux"
+	"github.com/radamesvaz/bakery-app/internal/errors"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 )
 
@@ -42,7 +43,11 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 
 	product, err := h.Repo.GetProductByID(idProduct)
 	if err != nil {
-		http.Error(w, "Error getting product", http.StatusInternalServerError)
+		if httpErr, ok := err.(*errors.HTTPError); ok {
+			http.Error(w, httpErr.Error(), httpErr.StatusCode)
+			return
+		}
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 

@@ -12,6 +12,7 @@ type ProductRepository struct {
 	DB *sql.DB
 }
 
+// GetAll gets all the products from the table
 func (r *ProductRepository) GetAll() ([]pModel.Product, error) {
 	fmt.Println(
 		"Getting all products",

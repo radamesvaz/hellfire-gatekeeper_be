@@ -15,6 +15,7 @@ type ProductResponse struct {
 	CreatedOn   *time.Time `json:"created_on,omitempty"`
 }
 
+// Marshal the product to ProductResponse
 func Marshal(product *pModel.Product) ProductResponse {
 	response := ProductResponse{
 		ID:          product.ID,

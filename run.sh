@@ -19,6 +19,9 @@ unit() {
     end=$(date +%s)
     runtime=$((end - start))
     echo -e "${GREEN}✅ All UNIT tests passed in ${runtime}s${NC}"
+  else
+    echo -e "${RED}❌ UNIT tests failed.${NC}"
+    exit 1
   fi
 }
 
@@ -33,6 +36,9 @@ integration() {
     end=$(date +%s)
     runtime=$((end - start))
     echo -e "${GREEN}✅ All INTEGRATION tests passed in ${runtime}s${NC}"
+  else
+    echo -e "${RED}❌ INTEGRATION tests failed.${NC}"
+    exit 1
   fi
 }
 

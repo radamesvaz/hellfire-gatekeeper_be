@@ -129,6 +129,47 @@ func insertTestProduct(t *testing.T, db *sql.DB, date *time.Time) {
 	}
 }
 
+func TestGetAllProducts(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	createdOn := time.Date(2025, 3, 17, 12, 34, 56, 0, time.UTC)
+
+	runMigrations(t, dsn)
+	insertTestProduct(t, db, &createdOn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+	handler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+
+	// Send the simulated request
+	req := httptest.NewRequest("GET", "/products", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	expected := fmt.Sprintf(
+		`[{
+			"id_product": 1,
+			"name": "Chocolate Cake",
+			"description": "Delicioso pastel",
+			"price": 10.5,
+			"available": true,
+			"created_on": "%s"
+		}]`, createdOn.Format(time.RFC3339),
+	)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, expected, rr.Body.String())
+}
+
 func TestGetProductByID(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupMySQLContainer(t)

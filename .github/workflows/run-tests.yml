@@ -1,4 +1,4 @@
-name: Run tests
+name: Run tests PR only  # Nombre temporal para evitar conflicto con el anterior
 
 on:
   pull_request:

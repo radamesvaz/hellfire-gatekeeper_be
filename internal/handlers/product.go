@@ -33,6 +33,7 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response)
 }
 
+// GetProductByID retrieves a product by its ID
 func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idProduct, err := strconv.ParseUint(vars["id"], 10, 64)

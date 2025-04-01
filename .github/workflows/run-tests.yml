@@ -1,0 +1,34 @@
+name: Run tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.1'
+
+      - name: Set up environment file
+        run: |
+          echo "MYSQL_USER=TEST_USER" >> .env
+          echo "MYSQL_PASSWORD=TEST_PASS" >> .env
+          echo "MYSQL_DATABASE=test_db" >> .env
+          echo "MYSQL_ROOT_PASSWORD=TEST_ROOT_PASS" >> .env
+          echo "DB_PORT=3306" >> .env
+
+      - name: Install Go dependencies
+        run: go mod tidy
+
+      - name: Run all tests
+        run: bash ./run.sh tests

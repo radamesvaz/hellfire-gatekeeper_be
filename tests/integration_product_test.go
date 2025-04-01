@@ -198,7 +198,7 @@ func TestGetProductByID(t *testing.T) {
 
 	expected := fmt.Sprintf(
 		`{
-			"id_product": 2,
+			"id_product": 1,
 			"name": "Chocolate Cake",
 			"description": "Delicioso pastel",
 			"price": 10.5,

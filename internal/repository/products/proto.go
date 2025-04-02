@@ -6,6 +6,7 @@ import (
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 )
 
+// ProductResponse struct
 type ProductResponse struct {
 	ID          int        `json:"id_product" gorm:"primaryKey"`
 	Name        string     `json:"name" gorm:"not null;unique"`

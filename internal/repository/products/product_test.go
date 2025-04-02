@@ -197,7 +197,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				createdOn,
 			),
 			mockError:          errors.ErrProductNotFound,
-			errorStatus:        401,
+			errorStatus:        404,
 			expected:           pModel.Product{},
 			idProductForLookup: 9999,
 			expectedError:      true,

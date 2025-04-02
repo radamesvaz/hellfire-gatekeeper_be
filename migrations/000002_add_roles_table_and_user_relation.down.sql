@@ -1,0 +1,4 @@
+ALTER TABLE users DROP FOREIGN KEY fk_role;
+ALTER TABLE users DROP COLUMN id_role;
+
+DROP TABLE roles;

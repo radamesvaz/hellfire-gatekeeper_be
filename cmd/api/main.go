@@ -8,7 +8,10 @@ import (
 
 	"github.com/joho/godotenv"
 	h "github.com/radamesvaz/bakery-app/internal/handlers"
+	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
+	"github.com/radamesvaz/bakery-app/internal/repository/user"
+	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
@@ -35,12 +38,21 @@ func main() {
 	}
 	defer db.Close()
 
-	repo := &productsRepository.ProductRepository{DB: db}
-	handler := &h.ProductHandler{Repo: repo}
+	productRepo := &productsRepository.ProductRepository{DB: db}
+	productHandler := &h.ProductHandler{Repo: productRepo}
+
+	userRepo := user.UserRepository{DB: db}
+	authService := authService.AuthService{}
+	authHandler := &auth.LoginHandler{
+		UserRepo:    userRepo,
+		AuthService: authService,
+	}
 
 	r := mux.NewRouter()
-	r.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
-	r.HandleFunc("/products/{id}", handler.GetProductByID).Methods("GET")
+	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
+	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
+	// Auth endpoints
+	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 
 	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
 	http.ListenAndServe(":8080", r)

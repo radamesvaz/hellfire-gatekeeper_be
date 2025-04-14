@@ -44,6 +44,9 @@ integration() {
 
 # Run all tests
 tests() {
+  echo "🧹 Running go mod tidy..."
+  go mod tidy
+
   unit && integration
 }
 

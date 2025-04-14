@@ -1,8 +1,15 @@
+version: "2.4"
+
 services:
   mysql_db:
     image: mysql:latest
     container_name: bakery_mysql
     restart: always
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
@@ -17,7 +24,8 @@ services:
     image: migrate/migrate
     container_name: bakery_migrations
     depends_on:
-      - mysql_db
+      mysql_db:
+        condition: service_healthy
     volumes:
       - ./migrations:/migrations
     command: [ "-path", "/migrations", "-database",  "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@tcp(mysql_db:3306)/${MYSQL_DATABASE}", "up" ]

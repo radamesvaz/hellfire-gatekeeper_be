@@ -50,6 +50,20 @@ tests() {
   unit && integration
 }
 
+# Reset project: full rebuild
+reset() {
+  echo "🚧 Stopping containers..."
+  docker-compose down -v
+
+  echo "🧹 Cleaning old build artifacts..."
+  docker system prune -f
+
+  echo "🔧 Rebuilding and starting services..."
+  docker-compose up --build -d
+
+  echo "✅ Project is up and running!"
+}
+
 case "$1" in
   unit)
     unit
@@ -60,8 +74,11 @@ case "$1" in
   tests)
     tests
     ;;
+  reset)
+    reset
+    ;;
   *)
     echo -e "${RED}⚠️  Command not recognized: $1${NC}"
-    echo -e "${YELLOW}👉 Available commands: unit, integration, tests${NC}"
+    echo -e "${YELLOW}👉 Available commands: unit, integration, tests, reset${NC}"
     ;;
 esac

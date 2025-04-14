@@ -77,12 +77,12 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				ID:        1,
 				IDRole:    1,
 				Name:      "Admin",
-				Email:     "Admin@test.com",
+				Email:     "admin@test.com",
 				Password:  string(hashedPassword),
 				Phone:     "55-5555",
 				CreatedOn: createdOn,
 			},
-			emailForLookup: "Admin@test.com",
+			emailForLookup: "admin@test.com",
 		},
 	}
 	for _, tt := range tests {
@@ -98,25 +98,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 					regexp.QuoteMeta("SELECT * FROM users WHERE email = ?"),
 				).
 					WithArgs(tt.emailForLookup).
-					WillReturnRows(sqlmock.NewRows([]string{
-						"id_user",
-						"id_role",
-						"name",
-						"email",
-						"password",
-						"phone",
-						"created_on",
-					}).
-						AddRow(
-							tt.expected.ID,
-							tt.expected.IDRole,
-							tt.expected.Name,
-							tt.expected.Email,
-							tt.expected.Password,
-							tt.expected.Phone,
-							tt.expected.CreatedOn.Time,
-						),
-					)
+					WillReturnRows(tt.mockRows)
 			}
 
 			user, err := repo.GetUserByEmail(tt.emailForLookup)

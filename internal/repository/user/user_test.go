@@ -89,13 +89,13 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT * FROM users WHERE email = ?"),
+					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = ?"),
 				).
 					WithArgs(tt.emailForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT * FROM users WHERE email = ?"),
+					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = ?"),
 				).
 					WithArgs(tt.emailForLookup).
 					WillReturnRows(tt.mockRows)

@@ -15,7 +15,7 @@ VALUES (
   'admin@example.com',
   '55-55555',
   '$2a$10$AI.5/3TkNHfLqSioH/sz6OSVbwAJV5ELoIrSOjz/FfrWneQ0JZ55G',
-  NOW()
+  '2025-04-14 10:00:00'
 ),
 (
   2,
@@ -24,15 +24,15 @@ VALUES (
   'client@example.com',
   '66-6666',
   NULL,
-  NOW()
+  '2025-04-14 10:00:00'
 );
 
 INSERT INTO products (id_product, name, description, price, available, created_on)
 VALUES
-  (1, 'Brownie Clásico', 'Delicioso brownie de chocolate', 3.5, true, NOW()),
-  (2, 'Suspiros', 'Suspiros tradicionales', 5, true, NOW());
+  (1, 'Brownie Clásico', 'Delicioso brownie de chocolate', 3.5, true, '2025-04-14 10:00:00'),
+  (2, 'Suspiros', 'Suspiros tradicionales', 5, true, '2025-04-14 10:00:00');
 
 INSERT INTO products_history (id_products_history, id_product, name, description, price, available, modified_on, modified_by, action)
 VALUES
-  (1, 1, 'Brownie Clásico', 'Delicioso brownie de chocolate', 3.5, true, NOW(), 1, 'update'),
-  (2, 2, 'Suspiros', 'Suspiros tradicionales', 5, true, NOW(), 1, 'update');
+  (1, 1, 'Brownie Clásico', 'Delicioso brownie de chocolate', 3.5, true, '2025-04-14 10:00:00', 1, 'update'),
+  (2, 2, 'Suspiros', 'Suspiros tradicionales', 5, true, '2025-04-14 10:00:00', 1, 'update');

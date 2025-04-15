@@ -9,6 +9,7 @@ import (
 	"github.com/joho/godotenv"
 	h "github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
+	"github.com/radamesvaz/bakery-app/internal/middleware"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
@@ -53,6 +54,13 @@ func main() {
 	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
 	// Auth endpoints
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
+
+	// Test middleware endpoint
+	authTest := r.PathPrefix("/auth").Subrouter()
+	authTest.Use(middleware.AuthMiddleware)
+	authTest.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "Token válido, acceso permitido")
+	}).Methods("GET")
 
 	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
 	http.ListenAndServe(":8080", r)

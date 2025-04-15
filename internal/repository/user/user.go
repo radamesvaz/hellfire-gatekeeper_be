@@ -18,7 +18,7 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 	user := uModel.User{}
 
 	err := r.DB.QueryRow(
-		"SELECT * FROM users WHERE email = ?",
+		"SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = ?",
 		email,
 	).Scan(
 		&user.ID,

@@ -14,7 +14,7 @@ VALUES (
   'Admin User',
   'admin@example.com',
   '55-55555',
-  '$2a$10$AI.5/3TkNHfLqSioH/sz6OSVbwAJV5ELoIrSOjz/FfrWneQ0JZ55G',
+  '$2a$10$SO6GoHITlrEuH9mZyaFqN.vmtx9F0mn.4c2Blp7xM9WCM1svOMnYq',
   '2025-04-14 10:00:00'
 ),
 (

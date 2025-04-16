@@ -2,6 +2,7 @@ package products
 
 import (
 	"database/sql"
+	"regexp"
 	"testing"
 	"time"
 
@@ -220,6 +221,155 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 			}
 
 			product, err := repo.GetProductByID(tt.idProductForLookup)
+			if tt.expectedError {
+				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, product)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestProductRepository_CreateProduct(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+
+	createdOn := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	tests := []struct {
+		name          string
+		payload       pModel.Product
+		mockError     error
+		expected      pModel.Product
+		expectedError bool
+		errorStatus   int
+	}{
+		{
+			name: "HAPPY PATH: Creating a product",
+			payload: pModel.Product{
+				Name:        "Producto prueba test OK",
+				Description: "Esta es la descripcion del producto de prueba",
+				Price:       20.3,
+				Available:   true,
+			},
+			mockError: nil,
+			expected: pModel.Product{
+				ID:          1,
+				Name:        "Producto prueba test OK",
+				Description: "Esta es la descripcion del producto de prueba",
+				Price:       20.3,
+				Available:   true,
+				CreatedOn:   createdOn,
+			},
+			expectedError: false,
+		},
+		{
+			name: "SAD PATH: Creating a product without a name",
+			payload: pModel.Product{
+				Name:        "",
+				Description: "Esta es la descripcion del producto de prueba",
+				Price:       20.3,
+				Available:   true,
+			},
+			expectedError: true,
+			mockError:     errors.ErrCreatingProduct,
+			errorStatus:   400,
+			expected:      pModel.Product{},
+		},
+		{
+			name: "SAD PATH: Creating a product without a name",
+			payload: pModel.Product{
+				Name:        "",
+				Description: "Esta es la descripcion del producto de prueba",
+				Price:       20.3,
+				Available:   true,
+			},
+			expectedError: true,
+			mockError:     errors.ErrCreatingProduct,
+			errorStatus:   400,
+			expected:      pModel.Product{},
+		},
+		{
+			name: "SAD PATH: Creating a product without a description",
+			payload: pModel.Product{
+				Name:        "Name",
+				Description: "",
+				Price:       20.3,
+				Available:   true,
+			},
+			expectedError: true,
+			mockError:     errors.ErrCreatingProduct,
+			errorStatus:   400,
+			expected:      pModel.Product{},
+		},
+		{
+			name: "SAD PATH: Creating a product without a price",
+			payload: pModel.Product{
+				Name:        "Name",
+				Description: "Esta es la descripcion del producto de prueba",
+				Price:       0,
+				Available:   true,
+			},
+			expectedError: true,
+			mockError:     errors.ErrCreatingProduct,
+			errorStatus:   400,
+			expected:      pModel.Product{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if !tt.expectedError {
+				mock.ExpectQuery(
+					regexp.QuoteMeta(
+						`INSERT INTO products 
+						(name, description, price, available) 
+						VALUES (?, ?, ?, ?) 
+						RETURNING 
+						id_product, 
+						name,
+						description, 
+						price,
+						available, 
+						created_on`,
+					),
+				).
+					WithArgs(
+						tt.payload.Name,
+						tt.payload.Description,
+						tt.payload.Price,
+						tt.payload.Available,
+					).
+					WillReturnRows(sqlmock.NewRows([]string{
+						"id_product", "name", "description", "pice", "available", "created_on",
+					}).AddRow(
+						1,
+						tt.payload.Name,
+						tt.payload.Description,
+						tt.payload.Price,
+						tt.payload.Available,
+						createdOn.Time,
+					))
+			}
+
+			product, err := repo.CreateProduct(
+				tt.payload.Name,
+				tt.payload.Description,
+				tt.payload.Price,
+				tt.payload.Available,
+			)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

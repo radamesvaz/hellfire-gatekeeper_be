@@ -43,6 +43,7 @@ func (r *ProductRepository) GetAll() ([]pModel.Product, error) {
 	return products, nil
 }
 
+// Getting a product by its ID
 func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, error) {
 	fmt.Printf(
 		"Getting product by id = %v",
@@ -73,4 +74,48 @@ func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, er
 	}
 
 	return product, nil
+}
+
+// Creating a product
+func (r *ProductRepository) CreateProduct(
+	productName string,
+	productDescription string,
+	productPrice float64,
+	available bool,
+) (pModel.Product, error) {
+	fmt.Printf("Creating product: %v", productName)
+
+	createdProduct := pModel.Product{}
+
+	if productName == "" || productDescription == "" || productPrice == 0 {
+		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
+	}
+
+	row := r.DB.QueryRow(
+		`INSERT INTO products 
+		(name, description, price, available) 
+		VALUES (?, ?, ?, ?) 
+		RETURNING 
+		id_product, 
+		name, 
+		description, 
+		price,
+		available, 
+		created_on`,
+		productName, productDescription, productPrice, available)
+	err := row.Scan(
+		&createdProduct.ID,
+		&createdProduct.Name,
+		&createdProduct.Description,
+		&createdProduct.Price,
+		&createdProduct.Available,
+		&createdProduct.CreatedOn,
+	)
+
+	if err != nil {
+		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
+	}
+
+	return createdProduct, nil
+
 }

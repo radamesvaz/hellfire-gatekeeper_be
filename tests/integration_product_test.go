@@ -134,10 +134,7 @@ func TestGetAllProducts(t *testing.T) {
 	_, db, terminate, dsn := setupMySQLContainer(t)
 	defer terminate()
 
-	createdOn := time.Date(2025, 3, 17, 12, 34, 56, 0, time.UTC)
-
 	runMigrations(t, dsn)
-	insertTestProduct(t, db, &createdOn)
 
 	repository := repository.ProductRepository{
 		DB: db,
@@ -155,15 +152,23 @@ func TestGetAllProducts(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	expected := fmt.Sprintf(
+	expected := fmt.Sprint(
 		`[{
 			"id_product": 1,
-			"name": "Chocolate Cake",
-			"description": "Delicioso pastel",
-			"price": 10.5,
+			"name": "Brownie Clásico",
+			"description": "Delicioso brownie de chocolate",
+			"price": 3.5,
 			"available": true,
-			"created_on": "%s"
-		}]`, createdOn.Format(time.RFC3339),
+			"created_on": "2025-04-14T10:00:00Z"
+		},
+		{
+			"id_product": 2,
+			"name": "Suspiros",
+			"description": "Suspiros tradicionales",
+			"price": 5,
+			"available": true,
+			"created_on": "2025-04-14T10:00:00Z"
+		}]`,
 	)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
@@ -175,10 +180,7 @@ func TestGetProductByID(t *testing.T) {
 	_, db, terminate, dsn := setupMySQLContainer(t)
 	defer terminate()
 
-	createdOn := time.Date(2025, 3, 17, 12, 34, 56, 0, time.UTC)
-
 	runMigrations(t, dsn)
-	insertTestProduct(t, db, &createdOn)
 
 	repository := repository.ProductRepository{
 		DB: db,
@@ -196,15 +198,15 @@ func TestGetProductByID(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	expected := fmt.Sprintf(
+	expected := fmt.Sprint(
 		`{
 			"id_product": 1,
-			"name": "Chocolate Cake",
-			"description": "Delicioso pastel",
-			"price": 10.5,
+			"name": "Brownie Clásico",
+			"description": "Delicioso brownie de chocolate",
+			"price": 3.5,
 			"available": true,
-			"created_on": "%s"
-		}`, createdOn.Format(time.RFC3339),
+			"created_on": "2025-04-14T10:00:00Z"
+		}`,
 	)
 
 	assert.Equal(t, http.StatusOK, rr.Code)

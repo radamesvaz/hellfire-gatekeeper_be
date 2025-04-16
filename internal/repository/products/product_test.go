@@ -216,23 +216,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 					"SELECT id_product, name, description, price, available, created_on FROM products WHERE id_product = ?",
 				).
 					WithArgs(tt.idProductForLookup).
-					WillReturnRows(sqlmock.NewRows([]string{
-						"id_product",
-						"name",
-						"description",
-						"price",
-						"available",
-						"created_on",
-					}).
-						AddRow(
-							tt.expected.ID,
-							tt.expected.Name,
-							tt.expected.Description,
-							tt.expected.Price,
-							tt.expected.Available,
-							createdOn.Time,
-						),
-					)
+					WillReturnRows(tt.mockRows)
 			}
 
 			product, err := repo.GetProductByID(tt.idProductForLookup)

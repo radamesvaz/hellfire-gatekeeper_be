@@ -45,6 +45,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"status",
 				"created_on",
 			}),
 			mockError: nil,
@@ -58,6 +59,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stauts",
 				"created_on",
 			}).AddRow(
 				"1",
@@ -65,6 +67,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				"active",
 				createdOn,
 			).AddRow(
 				"2",
@@ -72,6 +75,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"Suspiros para fiesta desc test",
 				10,
 				false,
+				"inactive",
 				createdOn,
 			),
 			mockError: nil,
@@ -82,6 +86,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					Description: "Test descripcion de la torta test",
 					Price:       30,
 					Available:   true,
+					Status:      "active",
 					CreatedOn:   createdOn,
 				},
 				{
@@ -90,6 +95,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					Description: "Suspiros para fiesta desc test",
 					Price:       10,
 					Available:   false,
+					Status:      "inactive",
 					CreatedOn:   createdOn,
 				},
 			},
@@ -98,10 +104,10 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.mockRows != nil {
-				mock.ExpectQuery("SELECT id_product, name, description, price, available, created_on FROM products").
+				mock.ExpectQuery("SELECT id_product, name, description, price, available, status, created_on FROM products").
 					WillReturnRows(tt.mockRows)
 			} else {
-				mock.ExpectQuery("SELECT id_product, name, description, price, available, created_on FROM products").
+				mock.ExpectQuery("SELECT id_product, name, description, price, available, status, created_on FROM products").
 					WillReturnError(tt.mockError)
 			}
 
@@ -153,6 +159,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stauts",
 				"created_on",
 			}).AddRow(
 				"1",
@@ -160,6 +167,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				"active",
 				createdOn,
 			).AddRow(
 				"2",
@@ -167,6 +175,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"Suspiros para fiesta desc test",
 				10,
 				false,
+				"deleted",
 				createdOn,
 			),
 			mockError: nil,
@@ -176,6 +185,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				Description: "Test descripcion de la torta test",
 				Price:       30,
 				Available:   true,
+				Status:      "active",
 				CreatedOn:   createdOn,
 			},
 			idProductForLookup: 1,
@@ -188,6 +198,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"status",
 				"created_on",
 			}).AddRow(
 				"1",
@@ -195,6 +206,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				"inactive",
 				createdOn,
 			),
 			mockError:          errors.ErrProductNotFound,
@@ -208,13 +220,13 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, created_on FROM products WHERE id_product = ?",
+					"SELECT id_product, name, description, price, available, status, created_on FROM products WHERE id_product = ?",
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, created_on FROM products WHERE id_product = ?",
+					"SELECT id_product, name, description, price, available, status, created_on FROM products WHERE id_product = ?",
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnRows(tt.mockRows)
@@ -264,6 +276,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
+				Status:      "active",
 			},
 			mockError: nil,
 			expected: pModel.Product{
@@ -272,22 +285,10 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
+				Status:      "active",
 				CreatedOn:   createdOn,
 			},
 			expectedError: false,
-		},
-		{
-			name: "SAD PATH: Creating a product without a name",
-			payload: pModel.Product{
-				Name:        "",
-				Description: "Esta es la descripcion del producto de prueba",
-				Price:       20.3,
-				Available:   true,
-			},
-			expectedError: true,
-			mockError:     errors.ErrCreatingProduct,
-			errorStatus:   400,
-			expected:      pModel.Product{},
 		},
 		{
 			name: "SAD PATH: Creating a product without a name",
@@ -335,14 +336,15 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
-						(name, description, price, available) 
-						VALUES (?, ?, ?, ?) 
+						(name, description, price, available, status) 
+						VALUES (?, ?, ?, ?, ?) 
 						RETURNING 
 						id_product, 
 						name,
 						description, 
 						price,
-						available, 
+						available,
+						status, 
 						created_on`,
 					),
 				).
@@ -351,15 +353,17 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Description,
 						tt.payload.Price,
 						tt.payload.Available,
+						tt.payload.Status,
 					).
 					WillReturnRows(sqlmock.NewRows([]string{
-						"id_product", "name", "description", "pice", "available", "created_on",
+						"id_product", "name", "description", "pice", "available", "status", "created_on",
 					}).AddRow(
 						1,
 						tt.payload.Name,
 						tt.payload.Description,
 						tt.payload.Price,
 						tt.payload.Available,
+						tt.payload.Status,
 						createdOn.Time,
 					))
 			}
@@ -369,12 +373,119 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				tt.payload.Description,
 				tt.payload.Price,
 				tt.payload.Available,
+				tt.payload.Status,
 			)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, product)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestProductRepository_DeleteProduct(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+
+	createdOn := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	tests := []struct {
+		name               string
+		mockRows           *sqlmock.Rows
+		mockError          error
+		expectedError      bool
+		idProductForDelete uint64
+		errorStatus        int
+	}{
+		{
+			name:          "HAPPY PATH: deleting a product 1",
+			expectedError: true,
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				createdOn,
+			),
+			mockError:          nil,
+			idProductForDelete: 1,
+		},
+		{
+			name: "SAD PATH: product ID not found",
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				createdOn,
+			),
+			mockError:          errors.ErrProductNotFound,
+			idProductForDelete: 99999,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.expectedError {
+				mock.ExpectExec(
+					"DELETE FROM products where id_product = ?",
+				).
+					WithArgs(tt.idProductForDelete).
+					WillReturnError(sql.ErrNoRows)
+			} else {
+				mock.ExpectExec("DELETE FROM products where id_product = ?").
+					WithArgs(tt.idProductForDelete).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+			}
+
+			err := repo.DeleteProduct(tt.idProductForDelete)
+			if tt.expectedError {
+				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+			} else {
+				assert.NoError(t, err)
 			}
 
 			assert.NoError(t, mock.ExpectationsWereMet())

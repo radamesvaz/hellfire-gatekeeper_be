@@ -10,4 +10,5 @@ var (
 	ErrProductNotFound       = errors.New("product not found")
 	ErrCouldNotGetTheProduct = errors.New("error getting the requested product")
 	ErrCreatingProduct       = errors.New("error creating product")
+	ErrDeletingProduct       = errors.New("error deleting the product")
 )

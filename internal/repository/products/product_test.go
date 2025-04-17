@@ -387,111 +387,128 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 	}
 }
 
-// func TestProductRepository_DeleteProduct(t *testing.T) {
-// 	// Setting up mock
-// 	db, mock, err := sqlmock.New()
-// 	if err != nil {
-// 		t.Fatalf("Error setting up the mock: %v", err)
-// 	}
+func TestProductRepository_UpdateProductStatus(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
 
-// 	defer db.Close()
+	defer db.Close()
 
-// 	repo := &ProductRepository{DB: db}
+	repo := &ProductRepository{DB: db}
 
-// 	createdOn := sql.NullTime{
-// 		Time:  time.Now(),
-// 		Valid: true,
-// 	}
+	createdOn := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
 
-// 	tests := []struct {
-// 		name               string
-// 		mockRows           *sqlmock.Rows
-// 		mockError          error
-// 		expectedError      bool
-// 		idProductForDelete uint64
-// 		errorStatus        int
-// 	}{
-// 		{
-// 			name:          "HAPPY PATH: deleting a product 1",
-// 			expectedError: true,
-// 			mockRows: sqlmock.NewRows([]string{
-// 				"id_product",
-// 				"name",
-// 				"description",
-// 				"price",
-// 				"available",
-// 				"created_on",
-// 			}).AddRow(
-// 				"1",
-// 				"Torta de chocolate test",
-// 				"Test descripcion de la torta test",
-// 				30,
-// 				true,
-// 				createdOn,
-// 			).AddRow(
-// 				"2",
-// 				"Suspiros",
-// 				"Suspiros para fiesta desc test",
-// 				10,
-// 				false,
-// 				createdOn,
-// 			),
-// 			mockError:          nil,
-// 			idProductForDelete: 1,
-// 		},
-// 		{
-// 			name: "SAD PATH: product ID not found",
-// 			mockRows: sqlmock.NewRows([]string{
-// 				"id_product",
-// 				"name",
-// 				"description",
-// 				"price",
-// 				"available",
-// 				"created_on",
-// 			}).AddRow(
-// 				"1",
-// 				"Torta de chocolate test",
-// 				"Test descripcion de la torta test",
-// 				30,
-// 				true,
-// 				createdOn,
-// 			).AddRow(
-// 				"2",
-// 				"Suspiros",
-// 				"Suspiros para fiesta desc test",
-// 				10,
-// 				false,
-// 				createdOn,
-// 			),
-// 			mockError:          errors.ErrProductNotFound,
-// 			idProductForDelete: 99999,
-// 		},
-// 	}
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			if tt.expectedError {
-// 				mock.ExpectExec(
-// 					"DELETE FROM products where id_product = ?",
-// 				).
-// 					WithArgs(tt.idProductForDelete).
-// 					WillReturnError(sql.ErrNoRows)
-// 			} else {
-// 				mock.ExpectExec("DELETE FROM products where id_product = ?").
-// 					WithArgs(tt.idProductForDelete).
-// 					WillReturnResult(sqlmock.NewResult(0, 1))
-// 			}
+	tests := []struct {
+		name               string
+		mockRows           *sqlmock.Rows
+		expected           pModel.Product
+		idProductForUpdate uint64
+		status             pModel.ProductStatus
+		expectedError      bool
+		mockError          error
+		errorStatus        int
+	}{
+		{
+			name:          "HAPPY PATH: deleting a product with ID: 1",
+			expectedError: false,
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"status",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				"active",
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				"deleted",
+				createdOn,
+			),
+			expected: pModel.Product{
+				ID:          1,
+				Name:        "Torta de chocolate test",
+				Description: "Test descripcion de la torta test",
+				Price:       30,
+				Available:   true,
+				Status:      "deleted",
+				CreatedOn:   createdOn,
+			},
+			mockError:          nil,
+			idProductForUpdate: 1,
+			status:             pModel.StatusDeleted,
+		},
+		// {
+		// 	name: "SAD PATH: product ID not found",
+		// 	mockRows: sqlmock.NewRows([]string{
+		// 		"id_product",
+		// 		"name",
+		// 		"description",
+		// 		"price",
+		// 		"available",
+		// 		"created_on",
+		// 	}).AddRow(
+		// 		"1",
+		// 		"Torta de chocolate test",
+		// 		"Test descripcion de la torta test",
+		// 		30,
+		// 		true,
+		// 		createdOn,
+		// 	).AddRow(
+		// 		"2",
+		// 		"Suspiros",
+		// 		"Suspiros para fiesta desc test",
+		// 		10,
+		// 		false,
+		// 		createdOn,
+		// 	),
+		// 	mockError:          errors.ErrProductNotFound,
+		// 	idProductForUpdate: 99999,
+		// },
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.expectedError {
+				mock.ExpectExec(
+					regexp.QuoteMeta("UPDATE products SET status = ? where id_product = ?"),
+				).
+					WithArgs(tt.status, tt.idProductForUpdate).
+					WillReturnResult(sqlmock.NewResult(0, 0))
+			} else {
+				mock.ExpectExec(
+					regexp.QuoteMeta("UPDATE products SET status = ? where id_product = ?"),
+				).
+					WithArgs(tt.status, tt.idProductForUpdate).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+			}
 
-// 			err := repo.DeleteProduct(tt.idProductForDelete)
-// 			if tt.expectedError {
-// 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
-// 			} else {
-// 				assert.NoError(t, err)
-// 			}
+			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
+			if tt.expectedError {
+				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+			} else {
+				assert.NoError(t, err)
+			}
 
-// 			assert.NoError(t, mock.ExpectationsWereMet())
-// 		})
-// 	}
-// }
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
 
 // Validates the error to be of *HTTPError type, have the correct status and message
 func assertHTTPError(t *testing.T, err error, expectedStatus int, expectedMessage string) {

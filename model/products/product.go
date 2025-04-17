@@ -4,6 +4,14 @@ import (
 	"database/sql"
 )
 
+type ProductStatus string
+
+const (
+	StatusActive   ProductStatus = "active"
+	StatusInactive ProductStatus = "inactive"
+	StatusDeleted  ProductStatus = "deleted"
+)
+
 type Product struct {
 	ID          int          `json:"id_product" gorm:"primaryKey"`
 	Name        string       `json:"name" gorm:"not null;unique"`

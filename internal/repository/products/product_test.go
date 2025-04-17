@@ -406,7 +406,6 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 	tests := []struct {
 		name               string
 		mockRows           *sqlmock.Rows
-		expected           pModel.Product
 		idProductForUpdate uint64
 		status             pModel.ProductStatus
 		expectedError      bool
@@ -441,46 +440,40 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"deleted",
 				createdOn,
 			),
-			expected: pModel.Product{
-				ID:          1,
-				Name:        "Torta de chocolate test",
-				Description: "Test descripcion de la torta test",
-				Price:       30,
-				Available:   true,
-				Status:      "deleted",
-				CreatedOn:   createdOn,
-			},
 			mockError:          nil,
 			idProductForUpdate: 1,
 			status:             pModel.StatusDeleted,
 		},
-		// {
-		// 	name: "SAD PATH: product ID not found",
-		// 	mockRows: sqlmock.NewRows([]string{
-		// 		"id_product",
-		// 		"name",
-		// 		"description",
-		// 		"price",
-		// 		"available",
-		// 		"created_on",
-		// 	}).AddRow(
-		// 		"1",
-		// 		"Torta de chocolate test",
-		// 		"Test descripcion de la torta test",
-		// 		30,
-		// 		true,
-		// 		createdOn,
-		// 	).AddRow(
-		// 		"2",
-		// 		"Suspiros",
-		// 		"Suspiros para fiesta desc test",
-		// 		10,
-		// 		false,
-		// 		createdOn,
-		// 	),
-		// 	mockError:          errors.ErrProductNotFound,
-		// 	idProductForUpdate: 99999,
-		// },
+		{
+			name:          "SAD PATH: product ID not found",
+			expectedError: true,
+			errorStatus:   404,
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				createdOn,
+			),
+			mockError:          errors.ErrProductNotFound,
+			idProductForUpdate: 99999,
+			status:             pModel.StatusInactive,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -498,6 +491,76 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
+			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
+			if tt.expectedError {
+				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestProductRepository_UpdateProductInvalidStatus(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+
+	createdOn := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	tests := []struct {
+		name               string
+		mockRows           *sqlmock.Rows
+		idProductForUpdate uint64
+		status             pModel.ProductStatus
+		expectedError      bool
+		mockError          error
+		errorStatus        int
+	}{
+		{
+			name:          "SAD PATH: Invalid product status",
+			expectedError: true,
+			errorStatus:   400,
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				createdOn,
+			),
+			mockError:          errors.ErrInvalidStatus,
+			idProductForUpdate: 1,
+			status:             pModel.ProductStatus("invalid"),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())

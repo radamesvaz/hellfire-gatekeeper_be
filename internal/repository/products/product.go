@@ -137,7 +137,7 @@ func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.
 	validStatus := IsValidStatus(status)
 	if !validStatus {
 		fmt.Printf("Invalid status: %v", status)
-		errors.NewBadRequest(errors.ErrInvalidStatus)
+		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
 	result, err := r.DB.Exec(

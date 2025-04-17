@@ -114,6 +114,7 @@ func runMigrations(t *testing.T, dsn string) {
 	}
 }
 
+// DELETE
 func insertTestProduct(t *testing.T, db *sql.DB, date *time.Time) {
 	_, err := db.Exec(`
 		INSERT INTO products (name, description, price, available, created_on)
@@ -159,6 +160,7 @@ func TestGetAllProducts(t *testing.T) {
 			"description": "Delicioso brownie de chocolate",
 			"price": 3.5,
 			"available": true,
+			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		},
 		{
@@ -167,6 +169,7 @@ func TestGetAllProducts(t *testing.T) {
 			"description": "Suspiros tradicionales",
 			"price": 5,
 			"available": true,
+			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		}]`,
 	)
@@ -205,6 +208,7 @@ func TestGetProductByID(t *testing.T) {
 			"description": "Delicioso brownie de chocolate",
 			"price": 3.5,
 			"available": true,
+			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		}`,
 	)

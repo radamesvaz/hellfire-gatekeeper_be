@@ -122,6 +122,22 @@ func (r *ProductRepository) CreateProduct(
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
+	// TODO: change when we hace the id user on the handler
+	// errHistory := r.CreateProductHistory(
+	// 	createdProduct.ID,
+	// 	createdProduct.Name,
+	// 	createdProduct.Description,
+	// 	createdProduct.Price,
+	// 	createdProduct.Available,
+	// 	createdProduct.Status,
+	// 	1,
+	// 	pModel.ActionCreate,
+	// )
+
+	// if errHistory != nil {
+	// 	fmt.Printf("Error adding the product to the history table: %v", errHistory)
+	// }
+
 	return createdProduct, nil
 
 }

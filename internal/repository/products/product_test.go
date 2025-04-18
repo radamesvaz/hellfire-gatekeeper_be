@@ -276,7 +276,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
-				Status:      "active",
+				Status:      pModel.StatusActive,
 			},
 			mockError: nil,
 			expected: pModel.Product{
@@ -285,7 +285,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
-				Status:      "active",
+				Status:      pModel.StatusActive,
 				CreatedOn:   createdOn,
 			},
 			expectedError: false,
@@ -562,6 +562,134 @@ func TestProductRepository_UpdateProductInvalidStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
+			if tt.expectedError {
+				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestProductRepository_UpdateProduct(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+
+	createdOn := sql.NullTime{
+		Time:  time.Now(),
+		Valid: true,
+	}
+
+	tests := []struct {
+		name               string
+		mockRows           *sqlmock.Rows
+		idProductForUpdate uint64
+		payload            pModel.Product
+		expectedError      bool
+		mockError          error
+		errorStatus        int
+	}{
+		{
+			name:          "HAPPY PATH: updating product with ID: 1",
+			expectedError: false,
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"status",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				"active",
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				"deleted",
+				createdOn,
+			),
+			idProductForUpdate: 1,
+			mockError:          nil,
+			payload: pModel.Product{
+				Name:        "Updated name",
+				Description: "Updated description",
+				Price:       50,
+				Available:   false,
+				Status:      pModel.StatusInactive,
+			},
+		},
+		{
+			name:          "SAD PATH: product ID not found",
+			expectedError: true,
+			errorStatus:   404,
+			mockRows: sqlmock.NewRows([]string{
+				"id_product",
+				"name",
+				"description",
+				"price",
+				"available",
+				"created_on",
+			}).AddRow(
+				"1",
+				"Torta de chocolate test",
+				"Test descripcion de la torta test",
+				30,
+				true,
+				createdOn,
+			).AddRow(
+				"2",
+				"Suspiros",
+				"Suspiros para fiesta desc test",
+				10,
+				false,
+				createdOn,
+			),
+			mockError:          errors.ErrProductNotFound,
+			idProductForUpdate: 99999,
+			payload: pModel.Product{
+				Name:        "Updated name",
+				Description: "Updated description",
+				Price:       50,
+				Available:   false,
+				Status:      pModel.StatusInactive,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.expectedError {
+				mock.ExpectExec(
+					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?"),
+				).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.idProductForUpdate).
+					WillReturnResult(sqlmock.NewResult(0, 0))
+			} else {
+				mock.ExpectExec(
+					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?"),
+				).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.idProductForUpdate).
+					WillReturnResult(sqlmock.NewResult(0, 1))
+			}
+
+			err := repo.UpdateProduct(tt.idProductForUpdate, tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

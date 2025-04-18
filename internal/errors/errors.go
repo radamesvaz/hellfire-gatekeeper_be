@@ -13,4 +13,5 @@ var (
 	ErrCreatingProductHistory = errors.New("error creating product history")
 	ErrInvalidStatus          = errors.New("error invalid Status")
 	ErrUpdatingProductStatus  = errors.New("error updating the product status")
+	ErrUpdatingTheProduct     = errors.New("error updating the product")
 )

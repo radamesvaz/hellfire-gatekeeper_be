@@ -85,7 +85,7 @@ func (r *ProductRepository) CreateProduct(
 	productDescription string,
 	productPrice float64,
 	available bool,
-	status string,
+	status pModel.ProductStatus,
 ) (pModel.Product, error) {
 	fmt.Printf("Creating product: %v", productName)
 
@@ -164,6 +164,55 @@ func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.
 
 	if err != nil {
 		fmt.Printf("Error updating the product status: %v", err)
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		fmt.Printf("Could not get the rows affected: %v", err)
+	}
+
+	if rows == 0 {
+		return errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	fmt.Printf("RESULT: %v", rows)
+
+	return nil
+}
+
+// Updating product
+func (r *ProductRepository) UpdateProduct(
+	idProduct uint64,
+	productName string,
+	productDescription string,
+	price float64,
+	available bool,
+	status pModel.ProductStatus,
+) error {
+	fmt.Printf(
+		"Updating product status by id = %v",
+		idProduct,
+	)
+
+	validStatus := IsValidStatus(status)
+	if !validStatus {
+		fmt.Printf("Invalid status: %v", status)
+		return errors.NewBadRequest(errors.ErrInvalidStatus)
+	}
+
+	result, err := r.DB.Exec(
+		"UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?",
+		productName,
+		productDescription,
+		price,
+		available,
+		status,
+		idProduct,
+	)
+
+	if err != nil {
+		fmt.Printf("Error updating the product: %v", err)
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 

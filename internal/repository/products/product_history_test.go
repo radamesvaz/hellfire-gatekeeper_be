@@ -20,11 +20,6 @@ func TestProductRepository_CreateProductHistory(t *testing.T) {
 
 	repo := &ProductRepository{DB: db}
 
-	// createdOn := sql.NullTime{
-	// 	Time:  time.Now(),
-	// 	Valid: true,
-	// }
-
 	tests := []struct {
 		name          string
 		payload       pModel.ProductHistory

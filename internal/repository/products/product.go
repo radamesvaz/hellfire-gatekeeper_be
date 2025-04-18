@@ -12,9 +12,9 @@ type ProductRepository struct {
 	DB *sql.DB
 }
 
-// GetAll gets all the products from the table
+// GetAllProducts gets all the products from the table
 // TODO change name
-func (r *ProductRepository) GetAll() ([]pModel.Product, error) {
+func (r *ProductRepository) GetAllProducts() ([]pModel.Product, error) {
 	fmt.Println(
 		"Getting all products",
 	)
@@ -126,7 +126,7 @@ func (r *ProductRepository) CreateProduct(
 
 }
 
-// Deleting a product
+// Updating a product status
 func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.ProductStatus) error {
 	fmt.Printf(
 		"%s product status by id = %v",
@@ -165,6 +165,7 @@ func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.
 	return nil
 }
 
+// Validates if the status is a valid one
 func IsValidStatus(status pModel.ProductStatus) bool {
 	switch pModel.ProductStatus(status) {
 	case pModel.StatusActive, pModel.StatusInactive, pModel.StatusDeleted:

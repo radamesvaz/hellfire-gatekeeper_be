@@ -114,22 +114,6 @@ func runMigrations(t *testing.T, dsn string) {
 	}
 }
 
-// DELETE
-func insertTestProduct(t *testing.T, db *sql.DB, date *time.Time) {
-	_, err := db.Exec(`
-		INSERT INTO products (name, description, price, available, created_on)
-		VALUES (?, ?, ?, ?, ?)`,
-		"Chocolate Cake",
-		"Delicioso pastel",
-		10.5,
-		true,
-		date,
-	)
-	if err != nil {
-		t.Fatalf("Error inserting test data: %v", err)
-	}
-}
-
 func TestGetAllProducts(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupMySQLContainer(t)

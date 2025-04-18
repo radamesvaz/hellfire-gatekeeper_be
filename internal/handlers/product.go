@@ -15,7 +15,7 @@ type ProductHandler struct {
 }
 
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
-	allProducts, err := h.Repo.GetAll()
+	allProducts, err := h.Repo.GetAllProducts()
 	if err != nil {
 		http.Error(w, "Error getting products", http.StatusInternalServerError)
 		return

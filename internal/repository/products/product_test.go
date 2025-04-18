@@ -111,7 +111,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					WillReturnError(tt.mockError)
 			}
 
-			products, err := repo.GetAll()
+			products, err := repo.GetAllProducts()
 
 			if tt.expectedError {
 				assert.Error(t, err)

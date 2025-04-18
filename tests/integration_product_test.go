@@ -114,21 +114,6 @@ func runMigrations(t *testing.T, dsn string) {
 	}
 }
 
-func insertTestProduct(t *testing.T, db *sql.DB, date *time.Time) {
-	_, err := db.Exec(`
-		INSERT INTO products (name, description, price, available, created_on)
-		VALUES (?, ?, ?, ?, ?)`,
-		"Chocolate Cake",
-		"Delicioso pastel",
-		10.5,
-		true,
-		date,
-	)
-	if err != nil {
-		t.Fatalf("Error inserting test data: %v", err)
-	}
-}
-
 func TestGetAllProducts(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupMySQLContainer(t)
@@ -159,6 +144,7 @@ func TestGetAllProducts(t *testing.T) {
 			"description": "Delicioso brownie de chocolate",
 			"price": 3.5,
 			"available": true,
+			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		},
 		{
@@ -167,6 +153,7 @@ func TestGetAllProducts(t *testing.T) {
 			"description": "Suspiros tradicionales",
 			"price": 5,
 			"available": true,
+			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		}]`,
 	)
@@ -205,6 +192,7 @@ func TestGetProductByID(t *testing.T) {
 			"description": "Delicioso brownie de chocolate",
 			"price": 3.5,
 			"available": true,
+			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		}`,
 	)

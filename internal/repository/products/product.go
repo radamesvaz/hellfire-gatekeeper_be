@@ -12,12 +12,13 @@ type ProductRepository struct {
 	DB *sql.DB
 }
 
-// GetAll gets all the products from the table
-func (r *ProductRepository) GetAll() ([]pModel.Product, error) {
+// GetAllProducts gets all the products from the table
+// TODO change name
+func (r *ProductRepository) GetAllProducts() ([]pModel.Product, error) {
 	fmt.Println(
 		"Getting all products",
 	)
-	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, created_on FROM products")
+	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, status, created_on FROM products")
 	if err != nil {
 		fmt.Printf("Error getting the products: %v", err)
 		return nil, err
@@ -33,6 +34,7 @@ func (r *ProductRepository) GetAll() ([]pModel.Product, error) {
 			&product.Description,
 			&product.Price,
 			&product.Available,
+			&product.Status,
 			&product.CreatedOn,
 		); err != nil {
 			fmt.Printf("Error mapping the products: %v", err)
@@ -53,7 +55,7 @@ func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, er
 	product := pModel.Product{}
 
 	err := r.DB.QueryRow(
-		"SELECT id_product, name, description, price, available, created_on FROM products WHERE id_product = ?",
+		"SELECT id_product, name, description, price, available, status, created_on FROM products WHERE id_product = ?",
 		idProduct,
 	).Scan(
 		&product.ID,
@@ -61,6 +63,7 @@ func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, er
 		&product.Description,
 		&product.Price,
 		&product.Available,
+		&product.Status,
 		&product.CreatedOn,
 	)
 
@@ -82,6 +85,7 @@ func (r *ProductRepository) CreateProduct(
 	productDescription string,
 	productPrice float64,
 	available bool,
+	status string,
 ) (pModel.Product, error) {
 	fmt.Printf("Creating product: %v", productName)
 
@@ -93,22 +97,24 @@ func (r *ProductRepository) CreateProduct(
 
 	row := r.DB.QueryRow(
 		`INSERT INTO products 
-		(name, description, price, available) 
-		VALUES (?, ?, ?, ?) 
+		(name, description, price, available, status) 
+		VALUES (?, ?, ?, ?, ?) 
 		RETURNING 
 		id_product, 
 		name, 
 		description, 
 		price,
-		available, 
+		available,
+		status, 
 		created_on`,
-		productName, productDescription, productPrice, available)
+		productName, productDescription, productPrice, available, status)
 	err := row.Scan(
 		&createdProduct.ID,
 		&createdProduct.Name,
 		&createdProduct.Description,
 		&createdProduct.Price,
 		&createdProduct.Available,
+		&createdProduct.Status,
 		&createdProduct.CreatedOn,
 	)
 
@@ -118,4 +124,53 @@ func (r *ProductRepository) CreateProduct(
 
 	return createdProduct, nil
 
+}
+
+// Updating a product status
+func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.ProductStatus) error {
+	fmt.Printf(
+		"%s product status by id = %v",
+		status,
+		idProduct,
+	)
+
+	validStatus := IsValidStatus(status)
+	if !validStatus {
+		fmt.Printf("Invalid status: %v", status)
+		return errors.NewBadRequest(errors.ErrInvalidStatus)
+	}
+
+	result, err := r.DB.Exec(
+		"UPDATE products SET status = ? where id_product = ?",
+		status,
+		idProduct,
+	)
+
+	if err != nil {
+		fmt.Printf("Error updating the product status: %v", err)
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		fmt.Printf("Could not get the rows affected: %v", err)
+	}
+
+	if rows == 0 {
+		return errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	fmt.Printf("RESULT: %v", rows)
+
+	return nil
+}
+
+// Validates if the status is a valid one
+func IsValidStatus(status pModel.ProductStatus) bool {
+	switch pModel.ProductStatus(status) {
+	case pModel.StatusActive, pModel.StatusInactive, pModel.StatusDeleted:
+		return true
+	default:
+		return false
+	}
 }

@@ -19,7 +19,7 @@ func (r *ProductRepository) CreateProductHistory(
 	productDescription string,
 	productPrice float64,
 	available bool,
-	status string,
+	status pModel.ProductStatus,
 	modifiedBy int,
 	action pModel.ProductAction,
 ) error {

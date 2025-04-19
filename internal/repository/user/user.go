@@ -33,10 +33,10 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			fmt.Printf("User not found: %v", err)
-			return user, errors.ErrUserNotFound
+			return user, errors.NewNotFound(errors.ErrUserNotFound)
 		} else {
 			fmt.Printf("Could not get the user: %v", err)
-			return user, errors.ErrCouldNotGetTheUser
+			return user, errors.NewNotFound(errors.ErrCouldNotGetTheUser)
 		}
 	}
 

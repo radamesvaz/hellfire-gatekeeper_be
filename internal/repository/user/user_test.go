@@ -84,6 +84,47 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 			},
 			emailForLookup: "admin@test.com",
 		},
+		{
+			name:          "SAD PATH: user not found",
+			expectedError: true,
+			mockRows: sqlmock.NewRows([]string{
+				"id_user",
+				"id_role",
+				"name",
+				"email",
+				"password",
+				"phone",
+				"created_on",
+			}).AddRow(
+				"1",
+				"1",
+				"Admin",
+				"admin@test.com",
+				hashedPassword,
+				"55-5555",
+				createdOn,
+			).AddRow(
+				"2",
+				"2",
+				"client",
+				"client@test.com",
+				nil,
+				"55-5555",
+				createdOn,
+			),
+			mockError: errors.ErrUserNotFound,
+			expected: userModel.User{
+				ID:        1,
+				IDRole:    1,
+				Name:      "Admin",
+				Email:     "admin@test.com",
+				Password:  string(hashedPassword),
+				Phone:     "55-5555",
+				CreatedOn: createdOn,
+			},
+			emailForLookup: "nonexistent@test.com",
+			errorStatus:    404,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

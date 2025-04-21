@@ -80,18 +80,12 @@ func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, er
 }
 
 // Creating a product
-func (r *ProductRepository) CreateProduct(
-	productName string,
-	productDescription string,
-	productPrice float64,
-	available bool,
-	status pModel.ProductStatus,
-) (pModel.Product, error) {
-	fmt.Printf("Creating product: %v", productName)
+func (r *ProductRepository) CreateProduct(product pModel.Product) (pModel.Product, error) {
+	fmt.Printf("Creating product: %v", product.Name)
 
 	createdProduct := pModel.Product{}
 
-	if productName == "" || productDescription == "" || productPrice == 0 {
+	if product.Name == "" || product.Description == "" || product.Price == 0 {
 		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
 	}
 
@@ -107,7 +101,7 @@ func (r *ProductRepository) CreateProduct(
 		available,
 		status, 
 		created_on`,
-		productName, productDescription, productPrice, available, status)
+		product.Name, product.Description, product.Price, product.Available, product.Status)
 	err := row.Scan(
 		&createdProduct.ID,
 		&createdProduct.Name,
@@ -182,33 +176,26 @@ func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.
 }
 
 // Updating product
-func (r *ProductRepository) UpdateProduct(
-	idProduct uint64,
-	productName string,
-	productDescription string,
-	price float64,
-	available bool,
-	status pModel.ProductStatus,
-) error {
+func (r *ProductRepository) UpdateProduct(product pModel.Product) error {
 	fmt.Printf(
 		"Updating product status by id = %v",
-		idProduct,
+		product.ID,
 	)
 
-	validStatus := IsValidStatus(status)
+	validStatus := IsValidStatus(product.Status)
 	if !validStatus {
-		fmt.Printf("Invalid status: %v", status)
+		fmt.Printf("Invalid status: %v", product.Status)
 		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
 	result, err := r.DB.Exec(
 		"UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?",
-		productName,
-		productDescription,
-		price,
-		available,
-		status,
-		idProduct,
+		product.Name,
+		product.Description,
+		product.Price,
+		product.Available,
+		product.Status,
+		product.ID,
 	)
 
 	if err != nil {

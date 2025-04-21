@@ -51,3 +51,17 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+func GetUserIDFromContext(ctx context.Context) (int, error) {
+	claims, ok := ctx.Value(UserClaimsKey).(jwt.MapClaims)
+	if !ok {
+		return 0, fmt.Errorf("no claims found in context")
+	}
+
+	userIDFloat, ok := claims["user_id"].(float64)
+	if !ok {
+		return 0, fmt.Errorf("user_id not found or invalid type in token claims")
+	}
+
+	return int(userIDFloat), nil
+}

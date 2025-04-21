@@ -1,6 +1,7 @@
 package products
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -176,7 +177,7 @@ func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.
 }
 
 // Updating product
-func (r *ProductRepository) UpdateProduct(product pModel.Product) error {
+func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Product) error {
 	fmt.Printf(
 		"Updating product status by id = %v",
 		product.ID,

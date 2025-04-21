@@ -1,6 +1,7 @@
 package products
 
 import (
+	"context"
 	"database/sql"
 	"regexp"
 	"testing"
@@ -646,7 +647,7 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			err := repo.UpdateProduct(tt.payload)
+			err := repo.UpdateProduct(context.Background(), tt.payload)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

@@ -1,6 +1,7 @@
 package products
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -13,25 +14,16 @@ type ProductHistoryRepository struct {
 }
 
 // Creating a product
-func (r *ProductRepository) CreateProductHistory(
-	id int,
-	productName string,
-	productDescription string,
-	productPrice float64,
-	available bool,
-	status pModel.ProductStatus,
-	modifiedBy int,
-	action pModel.ProductAction,
-) error {
-	fmt.Printf("Creating product history: %v", id)
+func (r *ProductRepository) CreateProductHistory(_ context.Context, product pModel.ProductHistory) error {
+	fmt.Printf("Creating product history: %v", product.IDProduct)
 
-	if productName == "" || productDescription == "" || productPrice == 0 {
+	if product.Name == "" || product.Description == "" || product.Price == 0 {
 		return errors.NewBadRequest(errors.ErrCreatingProductHistory)
 	}
 
 	result, err := r.DB.Exec(
 		`INSERT INTO products_history (
-		id, 
+		id_product, 
 		name, 
 		description, 
 		price, 
@@ -49,14 +41,14 @@ func (r *ProductRepository) CreateProductHistory(
 		?, 
 		?, 
 		?)`,
-		id,
-		productName,
-		productDescription,
-		productPrice,
-		available,
-		status,
-		modifiedBy,
-		action,
+		product.IDProduct,
+		product.Name,
+		product.Description,
+		product.Price,
+		product.Available,
+		product.Status,
+		product.ModifiedBy,
+		product.Action,
 	)
 
 	if err != nil {

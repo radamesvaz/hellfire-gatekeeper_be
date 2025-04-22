@@ -56,11 +56,13 @@ func main() {
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 
 	// Test middleware endpoint
-	authTest := r.PathPrefix("/auth").Subrouter()
-	authTest.Use(middleware.AuthMiddleware)
-	authTest.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+	auth := r.PathPrefix("/auth").Subrouter()
+	auth.Use(middleware.AuthMiddleware)
+	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
+
+	auth.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
 
 	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
 	http.ListenAndServe(":8080", r)

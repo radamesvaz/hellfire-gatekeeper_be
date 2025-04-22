@@ -17,8 +17,10 @@ type ProductHistoryRepository struct {
 func (r *ProductRepository) CreateProductHistory(_ context.Context, product pModel.ProductHistory) error {
 	fmt.Printf("Creating product history: %v", product.IDProduct)
 
-	if product.Name == "" || product.Description == "" || product.Price == 0 {
-		return errors.NewBadRequest(errors.ErrCreatingProductHistory)
+	validStatus := IsValidStatus(product.Status)
+	if !validStatus {
+		fmt.Printf("Invalid status: %v", product.Status)
+		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
 	result, err := r.DB.Exec(
@@ -69,13 +71,3 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 	return nil
 
 }
-
-// // Validates if the status is a valid one
-// func IsValidStatus(status pModel.ProductStatus) bool {
-// 	switch pModel.ProductStatus(status) {
-// 	case pModel.StatusActive, pModel.StatusInactive, pModel.StatusDeleted:
-// 		return true
-// 	default:
-// 		return false
-// 	}
-// }

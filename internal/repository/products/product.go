@@ -81,7 +81,7 @@ func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, er
 }
 
 // Creating a product
-func (r *ProductRepository) CreateProduct(product pModel.Product) (pModel.Product, error) {
+func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Product) (pModel.Product, error) {
 	fmt.Printf("Creating product: %v", product.Name)
 
 	createdProduct := pModel.Product{}
@@ -90,55 +90,36 @@ func (r *ProductRepository) CreateProduct(product pModel.Product) (pModel.Produc
 		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
 	}
 
-	row := r.DB.QueryRow(
+	result, err := r.DB.Exec(
 		`INSERT INTO products 
 		(name, description, price, available, status) 
-		VALUES (?, ?, ?, ?, ?) 
-		RETURNING 
-		id_product, 
-		name, 
-		description, 
-		price,
-		available,
-		status, 
-		created_on`,
+		VALUES (?, ?, ?, ?, ?) `,
 		product.Name, product.Description, product.Price, product.Available, product.Status)
-	err := row.Scan(
-		&createdProduct.ID,
-		&createdProduct.Name,
-		&createdProduct.Description,
-		&createdProduct.Price,
-		&createdProduct.Available,
-		&createdProduct.Status,
-		&createdProduct.CreatedOn,
-	)
 
 	if err != nil {
+		fmt.Printf("Error creating the product: %v", err)
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
-	// TODO: change when we hace the id user on the handler
-	// errHistory := r.CreateProductHistory(
-	// 	createdProduct.ID,
-	// 	createdProduct.Name,
-	// 	createdProduct.Description,
-	// 	createdProduct.Price,
-	// 	createdProduct.Available,
-	// 	createdProduct.Status,
-	// 	1,
-	// 	pModel.ActionCreate,
-	// )
+	insertedID, err := result.LastInsertId()
+	if err != nil {
+		fmt.Printf("Error getting the last insert ID: %v", err)
+		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
+	}
 
-	// if errHistory != nil {
-	// 	fmt.Printf("Error adding the product to the history table: %v", errHistory)
-	// }
+	createdProduct.ID = uint64(insertedID)
+	createdProduct.Name = product.Name
+	createdProduct.Description = product.Description
+	createdProduct.Price = product.Price
+	createdProduct.Available = product.Available
+	createdProduct.Status = product.Status
 
 	return createdProduct, nil
 
 }
 
 // Updating a product status
-func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.ProductStatus) error {
+func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uint64, status pModel.ProductStatus) error {
 	fmt.Printf(
 		"%s product status by id = %v",
 		status,

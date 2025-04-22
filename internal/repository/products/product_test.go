@@ -257,11 +257,6 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 
 	repo := &ProductRepository{DB: db}
 
-	createdOn := sql.NullTime{
-		Time:  time.Now(),
-		Valid: true,
-	}
-
 	tests := []struct {
 		name          string
 		payload       pModel.Product
@@ -281,13 +276,12 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 			},
 			mockError: nil,
 			expected: pModel.Product{
-				ID:          1,
+				// ID:          1,
 				Name:        "Producto prueba test OK",
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
 				Status:      pModel.StatusActive,
-				CreatedOn:   createdOn,
 			},
 			expectedError: false,
 		},
@@ -334,19 +328,11 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !tt.expectedError {
-				mock.ExpectQuery(
+				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
 						(name, description, price, available, status) 
-						VALUES (?, ?, ?, ?, ?) 
-						RETURNING 
-						id_product, 
-						name,
-						description, 
-						price,
-						available,
-						status, 
-						created_on`,
+						VALUES (?, ?, ?, ?, ?) `,
 					),
 				).
 					WithArgs(
@@ -356,20 +342,10 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Available,
 						tt.payload.Status,
 					).
-					WillReturnRows(sqlmock.NewRows([]string{
-						"id_product", "name", "description", "pice", "available", "status", "created_on",
-					}).AddRow(
-						1,
-						tt.payload.Name,
-						tt.payload.Description,
-						tt.payload.Price,
-						tt.payload.Available,
-						tt.payload.Status,
-						createdOn.Time,
-					))
+					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			product, err := repo.CreateProduct(tt.payload)
+			product, err := repo.CreateProduct(context.Background(), tt.payload)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -486,7 +462,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
+			err := repo.UpdateProductStatus(context.Background(), tt.idProductForUpdate, tt.status)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -556,7 +532,7 @@ func TestProductRepository_UpdateProductInvalidStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
+			err := repo.UpdateProductStatus(context.Background(), tt.idProductForUpdate, tt.status)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

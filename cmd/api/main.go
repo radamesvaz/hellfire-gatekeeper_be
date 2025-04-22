@@ -62,8 +62,9 @@ func main() {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
 
+	auth.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
-
+	auth.HandleFunc("/products/{id}", productHandler.UpdateProductStatus).Methods("PATCH")
 	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
 	http.ListenAndServe(":8080", r)
 }

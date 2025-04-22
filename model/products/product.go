@@ -22,10 +22,22 @@ type Product struct {
 	CreatedOn   sql.NullTime  `json:"created_on"`
 }
 
+type CreateProductRequest struct {
+	Name        string        `json:"name" gorm:"not null;unique"`
+	Description string        `json:"description"`
+	Price       float64       `json:"price" gorm:"not null;check:price >= 0"`
+	Available   bool          `json:"available"`
+	Status      ProductStatus `json:"status"`
+}
+
 type UpdateProductRequest struct {
 	Name        string        `json:"name"`
 	Description string        `json:"description"`
 	Price       float64       `json:"price"`
 	Available   bool          `json:"available"`
 	Status      ProductStatus `json:"status"`
+}
+
+type UpdateProductStatusRequest struct {
+	Status ProductStatus `json:"status"`
 }

@@ -54,7 +54,8 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 	)
 
 	if err != nil {
-		return errors.NewInternalServerError(errors.ErrCreatingProduct)
+		fmt.Printf("Error creating the product in the history table: %v", err)
+		return errors.NewInternalServerError(errors.ErrCreatingProductHistory)
 	}
 
 	rows, err := result.RowsAffected()

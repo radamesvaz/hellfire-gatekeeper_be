@@ -41,7 +41,7 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := lh.AuthService.GenerateJWT(user.ID, user.IDRole, user.Email)
+	token, err := lh.AuthService.GenerateJWTPROD(user.ID, user.IDRole, user.Email)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return

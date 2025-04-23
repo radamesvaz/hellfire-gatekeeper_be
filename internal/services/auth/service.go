@@ -26,6 +26,25 @@ func (s *AuthService) GenerateJWT(
 	userID uint64,
 	roleID uint64,
 	email string,
+	secret string,
+	expMinutes int,
+) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": userID,
+		"role_id": roleID,
+		"email":   email,
+		"exp":     time.Now().Add(time.Minute * time.Duration(expMinutes)).Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
+// Generate a new JWT
+func (s *AuthService) GenerateJWTPROD(
+	userID uint64,
+	roleID uint64,
+	email string,
 ) (string, error) {
 	secret := os.Getenv("JWT_SECRET")
 	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")

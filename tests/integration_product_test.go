@@ -225,7 +225,9 @@ func TestCreateProduct(t *testing.T) {
 	authRouter.Use(middleware.AuthMiddleware)
 	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
 
-	jwt, err := auth.New().GenerateJWT(1, 1, "admin@example.com")
+	secret := "testingsecret"
+	exp := 60
+	jwt, err := auth.New().GenerateJWT(1, 1, "admin@example.com", secret, exp)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}

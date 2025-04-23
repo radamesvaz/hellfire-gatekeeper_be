@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
 	"github.com/radamesvaz/bakery-app/internal/handlers"
+	"github.com/radamesvaz/bakery-app/internal/middleware"
 	repository "github.com/radamesvaz/bakery-app/internal/repository/products"
+	"github.com/radamesvaz/bakery-app/internal/services/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -194,6 +197,57 @@ func TestGetProductByID(t *testing.T) {
 			"available": true,
 			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
+		}`,
+	)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestCreateProduct(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+	handler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	authRouter.Use(middleware.AuthMiddleware)
+	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
+
+	jwt, err := auth.New().GenerateJWT(1, 1, "admin@example.com")
+	if err != nil {
+		t.Fatalf("Error creating a JWT for integration testing: %v", err)
+	}
+
+	payload := `{
+		"name": "Pie de parchita",
+		"description": "Base de galleta maria, decorado con merengue suizo",
+		"price": 18.0,
+		"available": true,
+		"status": "active"
+	  }`
+
+	// Send the simulated request
+	req := httptest.NewRequest("POST", "/auth/products", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	expected := fmt.Sprint(
+		`{
+			"message": "Product created successfully"
 		}`,
 	)
 

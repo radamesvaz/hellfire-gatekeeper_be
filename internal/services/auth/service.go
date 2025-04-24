@@ -2,18 +2,22 @@ package auth
 
 import (
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
-type AuthService struct{}
+type AuthService struct {
+	secret     string
+	expiration int
+}
 
-func New() *AuthService {
-	return &AuthService{}
+func New(secret string, expiration int) *AuthService {
+	return &AuthService{
+		secret:     secret,
+		expiration: expiration,
+	}
 }
 
 // Comparing the hashed password to the simple password
@@ -22,45 +26,24 @@ func (s *AuthService) ComparePasswords(hashedPwd string, plainPwd string) error 
 }
 
 // Generate a new JWT
-func (s *AuthService) GenerateJWT(
-	userID uint64,
-	roleID uint64,
-	email string,
-	secret string,
-	expMinutes int,
-) (string, error) {
+func (s *AuthService) GenerateJWT(userID uint64, roleID uint64, email string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"role_id": roleID,
 		"email":   email,
-		"exp":     time.Now().Add(time.Minute * time.Duration(expMinutes)).Unix(),
+		"exp":     time.Now().Add(time.Minute * time.Duration(s.expiration)).Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+	return token.SignedString([]byte(s.secret))
 }
 
-// Generate a new JWT
-func (s *AuthService) GenerateJWTPROD(
-	userID uint64,
-	roleID uint64,
-	email string,
-) (string, error) {
-	secret := os.Getenv("JWT_SECRET")
-	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
-	expiration, err := strconv.Atoi(expMinutes)
-	if err != nil {
-		fmt.Printf("Error getting the expiration")
-		return "", err
-	}
-
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"role_id": roleID,
-		"email":   email,
-		"exp":     time.Now().Add(time.Minute * time.Duration(expiration)).Unix(),
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+// Validates the token
+func (s *AuthService) ValidateToken(tokenStr string) (*jwt.Token, error) {
+	return jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(s.secret), nil
+	})
 }

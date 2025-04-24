@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 	h "github.com/radamesvaz/bakery-app/internal/handlers"
@@ -29,6 +30,13 @@ func main() {
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")
 	dbName := os.Getenv("MYSQL_DATABASE")
+	secret := os.Getenv("JWT_SECRET")
+	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
+	exp, err := strconv.Atoi(expMinutes)
+	if err != nil {
+		fmt.Printf("could not get the expMinutes from env: %v", err)
+		panic(err)
+	}
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
 		dbUser, dbPassword, dbHost, dbPort, dbName)
@@ -43,10 +51,10 @@ func main() {
 	productHandler := &h.ProductHandler{Repo: productRepo}
 
 	userRepo := user.UserRepository{DB: db}
-	authService := authService.AuthService{}
+	authService := authService.New(secret, exp)
 	authHandler := &auth.LoginHandler{
 		UserRepo:    userRepo,
-		AuthService: authService,
+		AuthService: *authService,
 	}
 
 	r := mux.NewRouter()
@@ -57,7 +65,7 @@ func main() {
 
 	// Test middleware endpoint
 	auth := r.PathPrefix("/auth").Subrouter()
-	auth.Use(middleware.AuthMiddleware)
+	auth.Use(middleware.AuthMiddleware(authService))
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")

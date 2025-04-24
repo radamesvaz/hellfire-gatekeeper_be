@@ -222,12 +222,16 @@ func TestCreateProduct(t *testing.T) {
 	router := mux.NewRouter()
 
 	authRouter := router.PathPrefix("/auth").Subrouter()
-	authRouter.Use(middleware.AuthMiddleware)
-	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
 
 	secret := "testingsecret"
 	exp := 60
-	jwt, err := auth.New().GenerateJWT(1, 1, "admin@example.com", secret, exp)
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
+
+	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}

@@ -260,3 +260,113 @@ func TestCreateProduct(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
 }
+
+func TestUpdateProduct(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+	handler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	authRouter.HandleFunc("/products/{id}", handler.UpdateProduct).Methods("PUT")
+
+	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	if err != nil {
+		t.Fatalf("Error creating a JWT for integration testing: %v", err)
+	}
+
+	payload := `{
+		"name": "Pie de parchita - ACTUALIZADO",
+		"description": "Base de galleta maria, decorado con merengue suizo - actualizado",
+		"price": 18.0,
+		"available": true,
+		"status": "active"
+	  }`
+
+	// Send the simulated request
+	req := httptest.NewRequest("PUT", "/auth/products/1", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	expected := fmt.Sprint(
+		`{
+			"message": "Product updated successfully"
+		}`,
+	)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestDeleteProduct(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+	handler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	authRouter.HandleFunc("/products/{id}", handler.UpdateProductStatus).Methods("PATCH")
+
+	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	if err != nil {
+		t.Fatalf("Error creating a JWT for integration testing: %v", err)
+	}
+
+	payload := `{
+		"status": "deleted"
+	  }`
+
+	// Send the simulated request
+	req := httptest.NewRequest("PATCH", "/auth/products/1", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	expected := fmt.Sprint(
+		`{
+			"message": "Product updated successfully"
+		}`,
+	)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, expected, rr.Body.String())
+}

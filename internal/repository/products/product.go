@@ -1,6 +1,7 @@
 package products
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -80,70 +81,45 @@ func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, er
 }
 
 // Creating a product
-func (r *ProductRepository) CreateProduct(
-	productName string,
-	productDescription string,
-	productPrice float64,
-	available bool,
-	status pModel.ProductStatus,
-) (pModel.Product, error) {
-	fmt.Printf("Creating product: %v", productName)
+func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Product) (pModel.Product, error) {
+	fmt.Printf("Creating product: %v", product.Name)
 
 	createdProduct := pModel.Product{}
 
-	if productName == "" || productDescription == "" || productPrice == 0 {
+	if product.Name == "" || product.Description == "" || product.Price == 0 {
 		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
 	}
 
-	row := r.DB.QueryRow(
+	result, err := r.DB.Exec(
 		`INSERT INTO products 
 		(name, description, price, available, status) 
-		VALUES (?, ?, ?, ?, ?) 
-		RETURNING 
-		id_product, 
-		name, 
-		description, 
-		price,
-		available,
-		status, 
-		created_on`,
-		productName, productDescription, productPrice, available, status)
-	err := row.Scan(
-		&createdProduct.ID,
-		&createdProduct.Name,
-		&createdProduct.Description,
-		&createdProduct.Price,
-		&createdProduct.Available,
-		&createdProduct.Status,
-		&createdProduct.CreatedOn,
-	)
+		VALUES (?, ?, ?, ?, ?) `,
+		product.Name, product.Description, product.Price, product.Available, product.Status)
 
 	if err != nil {
+		fmt.Printf("Error creating the product: %v", err)
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
-	// TODO: change when we hace the id user on the handler
-	// errHistory := r.CreateProductHistory(
-	// 	createdProduct.ID,
-	// 	createdProduct.Name,
-	// 	createdProduct.Description,
-	// 	createdProduct.Price,
-	// 	createdProduct.Available,
-	// 	createdProduct.Status,
-	// 	1,
-	// 	pModel.ActionCreate,
-	// )
+	insertedID, err := result.LastInsertId()
+	if err != nil {
+		fmt.Printf("Error getting the last insert ID: %v", err)
+		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
+	}
 
-	// if errHistory != nil {
-	// 	fmt.Printf("Error adding the product to the history table: %v", errHistory)
-	// }
+	createdProduct.ID = uint64(insertedID)
+	createdProduct.Name = product.Name
+	createdProduct.Description = product.Description
+	createdProduct.Price = product.Price
+	createdProduct.Available = product.Available
+	createdProduct.Status = product.Status
 
 	return createdProduct, nil
 
 }
 
 // Updating a product status
-func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.ProductStatus) error {
+func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uint64, status pModel.ProductStatus) error {
 	fmt.Printf(
 		"%s product status by id = %v",
 		status,
@@ -182,33 +158,26 @@ func (r *ProductRepository) UpdateProductStatus(idProduct uint64, status pModel.
 }
 
 // Updating product
-func (r *ProductRepository) UpdateProduct(
-	idProduct uint64,
-	productName string,
-	productDescription string,
-	price float64,
-	available bool,
-	status pModel.ProductStatus,
-) error {
+func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Product) error {
 	fmt.Printf(
 		"Updating product status by id = %v",
-		idProduct,
+		product.ID,
 	)
 
-	validStatus := IsValidStatus(status)
+	validStatus := IsValidStatus(product.Status)
 	if !validStatus {
-		fmt.Printf("Invalid status: %v", status)
+		fmt.Printf("Invalid status: %v", product.Status)
 		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
 	result, err := r.DB.Exec(
 		"UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?",
-		productName,
-		productDescription,
-		price,
-		available,
-		status,
-		idProduct,
+		product.Name,
+		product.Description,
+		product.Price,
+		product.Available,
+		product.Status,
+		product.ID,
 	)
 
 	if err != nil {

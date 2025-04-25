@@ -3,8 +3,11 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"strconv"
 
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
+	"github.com/radamesvaz/bakery-app/internal/services/auth"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 )
 
@@ -41,7 +44,17 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := lh.AuthService.GenerateJWT(user.ID, user.IDRole, user.Email)
+	secret := os.Getenv("JWT_SECRET")
+	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
+	exp, err := strconv.Atoi(expMinutes)
+	if err != nil {
+		http.Error(w, "could not get the expMinutes from env", http.StatusInternalServerError)
+		return
+	}
+
+	authService := auth.New(secret, exp)
+
+	token, err := authService.GenerateJWT(user.ID, user.IDRole, user.Email)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return

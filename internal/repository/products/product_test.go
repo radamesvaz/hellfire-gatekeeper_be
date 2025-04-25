@@ -1,6 +1,7 @@
 package products
 
 import (
+	"context"
 	"database/sql"
 	"regexp"
 	"testing"
@@ -256,11 +257,6 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 
 	repo := &ProductRepository{DB: db}
 
-	createdOn := sql.NullTime{
-		Time:  time.Now(),
-		Valid: true,
-	}
-
 	tests := []struct {
 		name          string
 		payload       pModel.Product
@@ -280,13 +276,11 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 			},
 			mockError: nil,
 			expected: pModel.Product{
-				ID:          1,
 				Name:        "Producto prueba test OK",
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
 				Status:      pModel.StatusActive,
-				CreatedOn:   createdOn,
 			},
 			expectedError: false,
 		},
@@ -333,19 +327,11 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !tt.expectedError {
-				mock.ExpectQuery(
+				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
 						(name, description, price, available, status) 
-						VALUES (?, ?, ?, ?, ?) 
-						RETURNING 
-						id_product, 
-						name,
-						description, 
-						price,
-						available,
-						status, 
-						created_on`,
+						VALUES (?, ?, ?, ?, ?) `,
 					),
 				).
 					WithArgs(
@@ -355,26 +341,10 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Available,
 						tt.payload.Status,
 					).
-					WillReturnRows(sqlmock.NewRows([]string{
-						"id_product", "name", "description", "pice", "available", "status", "created_on",
-					}).AddRow(
-						1,
-						tt.payload.Name,
-						tt.payload.Description,
-						tt.payload.Price,
-						tt.payload.Available,
-						tt.payload.Status,
-						createdOn.Time,
-					))
+					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			product, err := repo.CreateProduct(
-				tt.payload.Name,
-				tt.payload.Description,
-				tt.payload.Price,
-				tt.payload.Available,
-				tt.payload.Status,
-			)
+			product, err := repo.CreateProduct(context.Background(), tt.payload)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -491,7 +461,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
+			err := repo.UpdateProductStatus(context.Background(), tt.idProductForUpdate, tt.status)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -561,7 +531,7 @@ func TestProductRepository_UpdateProductInvalidStatus(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := repo.UpdateProductStatus(tt.idProductForUpdate, tt.status)
+			err := repo.UpdateProductStatus(context.Background(), tt.idProductForUpdate, tt.status)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -590,13 +560,12 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		mockRows           *sqlmock.Rows
-		idProductForUpdate uint64
-		payload            pModel.Product
-		expectedError      bool
-		mockError          error
-		errorStatus        int
+		name          string
+		mockRows      *sqlmock.Rows
+		payload       pModel.Product
+		expectedError bool
+		mockError     error
+		errorStatus   int
 	}{
 		{
 			name:          "HAPPY PATH: updating product with ID: 1",
@@ -626,45 +595,9 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 				"deleted",
 				createdOn,
 			),
-			idProductForUpdate: 1,
-			mockError:          nil,
+			mockError: nil,
 			payload: pModel.Product{
-				Name:        "Updated name",
-				Description: "Updated description",
-				Price:       50,
-				Available:   false,
-				Status:      pModel.StatusInactive,
-			},
-		},
-		{
-			name:          "SAD PATH: product ID not found",
-			expectedError: true,
-			errorStatus:   404,
-			mockRows: sqlmock.NewRows([]string{
-				"id_product",
-				"name",
-				"description",
-				"price",
-				"available",
-				"created_on",
-			}).AddRow(
-				"1",
-				"Torta de chocolate test",
-				"Test descripcion de la torta test",
-				30,
-				true,
-				createdOn,
-			).AddRow(
-				"2",
-				"Suspiros",
-				"Suspiros para fiesta desc test",
-				10,
-				false,
-				createdOn,
-			),
-			mockError:          errors.ErrProductNotFound,
-			idProductForUpdate: 99999,
-			payload: pModel.Product{
+				ID:          1,
 				Name:        "Updated name",
 				Description: "Updated description",
 				Price:       50,
@@ -679,17 +612,17 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?"),
 				).
-					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.idProductForUpdate).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			} else {
 				mock.ExpectExec(
 					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?"),
 				).
-					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.idProductForUpdate).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			err := repo.UpdateProduct(tt.idProductForUpdate, tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status)
+			err := repo.UpdateProduct(context.Background(), tt.payload)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

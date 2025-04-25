@@ -1,6 +1,7 @@
 package products
 
 import (
+	"context"
 	"regexp"
 	"testing"
 
@@ -79,7 +80,7 @@ func TestProductRepository_CreateProductHistory(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products_history (
-							id, 
+							id_product, 
 							name, 
 							description, 
 							price, 
@@ -114,7 +115,7 @@ func TestProductRepository_CreateProductHistory(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products_history (
-							id, 
+							id_product, 
 							name, 
 							description, 
 							price, 
@@ -147,16 +148,7 @@ func TestProductRepository_CreateProductHistory(t *testing.T) {
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			err := repo.CreateProductHistory(
-				tt.payload.IDProduct,
-				tt.payload.Name,
-				tt.payload.Description,
-				tt.payload.Price,
-				tt.payload.Available,
-				tt.payload.Status,
-				tt.payload.ModifiedBy,
-				tt.payload.Action,
-			)
+			err := repo.CreateProductHistory(context.Background(), tt.payload)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

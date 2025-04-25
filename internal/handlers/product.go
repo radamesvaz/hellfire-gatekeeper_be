@@ -17,6 +17,7 @@ type ProductHandler struct {
 	Repo *productsRepository.ProductRepository
 }
 
+// Get all products
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 	allProducts, err := h.Repo.GetAllProducts()
 	if err != nil {
@@ -61,7 +62,7 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response)
 }
 
-// Update a product
+// Create a product - Updates the table and history table
 func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	var req pModel.CreateProductRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -69,9 +70,6 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
-
-	// Preparar la estructura actualizada
 	product := pModel.Product{
 		Name:        req.Name,
 		Description: req.Description,
@@ -80,6 +78,7 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		Status:      req.Status,
 	}
 
+	ctx := r.Context()
 	newProduct, err := h.Repo.CreateProduct(ctx, product)
 	if err != nil {
 		http.Error(w, "Failed to create product", http.StatusInternalServerError)
@@ -130,9 +129,6 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
-
-	// Preparar la estructura actualizada
 	updated := pModel.Product{
 		ID:          id,
 		Name:        req.Name,
@@ -142,6 +138,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		Status:      req.Status,
 	}
 
+	ctx := r.Context()
 	if err := h.Repo.UpdateProduct(ctx, updated); err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
@@ -192,7 +189,6 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 	}
 
 	ctx := r.Context()
-
 	if err := h.Repo.UpdateProductStatus(ctx, id, req.Status); err != nil {
 		http.Error(w, "Failed to update product status", http.StatusInternalServerError)
 		return

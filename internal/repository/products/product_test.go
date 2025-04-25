@@ -276,7 +276,6 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 			},
 			mockError: nil,
 			expected: pModel.Product{
-				// ID:          1,
 				Name:        "Producto prueba test OK",
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,

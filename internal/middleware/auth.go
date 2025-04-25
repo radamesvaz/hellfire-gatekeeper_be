@@ -43,7 +43,7 @@ func AuthMiddleware(authService auth.Service) func(http.Handler) http.Handler {
 	}
 }
 
-func GetUserIDFromContext(ctx context.Context) (int, error) {
+func GetUserIDFromContext(ctx context.Context) (uint64, error) {
 	claims, ok := ctx.Value(UserClaimsKey).(jwt.MapClaims)
 	if !ok {
 		return 0, fmt.Errorf("no claims found in context")
@@ -54,5 +54,5 @@ func GetUserIDFromContext(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("user_id not found or invalid type in token claims")
 	}
 
-	return int(userIDFloat), nil
+	return uint64(userIDFloat), nil
 }

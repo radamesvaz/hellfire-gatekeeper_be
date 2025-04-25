@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -85,26 +87,15 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := middleware.GetUserIDFromContext(ctx)
+	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
 		return
 	}
 
-	productHistory := pModel.ProductHistory{
-		IDProduct:   newProduct.ID,
-		Name:        newProduct.Name,
-		Description: newProduct.Description,
-		Price:       newProduct.Price,
-		Available:   newProduct.Available,
-		Status:      newProduct.Status,
-		ModifiedBy:  userID,
-		Action:      pModel.ActionCreate,
-	}
-
-	err = h.Repo.CreateProductHistory(ctx, productHistory)
+	err = h.UpdateHistoryTable(ctx, &product, newProduct.ID, idUser, pModel.ActionCreate)
 	if err != nil {
-		log.Printf("Warning: failed to store product history: %v", err)
+		fmt.Printf("Error creating the history record for create product :%v", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -129,7 +120,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated := pModel.Product{
+	product := pModel.Product{
 		ID:          id,
 		Name:        req.Name,
 		Description: req.Description,
@@ -139,31 +130,20 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if err := h.Repo.UpdateProduct(ctx, updated); err != nil {
+	if err := h.Repo.UpdateProduct(ctx, product); err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
 	}
 
-	userID, err := middleware.GetUserIDFromContext(ctx)
+	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
 		return
 	}
 
-	productHistory := pModel.ProductHistory{
-		IDProduct:   id,
-		Name:        req.Name,
-		Description: req.Description,
-		Price:       req.Price,
-		Available:   req.Available,
-		Status:      req.Status,
-		ModifiedBy:  userID,
-		Action:      pModel.ActionUpdate,
-	}
-
-	err = h.Repo.CreateProductHistory(ctx, productHistory)
+	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionUpdate)
 	if err != nil {
-		log.Printf("Warning: failed to store product history: %v", err)
+		fmt.Printf("Error creating the history record for create product :%v", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -194,7 +174,7 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	userID, err := middleware.GetUserIDFromContext(ctx)
+	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
 		http.Error(w, "Failed get user ID from context", http.StatusInternalServerError)
 		return
@@ -205,24 +185,9 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 		http.Error(w, errors.ErrCouldNotGetTheProduct.Error(), http.StatusInternalServerError)
 	}
 
-	productHistory := pModel.ProductHistory{
-		IDProduct:   id,
-		Name:        product.Name,
-		Description: product.Description,
-		Price:       product.Price,
-		Available:   product.Available,
-		Status:      product.Status,
-		ModifiedBy:  userID,
-		Action:      pModel.ActionUpdate,
-	}
-
-	if req.Status == pModel.StatusDeleted {
-		productHistory.Action = pModel.ActionDelete
-	}
-
-	err = h.Repo.CreateProductHistory(ctx, productHistory)
+	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionDelete)
 	if err != nil {
-		log.Printf("Warning: failed to store product history: %v", err)
+		fmt.Printf("Error creating the history record for create product :%v", err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -230,4 +195,31 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Product updated successfully",
 	})
+}
+
+// Updates the product hsitory table
+func (h *ProductHandler) UpdateHistoryTable(
+	ctx context.Context,
+	product *pModel.Product,
+	idProduct uint64,
+	idUser uint64,
+	action pModel.ProductAction,
+) error {
+	productHistory := pModel.ProductHistory{
+		IDProduct:   idProduct,
+		Name:        product.Name,
+		Description: product.Description,
+		Price:       product.Price,
+		Available:   product.Available,
+		Status:      product.Status,
+		ModifiedBy:  idUser,
+		Action:      action,
+	}
+
+	err := h.Repo.CreateProductHistory(ctx, productHistory)
+	if err != nil {
+		log.Printf("Warning: failed to store product history: %v", err)
+		return err
+	}
+	return nil
 }

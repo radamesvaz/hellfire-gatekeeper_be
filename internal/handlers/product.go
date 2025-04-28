@@ -21,7 +21,8 @@ type ProductHandler struct {
 
 // Get all products
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
-	allProducts, err := h.Repo.GetAllProducts()
+	ctx := r.Context()
+	allProducts, err := h.Repo.GetAllProducts(ctx)
 	if err != nil {
 		http.Error(w, "Error getting products", http.StatusInternalServerError)
 		return
@@ -48,7 +49,8 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	product, err := h.Repo.GetProductByID(idProduct)
+	ctx := r.Context()
+	product, err := h.Repo.GetProductByID(ctx, idProduct)
 	if err != nil {
 		if httpErr, ok := err.(*errors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -180,7 +182,7 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	product, err := h.Repo.GetProductByID(id)
+	product, err := h.Repo.GetProductByID(ctx, id)
 	if err != nil {
 		http.Error(w, errors.ErrCouldNotGetTheProduct.Error(), http.StatusInternalServerError)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
+	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,11 +23,13 @@ func TestLogin(t *testing.T) {
 
 	runMigrations(t, dsn)
 
+	authService := authService.New("testingsecret", 60)
 	repository := user.UserRepository{
 		DB: db,
 	}
 	handler := auth.LoginHandler{
-		UserRepo: repository,
+		UserRepo:    repository,
+		AuthService: *authService,
 	}
 
 	// Setup the router

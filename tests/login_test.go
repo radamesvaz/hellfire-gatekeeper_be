@@ -36,6 +36,7 @@ func TestLogin(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/login", handler.Login).Methods("POST")
 
+	//
 	payload := `{
 		"email": "admin@example.com",
 		"password": "adminpass"

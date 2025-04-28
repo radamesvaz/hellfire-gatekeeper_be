@@ -112,7 +112,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					WillReturnError(tt.mockError)
 			}
 
-			products, err := repo.GetAllProducts()
+			products, err := repo.GetAllProducts(context.Background())
 
 			if tt.expectedError {
 				assert.Error(t, err)
@@ -233,7 +233,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 					WillReturnRows(tt.mockRows)
 			}
 
-			product, err := repo.GetProductByID(tt.idProductForLookup)
+			product, err := repo.GetProductByID(context.Background(), tt.idProductForLookup)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

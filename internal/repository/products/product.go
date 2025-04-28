@@ -15,7 +15,7 @@ type ProductRepository struct {
 
 // GetAllProducts gets all the products from the table
 // TODO change name
-func (r *ProductRepository) GetAllProducts() ([]pModel.Product, error) {
+func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product, error) {
 	fmt.Println(
 		"Getting all products",
 	)
@@ -47,7 +47,7 @@ func (r *ProductRepository) GetAllProducts() ([]pModel.Product, error) {
 }
 
 // Getting a product by its ID
-func (r *ProductRepository) GetProductByID(idProduct uint64) (pModel.Product, error) {
+func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) (pModel.Product, error) {
 	fmt.Printf(
 		"Getting product by id = %v",
 		idProduct,

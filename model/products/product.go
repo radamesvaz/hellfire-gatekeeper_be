@@ -18,6 +18,7 @@ type Product struct {
 	Description string        `json:"description"`
 	Price       float64       `json:"price" gorm:"not null;check:price >= 0"`
 	Available   bool          `json:"available"`
+	Stock       uint64        `json:"stock"`
 	Status      ProductStatus `json:"status"`
 	CreatedOn   sql.NullTime  `json:"created_on"`
 }
@@ -27,6 +28,7 @@ type CreateProductRequest struct {
 	Description string        `json:"description"`
 	Price       float64       `json:"price" gorm:"not null;check:price >= 0"`
 	Available   bool          `json:"available"`
+	Stock       uint64        `json:"stock"`
 	Status      ProductStatus `json:"status"`
 }
 
@@ -35,6 +37,7 @@ type UpdateProductRequest struct {
 	Description string        `json:"description"`
 	Price       float64       `json:"price"`
 	Available   bool          `json:"available"`
+	Stock       uint64        `json:"stock"`
 	Status      ProductStatus `json:"status"`
 }
 

@@ -46,6 +46,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stock",
 				"status",
 				"created_on",
 			}),
@@ -60,6 +61,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stock",
 				"stauts",
 				"created_on",
 			}).AddRow(
@@ -68,6 +70,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				5,
 				"active",
 				createdOn,
 			).AddRow(
@@ -76,6 +79,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"Suspiros para fiesta desc test",
 				10,
 				false,
+				0,
 				"inactive",
 				createdOn,
 			),
@@ -87,6 +91,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					Description: "Test descripcion de la torta test",
 					Price:       30,
 					Available:   true,
+					Stock:       5,
 					Status:      "active",
 					CreatedOn:   createdOn,
 				},
@@ -96,6 +101,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					Description: "Suspiros para fiesta desc test",
 					Price:       10,
 					Available:   false,
+					Stock:       0,
 					Status:      "inactive",
 					CreatedOn:   createdOn,
 				},
@@ -105,10 +111,10 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.mockRows != nil {
-				mock.ExpectQuery("SELECT id_product, name, description, price, available, status, created_on FROM products").
+				mock.ExpectQuery("SELECT id_product, name, description, price, available, stock, status, created_on FROM products").
 					WillReturnRows(tt.mockRows)
 			} else {
-				mock.ExpectQuery("SELECT id_product, name, description, price, available, status, created_on FROM products").
+				mock.ExpectQuery("SELECT id_product, name, description, price, available, stock, status, created_on FROM products").
 					WillReturnError(tt.mockError)
 			}
 
@@ -160,6 +166,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stock",
 				"stauts",
 				"created_on",
 			}).AddRow(
@@ -168,6 +175,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				5,
 				"active",
 				createdOn,
 			).AddRow(
@@ -176,6 +184,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"Suspiros para fiesta desc test",
 				10,
 				false,
+				0,
 				"deleted",
 				createdOn,
 			),
@@ -186,6 +195,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				Description: "Test descripcion de la torta test",
 				Price:       30,
 				Available:   true,
+				Stock:       5,
 				Status:      "active",
 				CreatedOn:   createdOn,
 			},
@@ -199,6 +209,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stock",
 				"status",
 				"created_on",
 			}).AddRow(
@@ -207,6 +218,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				1,
 				"inactive",
 				createdOn,
 			),
@@ -221,13 +233,13 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, status, created_on FROM products WHERE id_product = ?",
+					"SELECT id_product, name, description, price, available, stock, status, created_on FROM products WHERE id_product = ?",
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, status, created_on FROM products WHERE id_product = ?",
+					"SELECT id_product, name, description, price, available, stock, status, created_on FROM products WHERE id_product = ?",
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnRows(tt.mockRows)
@@ -272,6 +284,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
+				Stock:       66,
 				Status:      pModel.StatusActive,
 			},
 			mockError: nil,
@@ -280,6 +293,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
+				Stock:       66,
 				Status:      pModel.StatusActive,
 			},
 			expectedError: false,
@@ -330,8 +344,8 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
-						(name, description, price, available, status) 
-						VALUES (?, ?, ?, ?, ?) `,
+						(name, description, price, available, stock, status) 
+						VALUES (?, ?, ?, ?, ?, ?) `,
 					),
 				).
 					WithArgs(
@@ -339,6 +353,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Description,
 						tt.payload.Price,
 						tt.payload.Available,
+						tt.expected.Stock,
 						tt.payload.Status,
 					).
 					WillReturnResult(sqlmock.NewResult(0, 1))
@@ -391,6 +406,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stock",
 				"status",
 				"created_on",
 			}).AddRow(
@@ -399,6 +415,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				3,
 				"active",
 				createdOn,
 			).AddRow(
@@ -407,6 +424,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"Suspiros para fiesta desc test",
 				10,
 				false,
+				0,
 				"deleted",
 				createdOn,
 			),
@@ -424,6 +442,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stock",
 				"created_on",
 			}).AddRow(
 				"1",
@@ -431,6 +450,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				5,
 				createdOn,
 			).AddRow(
 				"2",
@@ -438,6 +458,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"Suspiros para fiesta desc test",
 				10,
 				false,
+				0,
 				createdOn,
 			),
 			mockError:          errors.ErrProductNotFound,
@@ -576,6 +597,7 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 				"description",
 				"price",
 				"available",
+				"stock",
 				"status",
 				"created_on",
 			}).AddRow(
@@ -584,6 +606,7 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 				"Test descripcion de la torta test",
 				30,
 				true,
+				5,
 				"active",
 				createdOn,
 			).AddRow(
@@ -592,6 +615,7 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 				"Suspiros para fiesta desc test",
 				10,
 				false,
+				0,
 				"deleted",
 				createdOn,
 			),
@@ -602,6 +626,7 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 				Description: "Updated description",
 				Price:       50,
 				Available:   false,
+				Stock:       5,
 				Status:      pModel.StatusInactive,
 			},
 		},
@@ -610,15 +635,15 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?"),
+					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, stock = ?, status = ? where id_product = ?"),
 				).
-					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.payload.ID).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Stock, tt.payload.Status, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			} else {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?"),
+					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, stock = ?, status = ? where id_product = ?"),
 				).
-					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Status, tt.payload.ID).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Stock, tt.payload.Status, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 

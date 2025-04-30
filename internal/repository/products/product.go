@@ -14,12 +14,11 @@ type ProductRepository struct {
 }
 
 // GetAllProducts gets all the products from the table
-// TODO change name
 func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product, error) {
 	fmt.Println(
 		"Getting all products",
 	)
-	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, status, created_on FROM products")
+	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, stock, status, created_on FROM products")
 	if err != nil {
 		fmt.Printf("Error getting the products: %v", err)
 		return nil, err
@@ -35,6 +34,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 			&product.Description,
 			&product.Price,
 			&product.Available,
+			&product.Stock,
 			&product.Status,
 			&product.CreatedOn,
 		); err != nil {
@@ -56,7 +56,7 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 	product := pModel.Product{}
 
 	err := r.DB.QueryRow(
-		"SELECT id_product, name, description, price, available, status, created_on FROM products WHERE id_product = ?",
+		"SELECT id_product, name, description, price, available, stock, status, created_on FROM products WHERE id_product = ?",
 		idProduct,
 	).Scan(
 		&product.ID,
@@ -64,6 +64,7 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 		&product.Description,
 		&product.Price,
 		&product.Available,
+		&product.Stock,
 		&product.Status,
 		&product.CreatedOn,
 	)
@@ -92,9 +93,9 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 
 	result, err := r.DB.Exec(
 		`INSERT INTO products 
-		(name, description, price, available, status) 
-		VALUES (?, ?, ?, ?, ?) `,
-		product.Name, product.Description, product.Price, product.Available, product.Status)
+		(name, description, price, available, stock, status) 
+		VALUES (?, ?, ?, ?, ?, ?) `,
+		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status)
 
 	if err != nil {
 		fmt.Printf("Error creating the product: %v", err)
@@ -112,6 +113,7 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 	createdProduct.Description = product.Description
 	createdProduct.Price = product.Price
 	createdProduct.Available = product.Available
+	createdProduct.Stock = product.Stock
 	createdProduct.Status = product.Status
 
 	return createdProduct, nil
@@ -171,11 +173,12 @@ func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Prod
 	}
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET name = ?, description = ?, price = ?, available = ?, status = ? where id_product = ?",
+		"UPDATE products SET name = ?, description = ?, price = ?, available = ?, stock = ?, status = ? where id_product = ?",
 		product.Name,
 		product.Description,
 		product.Price,
 		product.Available,
+		product.Stock,
 		product.Status,
 		product.ID,
 	)

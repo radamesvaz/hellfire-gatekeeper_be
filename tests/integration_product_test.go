@@ -147,6 +147,7 @@ func TestGetAllProducts(t *testing.T) {
 			"description": "Delicioso brownie de chocolate",
 			"price": 3.5,
 			"available": true,
+			"stock": 6,
 			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		},
@@ -156,6 +157,7 @@ func TestGetAllProducts(t *testing.T) {
 			"description": "Suspiros tradicionales",
 			"price": 5,
 			"available": true,
+			"stock": 2,
 			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		}]`,
@@ -195,6 +197,7 @@ func TestGetProductByID(t *testing.T) {
 			"description": "Delicioso brownie de chocolate",
 			"price": 3.5,
 			"available": true,
+			"stock": 6,
 			"status": "active",
 			"created_on": "2025-04-14T10:00:00Z"
 		}`,
@@ -241,6 +244,7 @@ func TestCreateProduct(t *testing.T) {
 		"description": "Base de galleta maria, decorado con merengue suizo",
 		"price": 18.0,
 		"available": true,
+		"stock": 6,
 		"status": "active"
 	  }`
 
@@ -298,6 +302,7 @@ func TestUpdateProduct(t *testing.T) {
 		"description": "Base de galleta maria, decorado con merengue suizo - actualizado",
 		"price": 18.0,
 		"available": true,
+		"stock": 6,
 		"status": "active"
 	  }`
 

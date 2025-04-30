@@ -13,6 +13,7 @@ type ProductResponse struct {
 	Description string               `json:"description"`
 	Price       float64              `json:"price" gorm:"not null;check:price >= 0"`
 	Available   bool                 `json:"available"`
+	Stock       uint64               `json:"stock"`
 	Status      pModel.ProductStatus `json:"status"`
 	CreatedOn   *time.Time           `json:"created_on,omitempty"`
 }
@@ -25,6 +26,7 @@ func Marshal(product *pModel.Product) ProductResponse {
 		Description: product.Description,
 		Price:       product.Price,
 		Status:      product.Status,
+		Stock:       product.Stock,
 		Available:   product.Available,
 	}
 

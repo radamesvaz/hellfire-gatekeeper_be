@@ -19,6 +19,7 @@ type ProductHistory struct {
 	Description string        `json:"description"`
 	Price       float64       `json:"price" gorm:"not null;check:price >= 0"`
 	Available   bool          `json:"available"`
+	Stock       uint64        `json:"stock"`
 	Status      ProductStatus `json:"status"`
 	ModifiedOn  sql.NullTime  `json:"modified_on"`
 	ModifiedBy  uint64        `json:"modified_by"`

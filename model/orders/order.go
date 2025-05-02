@@ -1,8 +1,6 @@
 package model
 
-import (
-	"database/sql"
-)
+import "time"
 
 type OrderStatus string
 
@@ -15,13 +13,13 @@ const (
 )
 
 type Order struct {
-	ID           uint64       `json:"id_order" gorm:"primaryKey"`
-	IdUser       uint64       `json:"id_user" gorm:"not null;unique"`
-	Status       OrderStatus  `json:"status"`
-	Price        float64      `json:"total_price" gorm:"not null;check:price >= 0"`
-	Note         string       `json:"note"`
-	CreatedOn    sql.NullTime `json:"created_on"`
-	DeliveryDate sql.NullTime `json:"delivery_date"`
+	ID           uint64      `json:"id_order" gorm:"primaryKey"`
+	IdUser       uint64      `json:"id_user" gorm:"not null;unique"`
+	Status       OrderStatus `json:"status"`
+	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
+	Note         string      `json:"note"`
+	CreatedOn    time.Time   `json:"created_on"`
+	DeliveryDate time.Time   `json:"delivery_date"`
 }
 
 type OrderResponse struct {
@@ -31,6 +29,6 @@ type OrderResponse struct {
 	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
 	Note         string      `json:"note"`
 	OrderItems   []OrderItems
-	CreatedOn    sql.NullTime `json:"created_on"`
-	DeliveryDate sql.NullTime `json:"delivery_date"`
+	CreatedOn    time.Time `json:"created_on"`
+	DeliveryDate time.Time `json:"delivery_date"`
 }

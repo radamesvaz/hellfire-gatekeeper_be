@@ -24,6 +24,9 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 
 	repo := &OrderRepository{DB: db}
 
+	deliveryDate := time.Date(2025, 4, 30, 10, 0, 0, 0, time.UTC)
+	createdOn := time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC)
+
 	tests := []struct {
 		name             string
 		mockRows         *sqlmock.Rows
@@ -39,9 +42,9 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"id_order", "total_price", "status", "note", "delivery_date", "created_on", "user_name",
 				"id_order_item", "id_product", "product_name", "quantity",
 			}).
-				AddRow(1, 50.0, "pending", "note testing", "2025-04-30 10:00:00", "2025-04-25 10:00:00", "Client Example",
+				AddRow(1, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
 					1, 2, "Product A", 2).
-				AddRow(1, 50.0, "pending", "note testing", "2025-04-30 10:00:00", "2025-04-25 10:00:00", "Client Example",
+				AddRow(1, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
 					2, 1, "Product B", 3),
 			expected: oModel.OrderResponse{
 				ID:           1,
@@ -56,14 +59,14 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						ID:        1,
 						IdOrder:   1,
 						IdProduct: 2,
-						Name:      "Product B",
+						Name:      "Product A",
 						Quantity:  2,
 					},
 					{
-						ID:        1,
-						IdOrder:   2,
+						ID:        2,
+						IdOrder:   1,
 						IdProduct: 1,
-						Name:      "Product A",
+						Name:      "Product B",
 						Quantity:  3,
 					},
 				},

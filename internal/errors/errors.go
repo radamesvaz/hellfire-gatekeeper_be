@@ -3,6 +3,8 @@ package errors
 import "errors"
 
 var (
+	// General error
+	ErrDatabaseOperation = errors.New("error while executing a database operation")
 	// User Errors
 	ErrUserNotFound       = errors.New("user not found")
 	ErrCouldNotGetTheUser = errors.New("error getting the user")

@@ -42,7 +42,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 		if err == sql.ErrNoRows {
 			return order, errors.NewNotFound(errors.ErrOrderNotFound)
 		} else {
-			return order, errors.NewInternalServerError(errors.ErrOrderNotFound)
+			return order, errors.NewInternalServerError(errors.ErrDatabaseOperation)
 		}
 	}
 	defer rows.Close()
@@ -78,8 +78,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			&quantity,
 		)
 		if err != nil {
-			fmt.Errorf("Error formating the order id: %v. Error: %v", id, err)
-			return oModel.OrderResponse{}, err
+			return oModel.OrderResponse{}, fmt.Errorf("Error formating the order id: %v. Error: %w", id, err)
 		}
 
 		if firstRow {
@@ -103,7 +102,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 	}
 
 	if err = rows.Err(); err != nil {
-		return oModel.OrderResponse{}, err
+		return oModel.OrderResponse{}, fmt.Errorf("Error reading the rows for order id: %v, err: %w", id, err)
 	}
 
 	return order, nil

@@ -76,6 +76,46 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 			idOrderForLookup: 1,
 			mockError:        nil,
 		},
+		{
+			name: "SAD PATH: Order not found",
+			mockRows: sqlmock.NewRows([]string{ // change when ready 4 readability
+				"id_order", "total_price", "status", "note", "delivery_date", "created_on", "user_name",
+				"id_order_item", "id_product", "product_name", "quantity",
+			}).
+				AddRow(1, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
+					1, 2, "Product A", 2).
+				AddRow(1, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
+					2, 1, "Product B", 3),
+			expected: oModel.OrderResponse{
+				ID:           1,
+				Price:        50.0,
+				Status:       oModel.StatusPending,
+				Note:         "note testing",
+				DeliveryDate: time.Date(2025, 4, 30, 10, 0, 0, 0, time.UTC),
+				CreatedOn:    time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC),
+				User:         "Client Example",
+				OrderItems: []oModel.OrderItems{
+					{
+						ID:        1,
+						IdOrder:   1,
+						IdProduct: 2,
+						Name:      "Product A",
+						Quantity:  2,
+					},
+					{
+						ID:        2,
+						IdOrder:   1,
+						IdProduct: 1,
+						Name:      "Product B",
+						Quantity:  3,
+					},
+				},
+			},
+			expectedError:    true,
+			errorStatus:      404,
+			idOrderForLookup: 9999999,
+			mockError:        errors.ErrOrderNotFound,
+		},
 	}
 
 	for _, tt := range tests {

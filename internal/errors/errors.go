@@ -14,4 +14,6 @@ var (
 	ErrInvalidStatus          = errors.New("error invalid Status")
 	ErrUpdatingProductStatus  = errors.New("error updating the product status")
 	ErrUpdatingTheProduct     = errors.New("error updating the product")
+	// Order errors
+	ErrOrderNotFound = errors.New("error getting the order")
 )

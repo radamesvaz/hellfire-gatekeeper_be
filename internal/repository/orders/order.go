@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
@@ -33,16 +34,18 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
         INNER JOIN products p ON oi.id_product = p.id_product
         WHERE o.id_order = ?
     `
+	order := oModel.OrderResponse{}
+	order.OrderItems = []oModel.OrderItems{}
 
 	rows, err := r.DB.QueryContext(ctx, query, id)
 	if err != nil {
-		fmt.Errorf("Error getting the order by id : %v. Err: %v", id, err)
-		return oModel.OrderResponse{}, err
+		if err == sql.ErrNoRows {
+			return order, errors.NewNotFound(errors.ErrOrderNotFound)
+		} else {
+			return order, errors.NewInternalServerError(errors.ErrOrderNotFound)
+		}
 	}
 	defer rows.Close()
-
-	order := oModel.OrderResponse{}
-	order.OrderItems = []oModel.OrderItems{}
 
 	firstRow := true
 

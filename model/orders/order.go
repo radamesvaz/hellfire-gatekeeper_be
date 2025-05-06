@@ -24,7 +24,7 @@ type Order struct {
 
 type OrderResponse struct {
 	ID           uint64      `json:"id_order" gorm:"primaryKey"`
-	User         string      `json:"id_user" gorm:"not null;unique"` // doble check
+	User         string      `json:"id_user" gorm:"not null;unique"`
 	Status       OrderStatus `json:"status"`
 	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
 	Note         string      `json:"note"`

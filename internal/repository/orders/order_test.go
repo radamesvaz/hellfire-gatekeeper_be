@@ -225,7 +225,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 	}{
 		{
 			name: "HAPPY PATH: getting an order with multiple products",
-			mockRows: sqlmock.NewRows([]string{ // change when ready 4 readability
+			mockRows: sqlmock.NewRows([]string{
 				"id_order",
 				"total_price",
 				"status",
@@ -296,9 +296,17 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 		},
 		{
 			name: "SAD PATH: Order not found",
-			mockRows: sqlmock.NewRows([]string{ // change when ready 4 readability
-				"id_order", "total_price", "status", "note", "delivery_date", "created_on", "user_name",
-				"id_order_item", "id_product", "product_name", "quantity",
+			mockRows: sqlmock.NewRows([]string{
+				"id_order",
+				"total_price",
+				"status", "note",
+				"delivery_date",
+				"created_on",
+				"user_name",
+				"id_order_item",
+				"id_product",
+				"product_name",
+				"quantity",
 			}).
 				AddRow(1, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
 					1, 2, "Product A", 2).

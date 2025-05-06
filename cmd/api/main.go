@@ -11,6 +11,7 @@ import (
 	h "github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
@@ -47,15 +48,21 @@ func main() {
 	}
 	defer db.Close()
 
+	// Product setup
 	productRepo := &productsRepository.ProductRepository{DB: db}
 	productHandler := &h.ProductHandler{Repo: productRepo}
 
+	// Auth setup
 	userRepo := user.UserRepository{DB: db}
 	authService := authService.New(secret, exp)
 	authHandler := &auth.LoginHandler{
 		UserRepo:    userRepo,
 		AuthService: *authService,
 	}
+
+	// Order setup
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := &h.OrderHandler{Repo: orderRepo}
 
 	r := mux.NewRouter()
 	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
@@ -70,9 +77,15 @@ func main() {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
 
+	// Product endpoints
 	auth.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProductStatus).Methods("PATCH")
+
+	// Order endnpoints
+	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
+	auth.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
+
 	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
 	http.ListenAndServe(":8080", r)
 }

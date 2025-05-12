@@ -213,3 +213,31 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 	return order, nil
 }
+
+func (r *OrderRepository) CreateOrder(ctx context.Context, order oModel.CreateOrderRequest) (id uint64, err error) {
+	fmt.Printf("Creating order for user: %v", order.IdUser)
+	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)`
+
+	result, err := r.DB.Exec(
+		query,
+		order.IdUser,
+		order.Price,
+		order.Status,
+		order.Note,
+		order.DeliveryDate,
+	)
+
+	if err != nil {
+		fmt.Printf("Error creating the order: %v", err)
+		return 0, errors.NewInternalServerError(errors.ErrCreatingOrder)
+	}
+
+	insertedID, err := result.LastInsertId()
+	if err != nil {
+		fmt.Printf("Error getting the last insert ID: %v", err)
+		return 0, errors.NewInternalServerError(errors.ErrGettingTheOrderID)
+	}
+
+	return uint64(insertedID), nil
+
+}

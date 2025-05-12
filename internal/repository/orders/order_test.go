@@ -409,6 +409,80 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 	}
 }
 
+func TestOrderRepository_CreateOrder(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &OrderRepository{DB: db}
+
+	deliveryDate := time.Date(2025, 4, 30, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name          string
+		orderRequest  oModel.CreateOrderRequest
+		expected      uint64
+		expectedError bool
+		errorStatus   int
+		mockError     error
+	}{
+		{
+			name:     "HAPPY PATH: creating an order",
+			expected: 666,
+			orderRequest: oModel.CreateOrderRequest{
+				IdUser:       2,
+				DeliveryDate: deliveryDate,
+				Note:         "entregar a la tarde",
+				Price:        20,
+				Status:       oModel.StatusPending,
+			},
+			expectedError: false,
+			errorStatus:   0,
+			mockError:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.expectedError {
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
+				)).WithArgs(
+					tt.orderRequest.IdUser,
+					tt.orderRequest.Price,
+					tt.orderRequest.Status,
+					tt.orderRequest.Note,
+					tt.orderRequest.DeliveryDate,
+				).WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
+			} else {
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
+				)).WithArgs(
+					tt.orderRequest.IdUser,
+					tt.orderRequest.Price,
+					oModel.StatusPending,
+					tt.orderRequest.Note,
+					tt.orderRequest.DeliveryDate,
+				).WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
+			}
+
+			orderID, err := repo.CreateOrder(context.Background(), tt.orderRequest)
+			if tt.expectedError {
+				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, orderID)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 // Validates the error to be of *HTTPError type, have the correct status and message
 func assertHTTPError(t *testing.T, err error, expectedStatus int, expectedMessage string) {
 	httpErr, ok := err.(*errors.HTTPError)

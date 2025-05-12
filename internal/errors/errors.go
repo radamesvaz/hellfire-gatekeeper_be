@@ -20,5 +20,6 @@ var (
 	ErrNoOrdersFound     = errors.New("error getting all the orders")
 	ErrOrderNotFound     = errors.New("error getting the order")
 	ErrCreatingOrder     = errors.New("error creating the order")
+	ErrCreatingOrderItem = errors.New("error creating the order item")
 	ErrGettingTheOrderID = errors.New("error getting the order ID")
 )

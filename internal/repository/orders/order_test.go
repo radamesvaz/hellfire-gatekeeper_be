@@ -483,6 +483,72 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 	}
 }
 
+func TestOrderRepository_CreateOrderItems(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &OrderRepository{DB: db}
+
+	tests := []struct {
+		name              string
+		orderItemsRequest []oModel.OrderItemRequest
+		expectedError     bool
+		errorStatus       int
+		mockError         error
+	}{
+		{
+			name: "HAPPY PATH: creating order items",
+			orderItemsRequest: []oModel.OrderItemRequest{
+				oModel.OrderItemRequest{
+					IdProduct: 1,
+					IdOrder:   1,
+					Quantity:  5,
+				},
+				oModel.OrderItemRequest{
+					IdProduct: 2,
+					IdOrder:   1,
+					Quantity:  2,
+				},
+			},
+			expectedError: false,
+			errorStatus:   0,
+			mockError:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for i, item := range tt.orderItemsRequest {
+				exec := mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO order_items (id_order, id_product, quantity) VALUES (?, ?, ?)",
+				)).WithArgs(item.IdOrder, item.IdProduct, item.Quantity)
+
+				if tt.expectedError && i == 1 {
+					exec.WillReturnError(tt.mockError)
+					break
+				} else {
+					exec.WillReturnResult(sqlmock.NewResult(1, 1))
+				}
+			}
+
+			err := repo.CreateOrderItems(context.Background(), tt.orderItemsRequest)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 // Validates the error to be of *HTTPError type, have the correct status and message
 func assertHTTPError(t *testing.T, err error, expectedStatus int, expectedMessage string) {
 	httpErr, ok := err.(*errors.HTTPError)

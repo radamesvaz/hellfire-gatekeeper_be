@@ -241,3 +241,17 @@ func (r *OrderRepository) CreateOrder(ctx context.Context, order oModel.CreateOr
 	return uint64(insertedID), nil
 
 }
+
+func (r *OrderRepository) CreateOrderItems(ctx context.Context, items []oModel.OrderItemRequest) error {
+	query := `INSERT INTO order_items (id_order, id_product, quantity) VALUES (?, ?, ?)`
+
+	for _, item := range items {
+		_, err := r.DB.ExecContext(ctx, query, item.IdOrder, item.IdProduct, item.Quantity)
+		if err != nil {
+			fmt.Printf("error inserting item (orderID: %d, productID: %d): %v", item.IdOrder, item.IdProduct, err)
+			return errors.NewInternalServerError(errors.ErrCreatingOrderItem)
+		}
+	}
+
+	return nil
+}

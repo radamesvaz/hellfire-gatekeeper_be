@@ -40,3 +40,12 @@ type CreateOrderRequest struct {
 	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
 	Status       OrderStatus `json:"status"`
 }
+
+type CreateFullOrder struct {
+	IdUser       uint64      `json:"id_user" gorm:"not null;unique"`
+	DeliveryDate time.Time   `json:"delivery_date" validate:"required,datetime=2006-01-02"`
+	Note         string      `json:"note"`
+	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
+	Status       OrderStatus `json:"status"`
+	OrderItems   []OrderItemRequest
+}

@@ -7,10 +7,13 @@ import (
 	"testing"
 	"time"
 
+	stdErrors "errors"
+
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOrderRepository_GetOrders(t *testing.T) {
@@ -409,6 +412,107 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 	}
 }
 
+func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &OrderRepository{DB: db}
+
+	deliveryDate := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name         string
+		order        oModel.CreateFullOrder
+		mockBehavior func()
+		expectError  bool
+	}{
+		{
+			name: "HAPPY PATH: everything succeeds",
+			order: oModel.CreateFullOrder{
+				IdUser:       1,
+				DeliveryDate: deliveryDate,
+				Note:         "Éxito total",
+				Price:        100.0,
+				Status:       oModel.StatusPending,
+				OrderItems: []oModel.OrderItemRequest{
+					{IdProduct: 2, Quantity: 3},
+					{IdProduct: 5, Quantity: 1},
+				},
+			},
+			mockBehavior: func() {
+				mock.ExpectBegin()
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
+				)).WithArgs(1, 100.0, oModel.StatusPending, "Éxito total", deliveryDate).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO order_items (id_order, id_product, quantity) VALUES (?, ?, ?)",
+				)).WithArgs(1, 2, 3).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO order_items (id_order, id_product, quantity) VALUES (?, ?, ?)",
+				)).WithArgs(1, 5, 1).
+					WillReturnResult(sqlmock.NewResult(2, 1))
+
+				mock.ExpectCommit()
+			},
+			expectError: false,
+		},
+		{
+			name: "SAD PATH: item insert fails, triggers rollback",
+			order: oModel.CreateFullOrder{
+				IdUser:       1,
+				DeliveryDate: deliveryDate,
+				Note:         "Este fallo es intencional",
+				Price:        100.0,
+				Status:       oModel.StatusPending,
+				OrderItems: []oModel.OrderItemRequest{
+					{IdProduct: 2, Quantity: 3},
+					{IdProduct: 99, Quantity: 1},
+				},
+			},
+			mockBehavior: func() {
+				mock.ExpectBegin()
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
+				)).WithArgs(1, 100.0, oModel.StatusPending, "Este fallo es intencional", deliveryDate).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO order_items (id_order, id_product, quantity) VALUES (?, ?, ?)",
+				)).WithArgs(1, 2, 3).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+
+				mock.ExpectExec(regexp.QuoteMeta(
+					"INSERT INTO order_items (id_order, id_product, quantity) VALUES (?, ?, ?)",
+				)).WithArgs(1, 99, 1).
+					WillReturnError(stdErrors.New("simulated item failure"))
+
+				mock.ExpectRollback()
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.mockBehavior()
+
+			err := repo.CreateOrderOrchestrator(context.Background(), tt.order)
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestOrderRepository_CreateOrder(t *testing.T) {
 	// Setting up mock
 	db, mock, err := sqlmock.New()
@@ -470,7 +574,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 				).WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
 			}
 
-			orderID, err := repo.CreateOrder(context.Background(), tt.orderRequest)
+			orderID, err := repo.CreateOrder(context.Background(), nil, tt.orderRequest)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -536,7 +640,7 @@ func TestOrderRepository_CreateOrderItems(t *testing.T) {
 				}
 			}
 
-			err := repo.CreateOrderItems(context.Background(), tt.orderItemsRequest)
+			err := repo.CreateOrderItems(context.Background(), nil, tt.orderItemsRequest)
 
 			if tt.expectedError {
 				assert.Error(t, err)

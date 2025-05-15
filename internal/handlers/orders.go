@@ -2,12 +2,15 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
+	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
 type OrderHandler struct {
@@ -49,4 +52,24 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(order)
+}
+
+// Create order creates a costumer order
+// Terminar el handler con las funciones faltantes
+func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	fmt.Print("Creating order")
+	ctx := r.Context()
+
+	// Decode the JSON from the body
+	payload := oModel.CreateOrderPayload{}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate payload fields
+	if err := v.ValidateCreateOrderPayload(payload); err != nil {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
 }

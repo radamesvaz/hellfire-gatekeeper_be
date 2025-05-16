@@ -5,6 +5,7 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,7 +27,7 @@ func (s *AuthService) ComparePasswords(hashedPwd string, plainPwd string) error 
 }
 
 // Generate a new JWT
-func (s *AuthService) GenerateJWT(userID uint64, roleID uint64, email string) (string, error) {
+func (s *AuthService) GenerateJWT(userID uint64, roleID uModel.UserRole, email string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"role_id": roleID,

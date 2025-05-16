@@ -6,6 +6,7 @@ import (
 
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 type LoginHandler struct {
@@ -32,7 +33,7 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := lh.UserRepo.GetUserByEmail(req.Email)
 	if err != nil {
-		http.Error(w, "User not found", http.StatusUnauthorized)
+		http.Error(w, "User not found", http.StatusInternalServerError)
 		return
 	}
 
@@ -41,17 +42,9 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// secret := os.Getenv("JWT_SECRET")
-	// expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
-	// exp, err := strconv.Atoi(expMinutes)
-	// if err != nil {
-	// 	http.Error(w, "could not get the expMinutes from env", http.StatusInternalServerError)
-	// 	return
-	// }
+	idRole := uModel.UserRole(user.IDRole)
 
-	// authService := auth.New(secret, exp)
-
-	token, err := lh.AuthService.GenerateJWT(user.ID, user.IDRole, user.Email)
+	token, err := lh.AuthService.GenerateJWT(user.ID, idRole, user.Email)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return

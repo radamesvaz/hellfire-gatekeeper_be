@@ -10,29 +10,29 @@ import (
 // Agregar las pruebas unitarias
 func ValidateCreateOrderPayload(payload oModel.CreateOrderPayload) error {
 	if strings.TrimSpace(payload.Name) == "" {
-		return fmt.Errorf("El campo 'name' es obligatorio")
+		return fmt.Errorf("The 'name' field is mandatory")
 	}
 	if strings.TrimSpace(payload.Email) == "" {
-		return fmt.Errorf("El campo 'email' es obligatorio")
+		return fmt.Errorf("The 'email' field is mandatory")
 	}
 	if !IsValidEmail(payload.Email) {
-		return fmt.Errorf("El campo 'email' no tiene un formato válido")
+		return fmt.Errorf("The 'email' field has no valid format")
 	}
 	if strings.TrimSpace(payload.Phone) == "" {
-		return fmt.Errorf("El campo 'phone' es obligatorio")
+		return fmt.Errorf("The 'phone' field is mandatory")
 	}
 	if strings.TrimSpace(payload.DeliveryDate) == "" {
-		return fmt.Errorf("El campo 'delivery_date' es obligatorio")
+		return fmt.Errorf("The 'delivery_date' field is mandatory")
 	}
 	if len(payload.Items) == 0 {
-		return fmt.Errorf("Debe incluir al menos un producto en 'items'")
+		return fmt.Errorf("An item must be sent for the order")
 	}
 	for i, item := range payload.Items {
 		if item.IdProduct == 0 {
-			return fmt.Errorf("El producto en la posición %d tiene un 'id_product' inválido", i)
+			return fmt.Errorf("The product at position %d has an invalid quantity", i)
 		}
 		if item.Quantity <= 0 {
-			return fmt.Errorf("El producto en la posición %d tiene una 'quantity' inválida", i)
+			return fmt.Errorf("The product at position %d has an invalid quantity", i)
 		}
 	}
 	return nil

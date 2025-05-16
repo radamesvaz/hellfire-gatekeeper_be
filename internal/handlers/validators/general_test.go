@@ -3,20 +3,32 @@ package validators
 import "testing"
 
 func TestIsValidEmail(t *testing.T) {
-	type args struct {
-		email string
-	}
 	tests := []struct {
-		name string
-		args args
-		want bool
+		name  string
+		email string
+		valid bool
 	}{
-		// TODO: Add test cases.
+		{
+			name:  "Happy path: valid email",
+			email: "validemail@gmail.com",
+			valid: true,
+		},
+		{
+			name:  "Happy path: valid email",
+			email: "invalidemail@gmail",
+			valid: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsValidEmail(tt.args.email); got != tt.want {
-				t.Errorf("IsValidEmail() = %v, want %v", got, tt.want)
+			if tt.valid {
+				if valid := IsValidEmail(tt.email); valid == false {
+					t.Errorf("expected email to be valid but got invalid")
+				}
+			} else {
+				if valid := IsValidEmail(tt.email); valid == true {
+					t.Errorf("expected email to be invalid but got valid")
+				}
 			}
 		})
 	}

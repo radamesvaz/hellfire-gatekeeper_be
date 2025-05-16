@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,11 +11,14 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
+	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 type OrderHandler struct {
-	Repo *ordersRepository.OrderRepository
+	Repo     *ordersRepository.OrderRepository
+	UserRepo *userRepo.UserRepository
 }
 
 // Get all orders
@@ -55,7 +59,6 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create order creates a costumer order
-// Terminar el handler con las funciones faltantes
 func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	fmt.Print("Creating order")
 	ctx := r.Context()
@@ -72,4 +75,37 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
 		return
 	}
+
+	// Find user or create it if not found
+	user, err := h.UserRepo.GetUserByEmail(payload.Email)
+	if err != nil {
+		if err == errors.NewNotFound(errors.ErrUserNotFound) {
+			idUser, err := h.CreateUser(ctx, payload)
+			if err != nil {
+				http.Error(w, "Error creating the user", http.StatusInternalServerError)
+				return
+			}
+			user.ID = idUser //find a cleaner way
+		} else {
+			http.Error(w, "Error getting the user", http.StatusInternalServerError)
+			return
+		}
+	}
+
+}
+
+func (h *OrderHandler) CreateUser(ctx context.Context, user oModel.CreateOrderPayload) (id uint64, err error) {
+	createUserRequest := uModel.CreateUserRequest{
+		IDRole: uModel.UserRoleClient,
+		Name:   user.Name,
+		Email:  user.Email,
+		Phone:  user.Phone,
+	}
+
+	userID, err := h.UserRepo.CreateUser(ctx, createUserRequest)
+	if err != nil {
+		return 0, fmt.Errorf("Error creating the user: %w", err)
+	}
+
+	return userID, nil
 }

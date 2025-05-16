@@ -14,6 +14,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -41,7 +42,7 @@ func TestGetAllOrders(t *testing.T) {
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -153,7 +154,7 @@ func TestGetOrderByID(t *testing.T) {
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}

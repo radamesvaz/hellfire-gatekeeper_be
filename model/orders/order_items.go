@@ -13,3 +13,8 @@ type OrderItemRequest struct {
 	IdOrder   uint64 `json:"id_order_item" gorm:"primaryKey"`
 	Quantity  uint64 `json:"quantity" validate:"required,gt=0"`
 }
+
+type CreateOrderItemInput struct {
+	IdProduct uint64 `json:"id_product"`
+	Quantity  int    `json:"quantity"`
+}

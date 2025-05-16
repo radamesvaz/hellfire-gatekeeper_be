@@ -33,6 +33,15 @@ type OrderResponse struct {
 	DeliveryDate time.Time `json:"delivery_date"`
 }
 
+type CreateOrderPayload struct {
+	Name         string                 `json:"name"`
+	Email        string                 `json:"email"`
+	Phone        string                 `json:"phone"`
+	DeliveryDate string                 `json:"delivery_date"`
+	Note         string                 `json:"note"`
+	Items        []CreateOrderItemInput `json:"items"`
+}
+
 type CreateOrderRequest struct {
 	IdUser       uint64      `json:"id_user" gorm:"not null;unique"`
 	DeliveryDate time.Time   `json:"delivery_date" validate:"required,datetime=2006-01-02"`

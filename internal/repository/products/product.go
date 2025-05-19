@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
@@ -79,6 +80,43 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 	}
 
 	return product, nil
+}
+
+// Getting multiple products product by their IDs
+func (r *ProductRepository) GetProductsByIDs(ctx context.Context, ids []uint64) ([]pModel.Product, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Generate placeholders
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, name, price, stock 
+		FROM products 
+		WHERE id IN (%s)`, strings.Join(placeholders, ","))
+
+	rows, err := r.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("error querying products: %w", err)
+	}
+	defer rows.Close()
+
+	products := []pModel.Product{}
+	for rows.Next() {
+		var p pModel.Product
+		if err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock); err != nil {
+			return nil, fmt.Errorf("error scanning product: %w", err)
+		}
+		products = append(products, p)
+	}
+
+	return products, nil
 }
 
 // Creating a product

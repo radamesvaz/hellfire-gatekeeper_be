@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
@@ -28,6 +29,12 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Validate email
+	if valid := v.IsValidEmail(req.Email); !valid {
+		http.Error(w, "Invalid Email", http.StatusBadRequest)
 		return
 	}
 

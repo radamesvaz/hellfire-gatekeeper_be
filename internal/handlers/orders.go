@@ -6,19 +6,25 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
+
+	stdErrors "errors"
 
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
+	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
+	pModel "github.com/radamesvaz/bakery-app/model/products"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 type OrderHandler struct {
-	Repo     *ordersRepository.OrderRepository
-	UserRepo *userRepo.UserRepository
+	Repo        *ordersRepository.OrderRepository
+	UserRepo    *userRepo.UserRepository
+	ProductRepo *productRepo.ProductRepository
 }
 
 // Get all orders
@@ -76,22 +82,85 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find user or create it if not found
-	user, err := h.UserRepo.GetUserByEmail(payload.Email)
+	// Date Validations
+	deliveryDate, err := time.Parse("2006-01-02", payload.DeliveryDate)
 	if err != nil {
-		if err == errors.NewNotFound(errors.ErrUserNotFound) {
-			idUser, err := h.CreateUser(ctx, payload)
-			if err != nil {
-				http.Error(w, "Error creating the user", http.StatusInternalServerError)
-				return
-			}
-			user.ID = idUser //find a cleaner way
-		} else {
-			http.Error(w, "Error getting the user", http.StatusInternalServerError)
+		http.Error(w, "'delivery_date' debe estar en formato YYYY-MM-DD", http.StatusBadRequest)
+		return
+	}
+
+	if deliveryDate.Before(time.Now()) {
+		http.Error(w, "'delivery_date' no puede ser una fecha pasada", http.StatusBadRequest)
+		return
+	}
+
+	// Find user or create it if not found
+	user, err := h.getOrCreateUser(ctx, payload)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get all of the products by their ID
+	productIDs := make([]uint64, len(payload.Items))
+	for i, item := range payload.Items {
+		productIDs[i] = item.IdProduct
+	}
+
+	products, err := h.ProductRepo.GetProductsByIDs(ctx, productIDs)
+	if err != nil {
+		http.Error(w, "error getting the products", http.StatusInternalServerError)
+		return
+	}
+
+	if len(products) != len(productIDs) {
+		http.Error(w, "there are nonexisting products", http.StatusBadRequest)
+		return
+	}
+
+	// Validate the stock of said products
+	productMap := make(map[uint64]pModel.Product)
+	for _, p := range products {
+		productMap[p.ID] = p
+	}
+
+	for _, item := range payload.Items {
+		p := productMap[item.IdProduct]
+		if p.Stock < item.Quantity {
+			http.Error(w, fmt.Sprintf("There's no stock for the product '%s'", p.Name), http.StatusBadRequest)
 			return
 		}
 	}
 
+	// Calculate the total price
+	var totalPrice float64
+
+	for _, item := range payload.Items {
+		product := productMap[item.IdProduct]
+		totalPrice += product.Price * float64(item.Quantity)
+	}
+
+	// Create the order for the orchestrator
+	order := oModel.CreateFullOrder{
+		IdUser:       user.ID,
+		DeliveryDate: deliveryDate,
+		Note:         payload.Note,
+		Price:        totalPrice,
+		Status:       oModel.StatusPending,
+		OrderItems:   mapItemsToInternalModel(payload.Items),
+	}
+
+	err = h.Repo.CreateOrderOrchestrator(ctx, order)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error calling the orderOrchestrator: '%v'", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Order created successfully",
+	})
 }
 
 func (h *OrderHandler) CreateUser(ctx context.Context, user oModel.CreateOrderPayload) (id uint64, err error) {
@@ -108,4 +177,37 @@ func (h *OrderHandler) CreateUser(ctx context.Context, user oModel.CreateOrderPa
 	}
 
 	return userID, nil
+}
+
+func (h *OrderHandler) getOrCreateUser(ctx context.Context, payload oModel.CreateOrderPayload) (*uModel.User, error) {
+	user, err := h.UserRepo.GetUserByEmail(payload.Email)
+	if err == nil {
+		return &user, nil
+	}
+
+	if err != nil && stdErrors.Is(err, errors.ErrUserNotFound) {
+		id, err := h.CreateUser(ctx, payload)
+		if err != nil {
+			return nil, fmt.Errorf("error creating user: %w", err)
+		}
+		return &uModel.User{
+			ID:    id,
+			Email: payload.Email,
+			Name:  payload.Name,
+			Phone: payload.Phone,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("error retrieving user: %w", err)
+}
+
+func mapItemsToInternalModel(input []oModel.CreateOrderItemInput) []oModel.OrderItemRequest {
+	items := make([]oModel.OrderItemRequest, len(input))
+	for i, item := range input {
+		items[i] = oModel.OrderItemRequest{
+			IdProduct: item.IdProduct,
+			Quantity:  item.Quantity,
+		}
+	}
+	return items
 }

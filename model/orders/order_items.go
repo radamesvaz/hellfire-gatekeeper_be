@@ -16,5 +16,5 @@ type OrderItemRequest struct {
 
 type CreateOrderItemInput struct {
 	IdProduct uint64 `json:"id_product"`
-	Quantity  int    `json:"quantity"`
+	Quantity  uint64 `json:"quantity"`
 }

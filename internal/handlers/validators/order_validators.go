@@ -7,7 +7,6 @@ import (
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
-// Agregar las pruebas unitarias
 func ValidateCreateOrderPayload(payload oModel.CreateOrderPayload) error {
 	if strings.TrimSpace(payload.Name) == "" {
 		return fmt.Errorf("The 'name' field is mandatory")
@@ -29,7 +28,7 @@ func ValidateCreateOrderPayload(payload oModel.CreateOrderPayload) error {
 	}
 	for i, item := range payload.Items {
 		if item.IdProduct == 0 {
-			return fmt.Errorf("The product at position %d has an invalid quantity", i)
+			return fmt.Errorf("The product at position %d has an invalid ID", i)
 		}
 		if item.Quantity <= 0 {
 			return fmt.Errorf("The product at position %d has an invalid quantity", i)

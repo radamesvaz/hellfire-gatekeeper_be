@@ -145,7 +145,8 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 
 			user, err := repo.GetUserByEmail(tt.emailForLookup)
 			if tt.expectedError {
-				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+				assert.Error(t, err)
+				assert.Equal(t, err, tt.mockError)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, user)

@@ -672,7 +672,7 @@ func TestProductRepo_GetProductsByIDs(t *testing.T) {
 		AddRow(1, "Torta Chocolate", 12.5, 5).
 		AddRow(2, "Torta Vainilla", 10.0, 3)
 
-	query := "SELECT id, name, price, stock FROM products WHERE id IN (?,?)"
+	query := "SELECT id_product, name, price, stock FROM products WHERE id_product IN (?,?)"
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs(1, 2).

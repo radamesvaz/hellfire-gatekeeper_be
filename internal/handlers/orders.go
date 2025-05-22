@@ -85,12 +85,12 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	// Date Validations
 	deliveryDate, err := time.Parse("2006-01-02", payload.DeliveryDate)
 	if err != nil {
-		http.Error(w, "'delivery_date' debe estar en formato YYYY-MM-DD", http.StatusBadRequest)
+		http.Error(w, "'delivery_date' must be in YYYY-MM-DD format", http.StatusBadRequest)
 		return
 	}
 
 	if deliveryDate.Before(time.Now()) {
-		http.Error(w, "'delivery_date' no puede ser una fecha pasada", http.StatusBadRequest)
+		http.Error(w, "'delivery_date' can't be before present date", http.StatusBadRequest)
 		return
 	}
 
@@ -185,7 +185,7 @@ func (h *OrderHandler) getOrCreateUser(ctx context.Context, payload oModel.Creat
 		return &user, nil
 	}
 
-	if err != nil && stdErrors.Is(err, errors.ErrUserNotFound) {
+	if stdErrors.Is(err, errors.ErrUserNotFound) {
 		id, err := h.CreateUser(ctx, payload)
 		if err != nil {
 			return nil, fmt.Errorf("error creating user: %w", err)

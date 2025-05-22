@@ -15,7 +15,6 @@ type UserRepository struct {
 
 func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 	fmt.Printf("Getting user by email")
-	// Add email validation
 
 	user := uModel.User{}
 
@@ -31,14 +30,13 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 		&user.Phone,
 		&user.CreatedOn,
 	)
-
 	if err != nil {
 		if err == sql.ErrNoRows {
 			fmt.Printf("User not found: %v", err)
-			return user, errors.NewNotFound(errors.ErrUserNotFound)
+			return user, errors.ErrUserNotFound
 		} else {
 			fmt.Printf("Could not get the user: %v", err)
-			return user, errors.NewNotFound(errors.ErrCouldNotGetTheUser)
+			return user, errors.ErrUserNotFound
 		}
 	}
 
@@ -47,7 +45,6 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 
 func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserRequest) (id uint64, err error) {
 	fmt.Printf("Creating user")
-	// Add email validation
 
 	query := `INSERT INTO users (id_role, name, email, password_hash, phone) VALUES (?, ?, ?, ?, ?)`
 

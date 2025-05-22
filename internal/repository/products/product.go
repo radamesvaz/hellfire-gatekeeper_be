@@ -97,9 +97,9 @@ func (r *ProductRepository) GetProductsByIDs(ctx context.Context, ids []uint64) 
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, name, price, stock 
+		SELECT id_product, name, price, stock 
 		FROM products 
-		WHERE id IN (%s)`, strings.Join(placeholders, ","))
+		WHERE id_product IN (%s)`, strings.Join(placeholders, ","))
 
 	rows, err := r.DB.QueryContext(ctx, query, args...)
 	if err != nil {

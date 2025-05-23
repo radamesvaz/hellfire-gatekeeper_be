@@ -8,6 +8,8 @@ var (
 	// User Errors
 	ErrUserNotFound       = errors.New("user not found")
 	ErrCouldNotGetTheUser = errors.New("error getting the user")
+	ErrCreatingUser       = errors.New("error creating user")
+	ErrGettingTheUserID   = errors.New("error getting the user ID")
 	// Product Errors
 	ErrProductNotFound        = errors.New("product not found")
 	ErrCouldNotGetTheProduct  = errors.New("error getting the requested product")

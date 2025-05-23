@@ -16,8 +16,8 @@ import (
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
+	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
-	pModel "github.com/radamesvaz/bakery-app/model/products"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
@@ -94,65 +94,10 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find user or create it if not found
-	user, err := h.getOrCreateUser(ctx, payload)
+	orderCreator := orderService.NewCreator(*h.Repo, *h.UserRepo, *h.ProductRepo)
+	err = orderCreator.CreateOrder(ctx, payload, deliveryDate)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Get all of the products by their ID
-	productIDs := make([]uint64, len(payload.Items))
-	for i, item := range payload.Items {
-		productIDs[i] = item.IdProduct
-	}
-
-	products, err := h.ProductRepo.GetProductsByIDs(ctx, productIDs)
-	if err != nil {
-		http.Error(w, "error getting the products", http.StatusInternalServerError)
-		return
-	}
-
-	if len(products) != len(productIDs) {
-		http.Error(w, "there are nonexisting products", http.StatusBadRequest)
-		return
-	}
-
-	// Validate the stock of said products
-	productMap := make(map[uint64]pModel.Product)
-	for _, p := range products {
-		productMap[p.ID] = p
-	}
-
-	for _, item := range payload.Items {
-		p := productMap[item.IdProduct]
-		if p.Stock < item.Quantity {
-			http.Error(w, fmt.Sprintf("There's no stock for the product '%s'", p.Name), http.StatusBadRequest)
-			return
-		}
-	}
-
-	// Calculate the total price
-	var totalPrice float64
-
-	for _, item := range payload.Items {
-		product := productMap[item.IdProduct]
-		totalPrice += product.Price * float64(item.Quantity)
-	}
-
-	// Create the order for the orchestrator
-	order := oModel.CreateFullOrder{
-		IdUser:       user.ID,
-		DeliveryDate: deliveryDate,
-		Note:         payload.Note,
-		Price:        totalPrice,
-		Status:       oModel.StatusPending,
-		OrderItems:   mapItemsToInternalModel(payload.Items),
-	}
-
-	err = h.Repo.CreateOrderOrchestrator(ctx, order)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Error calling the orderOrchestrator: '%v'", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
 		return
 	}
 

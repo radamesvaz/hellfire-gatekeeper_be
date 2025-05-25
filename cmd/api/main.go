@@ -85,6 +85,7 @@ func main() {
 	// Order endnpoints
 	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 	auth.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
+	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
 	http.ListenAndServe(":8080", r)

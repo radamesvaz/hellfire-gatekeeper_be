@@ -21,6 +21,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	repository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -234,7 +235,7 @@ func TestCreateProduct(t *testing.T) {
 
 	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
 
-	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -292,7 +293,7 @@ func TestUpdateProduct(t *testing.T) {
 
 	authRouter.HandleFunc("/products/{id}", handler.UpdateProduct).Methods("PUT")
 
-	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -350,7 +351,7 @@ func TestDeleteProduct(t *testing.T) {
 
 	authRouter.HandleFunc("/products/{id}", handler.UpdateProductStatus).Methods("PATCH")
 
-	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}

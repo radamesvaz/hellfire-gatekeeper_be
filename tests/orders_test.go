@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/golang-migrate/migrate/v4/database/mysql"
@@ -221,12 +222,14 @@ func TestCreateOrder(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
-	payload := `
+	today := time.Now()
+	deliveryDate := time.Date(2025, today.Month()+1, 5, 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`
     {
         "name": "Cliente Prueba integracion",
         "email": "clienteprueba@example.com",
         "phone": "1234567890",
-        "delivery_date": "2025-05-25",
+        "delivery_date": "%v",
         "note": "make it bright",
         "items": [
             {
@@ -235,7 +238,7 @@ func TestCreateOrder(t *testing.T) {
             }
         ]
     }
-    `
+    `, deliveryDate.Format("2006-01-02"))
 
 	// Send the simulated request
 	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))

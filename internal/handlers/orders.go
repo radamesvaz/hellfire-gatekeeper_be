@@ -1,14 +1,11 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
-
-	stdErrors "errors"
 
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/errors"
@@ -18,7 +15,6 @@ import (
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
-	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 type OrderHandler struct {
@@ -106,53 +102,4 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Order created successfully",
 	})
-}
-
-func (h *OrderHandler) CreateUser(ctx context.Context, user oModel.CreateOrderPayload) (id uint64, err error) {
-	createUserRequest := uModel.CreateUserRequest{
-		IDRole: uModel.UserRoleClient,
-		Name:   user.Name,
-		Email:  user.Email,
-		Phone:  user.Phone,
-	}
-
-	userID, err := h.UserRepo.CreateUser(ctx, createUserRequest)
-	if err != nil {
-		return 0, fmt.Errorf("Error creating the user: %w", err)
-	}
-
-	return userID, nil
-}
-
-func (h *OrderHandler) getOrCreateUser(ctx context.Context, payload oModel.CreateOrderPayload) (*uModel.User, error) {
-	user, err := h.UserRepo.GetUserByEmail(payload.Email)
-	if err == nil {
-		return &user, nil
-	}
-
-	if stdErrors.Is(err, errors.ErrUserNotFound) {
-		id, err := h.CreateUser(ctx, payload)
-		if err != nil {
-			return nil, fmt.Errorf("error creating user: %w", err)
-		}
-		return &uModel.User{
-			ID:    id,
-			Email: payload.Email,
-			Name:  payload.Name,
-			Phone: payload.Phone,
-		}, nil
-	}
-
-	return nil, fmt.Errorf("error retrieving user: %w", err)
-}
-
-func mapItemsToInternalModel(input []oModel.CreateOrderItemInput) []oModel.OrderItemRequest {
-	items := make([]oModel.OrderItemRequest, len(input))
-	for i, item := range input {
-		items[i] = oModel.OrderItemRequest{
-			IdProduct: item.IdProduct,
-			Quantity:  item.Quantity,
-		}
-	}
-	return items
 }

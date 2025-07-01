@@ -35,7 +35,7 @@ func NewCreator(
 
 func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPayload, deliveryDate time.Time) error {
 	// Find user or create it if not found
-	user, err := c.getOrCreateUser(ctx, payload)
+	user, err := c.GetOrCreateUser(ctx, payload)
 	if err != nil {
 		return fmt.Errorf("error getting or creating user: %w", err)
 	}
@@ -94,7 +94,7 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 	return nil
 }
 
-func (c *Creator) getOrCreateUser(ctx context.Context, payload oModel.CreateOrderPayload) (*uModel.User, error) {
+func (c *Creator) GetOrCreateUser(ctx context.Context, payload oModel.CreateOrderPayload) (*uModel.User, error) {
 	user, err := c.UserRepo.GetUserByEmail(payload.Email)
 	if err == nil {
 		return &user, nil

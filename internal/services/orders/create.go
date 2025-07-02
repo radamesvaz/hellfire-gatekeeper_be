@@ -17,13 +17,13 @@ import (
 
 type Creator struct {
 	OrderRepo   ordersRepository.OrderRepository
-	UserRepo    userRepo.UserRepository
+	UserRepo    userRepo.Repository
 	ProductRepo productRepo.ProductRepository
 }
 
 func NewCreator(
 	orderRepo ordersRepository.OrderRepository,
-	userRepo userRepo.UserRepository,
+	userRepo userRepo.Repository,
 	productRepo productRepo.ProductRepository,
 ) *Creator {
 	return &Creator{

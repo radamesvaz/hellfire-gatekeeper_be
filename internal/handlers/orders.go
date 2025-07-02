@@ -19,7 +19,7 @@ import (
 
 type OrderHandler struct {
 	Repo        *ordersRepository.OrderRepository
-	UserRepo    *userRepo.UserRepository
+	UserRepo    *userRepo.Repository
 	ProductRepo *productRepo.ProductRepository
 }
 

@@ -1,6 +1,7 @@
 package user
 
 import (
+	"context"
 	"database/sql"
 	"regexp"
 	"testing"
@@ -144,10 +145,91 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 
 			user, err := repo.GetUserByEmail(tt.emailForLookup)
 			if tt.expectedError {
-				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+				assert.Error(t, err)
+				assert.Equal(t, err, tt.mockError)
 			} else {
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, user)
+			}
+
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestUserRepository_CreateUser(t *testing.T) {
+	// Setting up mock
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+
+	defer db.Close()
+
+	repo := &UserRepository{DB: db}
+
+	password := "adminpass"
+
+	if err != nil {
+		panic(err)
+	}
+
+	tests := []struct {
+		name          string
+		payload       userModel.CreateUserRequest
+		mockError     error
+		expected      uint64
+		expectedError bool
+		errorStatus   int
+	}{
+		{
+			name: "HAPPY PATH: Create a user of ADMIN role",
+			payload: userModel.CreateUserRequest{
+				IDRole:   userModel.UserRoleAdmin,
+				Name:     "Test admin 1",
+				Email:    "adminemail@email.com",
+				Phone:    "55-88888",
+				Password: password,
+			},
+			mockError:     nil,
+			expectedError: false,
+			expected:      1,
+		},
+		{
+			name: "HAPPY PATH: Create a user of CLIENT role",
+			payload: userModel.CreateUserRequest{
+				IDRole: userModel.UserRoleClient,
+				Name:   "Test client 1",
+				Email:  "client@email.com",
+				Phone:  "55-88888",
+			},
+			mockError:     nil,
+			expectedError: false,
+			expected:      1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.expectedError {
+				mock.ExpectExec(
+					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES (?, ?, ?, ?, ?)"),
+				).
+					WithArgs(tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
+					WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
+			} else {
+				mock.ExpectExec(
+					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES (?, ?, ?, ?, ?)"),
+				).
+					WithArgs(tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
+					WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
+			}
+
+			userID, err := repo.CreateUser(context.Background(), tt.payload)
+			if tt.expectedError {
+				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expected, userID)
 			}
 
 			assert.NoError(t, mock.ExpectationsWereMet())

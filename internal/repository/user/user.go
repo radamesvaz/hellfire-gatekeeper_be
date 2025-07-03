@@ -13,6 +13,10 @@ type UserRepository struct {
 	DB *sql.DB
 }
 
+func NewUserRepository(db *sql.DB) Repository {
+	return &UserRepository{DB: db}
+}
+
 func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 	fmt.Printf("Getting user by email")
 

@@ -19,7 +19,7 @@ import (
 
 type OrderHandler struct {
 	Repo        *ordersRepository.OrderRepository
-	UserRepo    *userRepo.Repository
+	UserRepo    userRepo.Repository
 	ProductRepo *productRepo.ProductRepository
 }
 
@@ -90,7 +90,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orderCreator := orderService.NewCreator(*h.Repo, *h.UserRepo, *h.ProductRepo)
+	orderCreator := orderService.NewCreator(*h.Repo, h.UserRepo, *h.ProductRepo)
 	err = orderCreator.CreateOrder(ctx, payload, deliveryDate)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)

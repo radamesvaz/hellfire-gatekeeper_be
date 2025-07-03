@@ -210,7 +210,7 @@ func TestCreateOrder(t *testing.T) {
 
 	// Order setup
 	orderRepo := &ordersRepository.OrderRepository{DB: db}
-	userRepo := &userRepo.UserRepository{DB: db}
+	userRepo := userRepo.NewUserRepository(db)
 	productRepo := &productRepo.ProductRepository{DB: db}
 	orderHandler := handlers.OrderHandler{
 		Repo:        orderRepo,

@@ -13,6 +13,7 @@ import (
 type MockUserRepo struct {
 	ShouldCreate   bool
 	UserWasCreated bool
+	CreateUserErr  error
 }
 
 func (m *MockUserRepo) GetUserByEmail(email string) (uModel.User, error) {
@@ -43,4 +44,22 @@ func TestFindOrCreateUser_CreatesUserIfNotExists(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(2), user.ID)
 	assert.True(t, mockRepo.UserWasCreated)
+}
+
+func TestFindOrCreateUser_DoesNotCreateAnUser(t *testing.T) {
+	mockRepo := &MockUserRepo{ShouldCreate: false}
+	service := Creator{UserRepo: mockRepo}
+
+	ctx := context.Background()
+	input := oModel.CreateOrderPayload{
+		Name:  "Existente Cliente",
+		Email: "existente@example.com",
+		Phone: "12345678",
+	}
+
+	user, err := service.GetOrCreateUser(ctx, input)
+
+	assert.NoError(t, err)
+	assert.Equal(t, uint64(1), user.ID)
+	assert.False(t, mockRepo.UserWasCreated)
 }

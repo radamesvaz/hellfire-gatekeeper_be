@@ -62,7 +62,11 @@ func main() {
 
 	// Order setup
 	orderRepo := &ordersRepository.OrderRepository{DB: db}
-	orderHandler := &h.OrderHandler{Repo: orderRepo}
+	orderHandler := &h.OrderHandler{
+		Repo:        orderRepo,
+		UserRepo:    &userRepo,
+		ProductRepo: productRepo,
+	}
 
 	r := mux.NewRouter()
 	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")

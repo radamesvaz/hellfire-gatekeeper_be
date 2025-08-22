@@ -1,6 +1,7 @@
 package user
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -10,6 +11,10 @@ import (
 
 type UserRepository struct {
 	DB *sql.DB
+}
+
+func NewUserRepository(db *sql.DB) Repository {
+	return &UserRepository{DB: db}
 }
 
 func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
@@ -29,16 +34,44 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 		&user.Phone,
 		&user.CreatedOn,
 	)
-
 	if err != nil {
 		if err == sql.ErrNoRows {
 			fmt.Printf("User not found: %v", err)
-			return user, errors.NewNotFound(errors.ErrUserNotFound)
+			return user, errors.ErrUserNotFound
 		} else {
 			fmt.Printf("Could not get the user: %v", err)
-			return user, errors.NewNotFound(errors.ErrCouldNotGetTheUser)
+			return user, errors.ErrUserNotFound
 		}
 	}
 
 	return user, nil
+}
+
+func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserRequest) (id uint64, err error) {
+	fmt.Printf("Creating user")
+
+	query := `INSERT INTO users (id_role, name, email, password_hash, phone) VALUES (?, ?, ?, ?, ?)`
+
+	result, err := r.DB.ExecContext(
+		ctx,
+		query,
+		user.IDRole,
+		user.Name,
+		user.Email,
+		user.Password,
+		user.Phone,
+	)
+
+	if err != nil {
+		fmt.Printf("Error creating the user: %v", err)
+		return 0, errors.NewInternalServerError(errors.ErrCreatingUser)
+	}
+
+	insertedID, err := result.LastInsertId()
+	if err != nil {
+		fmt.Printf("Error getting the last insert ID: %v", err)
+		return 0, errors.NewInternalServerError(errors.ErrGettingTheUserID)
+	}
+
+	return uint64(insertedID), nil
 }

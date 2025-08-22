@@ -238,7 +238,7 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 	orderID, err := r.CreateOrder(ctx, tx, orderRequest)
 
 	if err != nil {
-		tx.Rollback() // 🔥 Esto es lo que faltaba
+		tx.Rollback()
 		return fmt.Errorf("OrderOrchestrator: Error creating the order: %w", err)
 	}
 
@@ -255,7 +255,7 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 
 	err = r.CreateOrderItems(ctx, tx, orderItems)
 	if err != nil {
-		tx.Rollback() // 🔥 Esto es lo que faltaba
+		tx.Rollback()
 		return fmt.Errorf("OrderOrchestrator: error inserting item: %w", err)
 	}
 

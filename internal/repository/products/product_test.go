@@ -11,6 +11,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestProductRepository_GetAllProducts(t *testing.T) {
@@ -657,6 +658,32 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestProductRepo_GetProductsByIDs(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+
+	ids := []uint64{1, 2}
+	rows := sqlmock.NewRows([]string{"id", "name", "price", "stock"}).
+		AddRow(1, "Torta Chocolate", 12.5, 5).
+		AddRow(2, "Torta Vainilla", 10.0, 3)
+
+	query := "SELECT id_product, name, price, stock FROM products WHERE id_product IN (?,?)"
+
+	mock.ExpectQuery(regexp.QuoteMeta(query)).
+		WithArgs(1, 2).
+		WillReturnRows(rows)
+
+	products, err := repo.GetProductsByIDs(context.Background(), ids)
+	assert.NoError(t, err)
+	assert.Len(t, products, 2)
+	assert.Equal(t, "Torta Chocolate", products[0].Name)
+	assert.Equal(t, uint64(2), products[1].ID)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // Validates the error to be of *HTTPError type, have the correct status and message

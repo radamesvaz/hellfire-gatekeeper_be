@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/golang-migrate/migrate/v4/database/mysql"
@@ -13,7 +15,10 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
+	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -41,7 +46,7 @@ func TestGetAllOrders(t *testing.T) {
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -153,7 +158,7 @@ func TestGetOrderByID(t *testing.T) {
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, 1, "admin@example.com")
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -190,6 +195,61 @@ func TestGetOrderByID(t *testing.T) {
     "created_on": "2025-04-01T10:00:00Z",
     "delivery_date": "2025-04-05T00:00:00Z"
 }`,
+	)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestCreateOrder(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	// Order setup
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	userRepo := userRepo.NewUserRepository(db)
+	productRepo := &productRepo.ProductRepository{DB: db}
+	orderHandler := handlers.OrderHandler{
+		Repo:        orderRepo,
+		UserRepo:    userRepo,
+		ProductRepo: productRepo,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	today := time.Now()
+	deliveryDate := time.Date(2025, today.Month()+1, 5, 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`
+    {
+        "name": "Cliente Prueba integracion",
+        "email": "clienteprueba@example.com",
+        "phone": "1234567890",
+        "delivery_date": "%v",
+        "note": "make it bright",
+        "items": [
+            {
+                "id_product": 1,
+                "quantity": 2
+            }
+        ]
+    }
+    `, deliveryDate.Format("2006-01-02"))
+
+	// Send the simulated request
+	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	expected := fmt.Sprint(
+		`{
+			"message": "Order created successfully"
+		}`,
 	)
 
 	assert.Equal(t, http.StatusOK, rr.Code)

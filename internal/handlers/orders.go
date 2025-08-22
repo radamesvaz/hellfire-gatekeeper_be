@@ -2,16 +2,25 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
+	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
+	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
+	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
 type OrderHandler struct {
-	Repo *ordersRepository.OrderRepository
+	Repo        *ordersRepository.OrderRepository
+	UserRepo    userRepo.Repository
+	ProductRepo *productRepo.ProductRepository
 }
 
 // Get all orders
@@ -49,4 +58,48 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(order)
+}
+
+// Create order creates a costumer order
+func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
+	fmt.Print("Creating order")
+	ctx := r.Context()
+
+	// Decode the JSON from the body
+	payload := oModel.CreateOrderPayload{}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate payload fields
+	if err := v.ValidateCreateOrderPayload(payload); err != nil {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	// Date Validations
+	deliveryDate, err := time.Parse("2006-01-02", payload.DeliveryDate)
+	if err != nil {
+		http.Error(w, "'delivery_date' must be in YYYY-MM-DD format", http.StatusBadRequest)
+		return
+	}
+
+	if deliveryDate.Before(time.Now()) {
+		http.Error(w, "'delivery_date' can't be before present date", http.StatusBadRequest)
+		return
+	}
+
+	orderCreator := orderService.NewCreator(*h.Repo, h.UserRepo, *h.ProductRepo)
+	err = orderCreator.CreateOrder(ctx, payload, deliveryDate)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Order created successfully",
+	})
 }

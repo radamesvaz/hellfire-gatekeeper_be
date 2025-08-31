@@ -1,0 +1,10 @@
+---
+description: >
+  Validar entrada en todos los endpoints.
+  Usar middleware de autenticación para rutas protegidas.
+  Hashear contraseñas con bcrypt.
+  No exponer secretos en logs ni en código.
+globs:
+  - "**/*.go"
+alwaysApply: true
+---

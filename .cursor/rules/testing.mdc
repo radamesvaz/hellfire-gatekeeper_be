@@ -1,0 +1,10 @@
+---
+description: >
+  Escribir unit tests con sqlmock para repositorios.
+  Escribir integration tests con testcontainers para flujos completos.
+  Naming convention: Test[Struct]_[Method]_[Scenario].
+  Usar testify/assert y testify/require.
+globs:
+  - "**/*_test.go"
+alwaysApply: true
+---

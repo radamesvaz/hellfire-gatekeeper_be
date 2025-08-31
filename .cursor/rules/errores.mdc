@@ -1,0 +1,9 @@
+---
+description: >
+  Usar errores personalizados definidos en internal/errors.
+  Hacer wrapping de errores con contexto: fmt.Errorf("context: %w", err).
+  En handlers, mapear errores a HTTP codes específicos.
+globs:
+  - "**/*.go"
+alwaysApply: true
+---

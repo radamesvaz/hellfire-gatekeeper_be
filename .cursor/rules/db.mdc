@@ -1,0 +1,10 @@
+---
+description: >
+  Todo cambio en el esquema debe estar respaldado por una migración.
+  Usar transacciones en operaciones complejas.
+  Mantener historial de cambios (products_history, orders_history).
+globs:
+  - "migrations/**/*.sql"
+  - "**/*.go"
+alwaysApply: true
+---

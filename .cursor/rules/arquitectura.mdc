@@ -1,0 +1,9 @@
+---
+description: 
+  Mantener la arquitectura limpia (Clean Architecture).
+  Respetar el flujo: handlers → services → repository.
+  Seguir la estructura de carpetas existente.
+globs:
+  - "**/*.go"
+alwaysApply: true
+---

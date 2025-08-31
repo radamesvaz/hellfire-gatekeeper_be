@@ -1,0 +1,8 @@
+---
+description: >
+  Usar inyección de dependencias en constructores.
+  No crear instancias directas dentro de los handlers o servicios.
+globs:
+  - "**/*.go"
+alwaysApply: true
+---

@@ -1,0 +1,9 @@
+---
+description: >
+  Usar logging estructurado en lugar de fmt.Printf.
+  Incluir contexto relevante en logs (user_id, operation, request_id).
+  Definir niveles de log: debug, info, warn, error.
+globs:
+  - "**/*.go"
+alwaysApply: true
+---

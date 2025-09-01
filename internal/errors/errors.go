@@ -24,4 +24,7 @@ var (
 	ErrCreatingOrder     = errors.New("error creating the order")
 	ErrCreatingOrderItem = errors.New("error creating the order item")
 	ErrGettingTheOrderID = errors.New("error getting the order ID")
+	// Order History Errors
+	ErrCreatingOrderHistory = errors.New("error creating order history")
+	ErrGettingOrderHistory  = errors.New("error getting order history")
 )

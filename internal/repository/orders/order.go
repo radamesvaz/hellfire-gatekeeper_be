@@ -319,3 +319,56 @@ func execerFrom(tx *sql.Tx, db *sql.DB) interface {
 	}
 	return db
 }
+
+// CreateOrderHistory creates a new order history record
+func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.OrderHistory) error {
+	fmt.Printf("Creating order history: %v", order.IDOrder)
+
+	result, err := r.DB.Exec(
+		`INSERT INTO orders_history (
+		id_order, 
+		id_user, 
+		status, 
+		total_price, 
+		note,
+		delivery_date,
+		modified_by, 
+		action
+		) 
+		VALUES (
+		?,
+		?, 
+		?, 
+		?, 
+		?,
+		?,
+		?, 
+		?)`,
+		order.IDOrder,
+		order.IdUser,
+		order.Status,
+		order.Price,
+		order.Note,
+		order.DeliveryDate,
+		order.ModifiedBy,
+		order.Action,
+	)
+
+	if err != nil {
+		fmt.Printf("Error creating the order in the history table: %v", err)
+		return errors.NewInternalServerError(errors.ErrCreatingOrderHistory)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		fmt.Printf("Could not get the rows affected: %v", err)
+	}
+
+	if rows == 0 {
+		return errors.NewNotFound(errors.ErrOrderNotFound)
+	}
+
+	fmt.Printf("RESULT: %v", rows)
+
+	return nil
+}

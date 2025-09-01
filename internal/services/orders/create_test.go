@@ -2,9 +2,10 @@ package orders
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"github.com/radamesvaz/bakery-app/internal/errors"
+	internalErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
@@ -18,14 +19,21 @@ type MockUserRepo struct {
 
 func (m *MockUserRepo) GetUserByEmail(email string) (uModel.User, error) {
 	if m.ShouldCreate {
-		return uModel.User{}, errors.ErrUserNotFound
+		return uModel.User{}, internalErrors.ErrUserNotFound
 	}
 	return uModel.User{ID: 1, Email: email}, nil
 }
 
 func (m *MockUserRepo) CreateUser(ctx context.Context, input uModel.CreateUserRequest) (uint64, error) {
+	if m.CreateUserErr != nil {
+		return 0, m.CreateUserErr
+	}
 	m.UserWasCreated = true
 	return 2, nil
+}
+
+func (m *MockUserRepo) EmailExists(email string) (bool, error) {
+	return false, nil
 }
 
 func TestFindOrCreateUser_CreatesUserIfNotExists(t *testing.T) {
@@ -42,6 +50,7 @@ func TestFindOrCreateUser_CreatesUserIfNotExists(t *testing.T) {
 	user, err := service.GetOrCreateUser(ctx, input)
 
 	assert.NoError(t, err)
+	assert.NotNil(t, user)
 	assert.Equal(t, uint64(2), user.ID)
 	assert.True(t, mockRepo.UserWasCreated)
 }
@@ -60,6 +69,28 @@ func TestFindOrCreateUser_DoesNotCreateAnUser(t *testing.T) {
 	user, err := service.GetOrCreateUser(ctx, input)
 
 	assert.NoError(t, err)
+	assert.NotNil(t, user)
 	assert.Equal(t, uint64(1), user.ID)
 	assert.False(t, mockRepo.UserWasCreated)
+}
+
+func TestFindOrCreateUser_CreateUserError(t *testing.T) {
+	mockRepo := &MockUserRepo{
+		ShouldCreate:  true,
+		CreateUserErr: errors.New("database error"),
+	}
+	service := Creator{UserRepo: mockRepo}
+
+	ctx := context.Background()
+	input := oModel.CreateOrderPayload{
+		Name:  "Error Cliente",
+		Email: "error@example.com",
+		Phone: "12345678",
+	}
+
+	user, err := service.GetOrCreateUser(ctx, input)
+
+	assert.Error(t, err)
+	assert.Nil(t, user)
+	assert.Contains(t, err.Error(), "error creating user")
 }

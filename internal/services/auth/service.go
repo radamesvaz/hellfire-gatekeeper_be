@@ -21,6 +21,15 @@ func New(secret string, expiration int) *AuthService {
 	}
 }
 
+// Hash a plain password
+func (s *AuthService) HashPassword(plainPwd string) (string, error) {
+	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(plainPwd), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashedBytes), nil
+}
+
 // Comparing the hashed password to the simple password
 func (s *AuthService) ComparePasswords(hashedPwd string, plainPwd string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hashedPwd), []byte(plainPwd))

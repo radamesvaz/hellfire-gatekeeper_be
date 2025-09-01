@@ -73,6 +73,7 @@ func main() {
 	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
 	// Auth endpoints
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
+	r.HandleFunc("/register", authHandler.Register).Methods("POST")
 
 	// Test middleware endpoint
 	auth := r.PathPrefix("/auth").Subrouter()

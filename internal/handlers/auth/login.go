@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
@@ -80,6 +81,20 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if strings.TrimSpace(req.Name) == "" {
+		http.Error(w, "Name is required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Email) == "" {
+		http.Error(w, "Email is required", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Password) == "" {
+		http.Error(w, "Password is required", http.StatusBadRequest)
 		return
 	}
 

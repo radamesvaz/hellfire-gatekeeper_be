@@ -75,3 +75,21 @@ func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserR
 
 	return uint64(insertedID), nil
 }
+
+// EmailExists checks if an email already exists in the database
+func (r *UserRepository) EmailExists(email string) (bool, error) {
+	fmt.Printf("Checking if email exists: %s", email)
+
+	var count int
+	err := r.DB.QueryRow(
+		"SELECT COUNT(*) FROM users WHERE email = ?",
+		email,
+	).Scan(&count)
+
+	if err != nil {
+		fmt.Printf("Error checking email existence: %v", err)
+		return false, errors.NewInternalServerError(errors.ErrCouldNotGetTheUser)
+	}
+
+	return count > 0, nil
+}

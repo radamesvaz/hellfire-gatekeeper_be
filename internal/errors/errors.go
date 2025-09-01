@@ -10,6 +10,9 @@ var (
 	ErrCouldNotGetTheUser = errors.New("error getting the user")
 	ErrCreatingUser       = errors.New("error creating user")
 	ErrGettingTheUserID   = errors.New("error getting the user ID")
+	ErrEmailAlreadyExists = errors.New("email already exists")
+	ErrWeakPassword       = errors.New("password does not meet security requirements")
+	ErrHashingPassword    = errors.New("error hashing password")
 	// Product Errors
 	ErrProductNotFound        = errors.New("product not found")
 	ErrCouldNotGetTheProduct  = errors.New("error getting the requested product")

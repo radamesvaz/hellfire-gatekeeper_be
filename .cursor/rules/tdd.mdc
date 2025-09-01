@@ -1,0 +1,5 @@
+---
+description: appicar TDD para las nuevas funcionalidades
+globs:
+alwaysApply: true
+---

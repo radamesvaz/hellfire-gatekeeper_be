@@ -24,8 +24,7 @@ type OrderRepository struct {
 //
 // Returns:
 // - ([]oModel.OrderResponse): A list of orders with their products.
-// - (error): If the query, scan, or row iteration fails.ppear exactly once in the returned slice,
-// with all of its products grouped correctly.
+// - (error): If the query, scan, or row iteration fails.
 func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse, error) {
 	query := `
         SELECT 
@@ -415,4 +414,25 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 	}
 
 	return histories, nil
+}
+
+// UpdateOrderStatus updates the status of an order
+func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus) error {
+	query := `UPDATE orders SET status = ? WHERE id_order = ?`
+
+	result, err := r.DB.ExecContext(ctx, query, status, orderID)
+	if err != nil {
+		return fmt.Errorf("error updating order status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFound(errors.ErrOrderNotFound)
+	}
+
+	return nil
 }

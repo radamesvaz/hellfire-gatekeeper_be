@@ -222,10 +222,10 @@ func (r *OrderRepository) CreateOrderItems(ctx context.Context, tx *sql.Tx, item
 	return r.createOrderItemTx(ctx, tx, items)
 }
 
-func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oModel.CreateFullOrder) error {
+func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oModel.CreateFullOrder) (uint64, error) {
 	tx, err := r.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("OrderOrchestrator: error starting transaction: %w", err)
+		return 0, fmt.Errorf("OrderOrchestrator: error starting transaction: %w", err)
 	}
 
 	orderRequest := oModel.CreateOrderRequest{
@@ -239,7 +239,7 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 
 	if err != nil {
 		tx.Rollback()
-		return fmt.Errorf("OrderOrchestrator: Error creating the order: %w", err)
+		return 0, fmt.Errorf("OrderOrchestrator: Error creating the order: %w", err)
 	}
 
 	orderItems := []oModel.OrderItemRequest{}
@@ -256,14 +256,14 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 	err = r.CreateOrderItems(ctx, tx, orderItems)
 	if err != nil {
 		tx.Rollback()
-		return fmt.Errorf("OrderOrchestrator: error inserting item: %w", err)
+		return 0, fmt.Errorf("OrderOrchestrator: error inserting item: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("OrderOrchestrator: error committing transaction: %w", err)
+		return 0, fmt.Errorf("OrderOrchestrator: error committing transaction: %w", err)
 	}
 
-	return nil
+	return orderID, nil
 }
 
 func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (id uint64, err error) {
@@ -371,4 +371,48 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 	fmt.Printf("RESULT: %v", rows)
 
 	return nil
+}
+
+// GetOrderHistoryByOrderID retrieves order history by order ID
+func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderHistory, error) {
+	query := `
+		SELECT id_order_history, id_order, id_user, status, total_price, note, 
+			delivery_date, modified_on, modified_by, action
+		FROM orders_history 
+		WHERE id_order = ?
+		ORDER BY modified_on DESC
+	`
+
+	rows, err := r.DB.QueryContext(ctx, query, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying order history: %w", err)
+	}
+	defer rows.Close()
+
+	var histories []oModel.OrderHistory
+	for rows.Next() {
+		var history oModel.OrderHistory
+		err := rows.Scan(
+			&history.ID,
+			&history.IDOrder,
+			&history.IdUser,
+			&history.Status,
+			&history.Price,
+			&history.Note,
+			&history.DeliveryDate,
+			&history.ModifiedOn,
+			&history.ModifiedBy,
+			&history.Action,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning order history row: %w", err)
+		}
+		histories = append(histories, history)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating order history rows: %w", err)
+	}
+
+	return histories, nil
 }

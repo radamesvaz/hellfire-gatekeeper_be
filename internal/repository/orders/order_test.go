@@ -501,7 +501,7 @@ func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.mockBehavior()
 
-			err := repo.CreateOrderOrchestrator(context.Background(), tt.order)
+			_, err := repo.CreateOrderOrchestrator(context.Background(), tt.order)
 			if tt.expectError {
 				assert.Error(t, err)
 			} else {

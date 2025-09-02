@@ -39,7 +39,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	orderID := uint64(1)
 	newStatus := oModel.StatusPreparing
 
-	// Mock order retrieval
+	// Mock order retrieval (before update)
 	existingOrder := oModel.OrderResponse{
 		ID:           orderID,
 		IdUser:       1,
@@ -51,7 +51,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 		User:         "Test User",
 		OrderItems:   []oModel.OrderItems{},
 	}
-	mockRepo.On("GetOrderByID", ctx, orderID).Return(existingOrder, nil)
+	mockRepo.On("GetOrderByID", ctx, orderID).Return(existingOrder, nil).Once()
 
 	// Mock status update
 	mockRepo.On("UpdateOrderStatus", ctx, orderID, newStatus).Return(nil)
@@ -59,11 +59,22 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	// Mock history creation
 	mockRepo.On("CreateOrderHistory", ctx, mock.AnythingOfType("model.OrderHistory")).Return(nil)
 
+	// Mock order retrieval (after update) - should return updated status
+	updatedOrder := existingOrder
+	updatedOrder.Status = newStatus
+	mockRepo.On("GetOrderByID", ctx, orderID).Return(updatedOrder, nil).Once()
+
 	// Act
 	err := statusUpdater.UpdateOrderStatus(ctx, orderID, newStatus, 1)
 
 	// Assert
 	assert.NoError(t, err)
+
+	// Verify the order was actually updated with the new status
+	actualOrder, err := statusUpdater.OrderRepo.GetOrderByID(ctx, orderID)
+	assert.NoError(t, err)
+	assert.Equal(t, newStatus, actualOrder.Status)
+
 	mockRepo.AssertExpectations(t)
 }
 

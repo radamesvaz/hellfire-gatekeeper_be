@@ -2,6 +2,7 @@ package orders
 
 import (
 	"context"
+	"database/sql"
 	stdErrors "errors"
 	"fmt"
 	"time"
@@ -86,9 +87,30 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 		OrderItems:   mapItemsToInternalModel(payload.Items),
 	}
 
-	err = c.OrderRepo.CreateOrderOrchestrator(ctx, order)
+	orderID, err := c.OrderRepo.CreateOrderOrchestrator(ctx, order)
 	if err != nil {
 		return fmt.Errorf("error creating order: %w", err)
+	}
+
+	// Create order history record
+	orderHistory := oModel.OrderHistory{
+		IDOrder: orderID,
+		IdUser:  order.IdUser,
+		Status:  order.Status,
+		Price:   order.Price,
+		Note:    order.Note,
+		DeliveryDate: sql.NullTime{
+			Time:  order.DeliveryDate,
+			Valid: !order.DeliveryDate.IsZero(),
+		},
+		ModifiedBy: order.IdUser, // The user who created the order
+		Action:     oModel.ActionCreate,
+	}
+
+	err = c.OrderRepo.CreateOrderHistory(ctx, orderHistory)
+	if err != nil {
+		// Log the error but don't fail the order creation
+		fmt.Printf("Warning: failed to create order history: %v", err)
 	}
 
 	return nil

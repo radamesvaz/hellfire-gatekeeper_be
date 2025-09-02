@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -254,4 +255,96 @@ func TestCreateOrder(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestOrderHistoryMigration(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	// Test that the orders_history table accepts 'create' action
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO orders_history (id_order, id_user, status, total_price, note, modified_by, action) 
+		VALUES (1, 1, 'pending', 20.0, 'test', 1, 'create')
+	`)
+
+	if err != nil {
+		t.Fatalf("Migration 000011 failed - orders_history table does not accept 'create' action: %v", err)
+	}
+
+	// Clean up
+	_, err = db.ExecContext(ctx, "DELETE FROM orders_history WHERE action = 'create'")
+	assert.NoError(t, err)
+}
+
+func TestCreateOrder_WithOrderHistory(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	// Order setup
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	userRepo := userRepo.NewUserRepository(db)
+	productRepo := &productRepo.ProductRepository{DB: db}
+	orderHandler := handlers.OrderHandler{
+		Repo:        orderRepo,
+		UserRepo:    userRepo,
+		ProductRepo: productRepo,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	today := time.Now()
+	deliveryDate := time.Date(2025, today.Month()+1, 5, 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`
+    {
+        "name": "Cliente Historial",
+        "email": "clientehistorial@example.com",
+        "phone": "1234567890",
+        "delivery_date": "%v",
+        "note": "test order for history",
+        "items": [
+            {
+                "id_product": 1,
+                "quantity": 1
+            }
+        ]
+    }
+    `, deliveryDate.Format("2006-01-02"))
+
+	// Send the simulated request
+	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Verify the order was created successfully
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Get the latest order ID by querying the database
+	// Since we don't know the exact ID, we'll get the max ID from orders table
+	ctx := req.Context()
+	var latestOrderID uint64
+	err := db.QueryRowContext(ctx, "SELECT MAX(id_order) FROM orders").Scan(&latestOrderID)
+	assert.NoError(t, err, "Should be able to get latest order ID")
+
+	// Verify that order history was created
+	histories, err := orderRepo.GetOrderHistoryByOrderID(ctx, latestOrderID)
+	assert.NoError(t, err, "Should be able to get order history")
+	assert.Len(t, histories, 1, "Should have exactly one history record")
+
+	// Verify history details
+	history := histories[0]
+	assert.Equal(t, latestOrderID, history.IDOrder, "History should reference correct order ID")
+	assert.Equal(t, "create", string(history.Action), "History action should be 'create'")
+	assert.Equal(t, "pending", string(history.Status), "History status should be 'pending'")
+	assert.Equal(t, "test order for history", history.Note, "History note should match order note")
+	assert.Equal(t, float64(3.5), history.Price, "History price should match order price (1 × 3.5)")
 }

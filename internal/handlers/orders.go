@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -102,4 +105,34 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Order created successfully",
 	})
+}
+
+// UpdateOrderHistoryTable updates the order history table
+func (h *OrderHandler) UpdateOrderHistoryTable(
+	ctx context.Context,
+	order *oModel.Order,
+	idOrder uint64,
+	idUser uint64,
+	action oModel.OrderAction,
+) error {
+	orderHistory := oModel.OrderHistory{
+		IDOrder: idOrder,
+		IdUser:  order.IdUser,
+		Status:  order.Status,
+		Price:   order.Price,
+		Note:    order.Note,
+		DeliveryDate: sql.NullTime{
+			Time:  order.DeliveryDate,
+			Valid: !order.DeliveryDate.IsZero(),
+		},
+		ModifiedBy: idUser,
+		Action:     action,
+	}
+
+	err := h.Repo.CreateOrderHistory(ctx, orderHistory)
+	if err != nil {
+		log.Printf("Warning: failed to store order history: %v", err)
+		return err
+	}
+	return nil
 }

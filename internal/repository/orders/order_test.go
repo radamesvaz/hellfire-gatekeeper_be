@@ -42,6 +42,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 			name: "HAPPY PATH: getting all orders",
 			mockRows: sqlmock.NewRows([]string{
 				"id_order",
+				"id_user",
 				"total_price",
 				"status",
 				"note",
@@ -55,6 +56,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 			}).
 				AddRow(
 					1,
+					2,
 					50.0,
 					"pending",
 					"note testing",
@@ -68,6 +70,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				).
 				AddRow(
 					1,
+					2,
 					50.0,
 					"pending",
 					"note testing",
@@ -79,6 +82,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					"Product B",
 					3,
 				).AddRow(
+				2,
 				2,
 				25,
 				"delivered",
@@ -94,6 +98,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 			expected: []oModel.OrderResponse{
 				{
 					ID:           1,
+					IdUser:       2,
 					Price:        50.0,
 					Status:       oModel.StatusPending,
 					Note:         "note testing",
@@ -119,6 +124,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				},
 				{
 					ID:           2,
+					IdUser:       2,
 					Price:        25,
 					Status:       oModel.StatusDelivered,
 					Note:         "note testing",
@@ -149,6 +155,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					regexp.QuoteMeta(
 						`SELECT
 						o.id_order,
+						o.id_user,
 						o.total_price,
 						o.status,
 						o.note,
@@ -171,6 +178,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					regexp.QuoteMeta(
 						`SELECT
 						o.id_order,
+						o.id_user,
 						o.total_price,
 						o.status,
 						o.note,
@@ -230,6 +238,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 			name: "HAPPY PATH: getting an order with multiple products",
 			mockRows: sqlmock.NewRows([]string{
 				"id_order",
+				"id_user",
 				"total_price",
 				"status",
 				"note",
@@ -243,6 +252,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 			}).
 				AddRow(
 					1,
+					2,
 					50.0,
 					"pending",
 					"note testing",
@@ -256,6 +266,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				).
 				AddRow(
 					1,
+					2,
 					50.0,
 					"pending",
 					"note testing",
@@ -269,6 +280,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				),
 			expected: oModel.OrderResponse{
 				ID:           1,
+				IdUser:       2,
 				Price:        50.0,
 				Status:       oModel.StatusPending,
 				Note:         "note testing",
@@ -301,6 +313,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 			name: "SAD PATH: Order not found",
 			mockRows: sqlmock.NewRows([]string{
 				"id_order",
+				"id_user",
 				"total_price",
 				"status", "note",
 				"delivery_date",
@@ -311,12 +324,13 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"product_name",
 				"quantity",
 			}).
-				AddRow(1, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
+				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
 					1, 2, "Product A", 2).
-				AddRow(1, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
+				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
 					2, 1, "Product B", 3),
 			expected: oModel.OrderResponse{
 				ID:           1,
+				IdUser:       2,
 				Price:        50.0,
 				Status:       oModel.StatusPending,
 				Note:         "note testing",
@@ -354,6 +368,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					regexp.QuoteMeta(
 						`SELECT
 						o.id_order,
+						o.id_user,
 						o.total_price,
 						o.status,
 						o.note,
@@ -378,6 +393,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					regexp.QuoteMeta(
 						`SELECT
 						o.id_order,
+						o.id_user,
 						o.total_price,
 						o.status,
 						o.note,

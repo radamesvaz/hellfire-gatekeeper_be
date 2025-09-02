@@ -95,7 +95,8 @@ func (s *StatusUpdater) validateStatusTransition(currentStatus, newStatus oModel
 
 	allowedStatuses, exists := validTransitions[currentStatus]
 	if !exists {
-		return fmt.Errorf("invalid current status: %s", currentStatus)
+		// Return a proper HTTP error instead of a generic fmt.Errorf
+		return errors.NewBadRequest(fmt.Errorf("invalid current status: %s", currentStatus))
 	}
 
 	for _, allowed := range allowedStatuses {

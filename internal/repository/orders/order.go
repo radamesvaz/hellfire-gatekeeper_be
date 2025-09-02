@@ -29,6 +29,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 	query := `
         SELECT 
             o.id_order, 
+            o.id_user,
             o.total_price, 
             o.status, 
             o.note, 
@@ -56,6 +57,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 	for rows.Next() {
 		var (
 			idOrder      uint64
+			idUser       uint64
 			totalPrice   float64
 			status       string
 			note         string
@@ -70,6 +72,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 
 		err := rows.Scan(
 			&idOrder,
+			&idUser,
 			&totalPrice,
 			&status,
 			&note,
@@ -88,6 +91,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 		if _, exists := ordersMap[idOrder]; !exists {
 			ordersMap[idOrder] = &oModel.OrderResponse{
 				ID:           idOrder,
+				IdUser:       idUser,
 				Price:        totalPrice,
 				Status:       oModel.OrderStatus(status),
 				Note:         note,
@@ -123,6 +127,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 	query := `
         SELECT 
             o.id_order, 
+            o.id_user,
             o.total_price, 
             o.status, 
             o.note, 
@@ -144,19 +149,22 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 	rows, err := r.DB.QueryContext(ctx, query, id)
 	if err != nil {
+		// Check if the error is specifically "no rows found"
 		if err == sql.ErrNoRows {
 			return order, errors.NewNotFound(errors.ErrOrderNotFound)
-		} else {
-			return order, errors.NewInternalServerError(errors.ErrDatabaseOperation)
 		}
+		return order, errors.NewInternalServerError(errors.ErrDatabaseOperation)
 	}
 	defer rows.Close()
 
 	firstRow := true
+	hasRows := false
 
 	for rows.Next() {
+		hasRows = true
 		var (
 			idOrder      uint64
+			idUser       uint64
 			totalPrice   float64
 			status       string
 			note         string
@@ -171,6 +179,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 		err := rows.Scan(
 			&idOrder,
+			&idUser,
 			&totalPrice,
 			&status,
 			&note,
@@ -188,6 +197,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 		if firstRow {
 			order.ID = idOrder
+			order.IdUser = idUser
 			order.Price = totalPrice
 			order.Status = oModel.OrderStatus(status)
 			order.Note = note
@@ -208,6 +218,11 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 	if err = rows.Err(); err != nil {
 		return oModel.OrderResponse{}, fmt.Errorf("Error reading the rows for order id: %v, err: %w", id, err)
+	}
+
+	// Check if no rows were found
+	if !hasRows {
+		return order, errors.NewNotFound(errors.ErrOrderNotFound)
 	}
 
 	return order, nil

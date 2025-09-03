@@ -136,3 +136,75 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 	}
 	return nil
 }
+
+// UpdateOrderStatus updates the status of an order
+func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idOrder, err := strconv.ParseUint(vars["id"], 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	// Decode the JSON from the body
+	var payload struct {
+		Status oModel.OrderStatus `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate status
+	if payload.Status == "" {
+		http.Error(w, "Status is required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate status enum values
+	validStatuses := []oModel.OrderStatus{
+		oModel.StatusPreparing,
+		oModel.StatusReady,
+		oModel.StatusDelivered,
+		oModel.StatusCancelled,
+	}
+
+	isValidStatus := false
+	for _, validStatus := range validStatuses {
+		if payload.Status == validStatus {
+			isValidStatus = true
+			break
+		}
+	}
+
+	if !isValidStatus {
+		http.Error(w, "Invalid status value", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Get user ID from JWT token (you'll need to implement this)
+	// For now, we'll use a placeholder
+	userID := uint64(1) // TODO: Extract from JWT token
+
+	// Create status updater service
+	statusUpdater := orderService.NewStatusUpdater(h.Repo)
+
+	// Update the order status
+	err = statusUpdater.UpdateOrderStatus(ctx, idOrder, payload.Status, userID)
+	if err != nil {
+		if httpErr, ok := err.(*errors.HTTPError); ok {
+			http.Error(w, httpErr.Error(), httpErr.StatusCode)
+			return
+		}
+		http.Error(w, fmt.Sprintf("Error updating order status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Order status updated successfully",
+	})
+}

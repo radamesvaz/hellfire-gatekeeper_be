@@ -24,12 +24,12 @@ type OrderRepository struct {
 //
 // Returns:
 // - ([]oModel.OrderResponse): A list of orders with their products.
-// - (error): If the query, scan, or row iteration fails.ppear exactly once in the returned slice,
-// with all of its products grouped correctly.
+// - (error): If the query, scan, or row iteration fails.
 func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse, error) {
 	query := `
         SELECT 
             o.id_order, 
+            o.id_user,
             o.total_price, 
             o.status, 
             o.note, 
@@ -57,6 +57,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 	for rows.Next() {
 		var (
 			idOrder      uint64
+			idUser       uint64
 			totalPrice   float64
 			status       string
 			note         string
@@ -71,6 +72,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 
 		err := rows.Scan(
 			&idOrder,
+			&idUser,
 			&totalPrice,
 			&status,
 			&note,
@@ -89,6 +91,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 		if _, exists := ordersMap[idOrder]; !exists {
 			ordersMap[idOrder] = &oModel.OrderResponse{
 				ID:           idOrder,
+				IdUser:       idUser,
 				Price:        totalPrice,
 				Status:       oModel.OrderStatus(status),
 				Note:         note,
@@ -124,6 +127,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 	query := `
         SELECT 
             o.id_order, 
+            o.id_user,
             o.total_price, 
             o.status, 
             o.note, 
@@ -145,19 +149,22 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 	rows, err := r.DB.QueryContext(ctx, query, id)
 	if err != nil {
+		// Check if the error is specifically "no rows found"
 		if err == sql.ErrNoRows {
 			return order, errors.NewNotFound(errors.ErrOrderNotFound)
-		} else {
-			return order, errors.NewInternalServerError(errors.ErrDatabaseOperation)
 		}
+		return order, errors.NewInternalServerError(errors.ErrDatabaseOperation)
 	}
 	defer rows.Close()
 
 	firstRow := true
+	hasRows := false
 
 	for rows.Next() {
+		hasRows = true
 		var (
 			idOrder      uint64
+			idUser       uint64
 			totalPrice   float64
 			status       string
 			note         string
@@ -172,6 +179,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 		err := rows.Scan(
 			&idOrder,
+			&idUser,
 			&totalPrice,
 			&status,
 			&note,
@@ -189,6 +197,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 		if firstRow {
 			order.ID = idOrder
+			order.IdUser = idUser
 			order.Price = totalPrice
 			order.Status = oModel.OrderStatus(status)
 			order.Note = note
@@ -209,6 +218,11 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 	if err = rows.Err(); err != nil {
 		return oModel.OrderResponse{}, fmt.Errorf("Error reading the rows for order id: %v, err: %w", id, err)
+	}
+
+	// Check if no rows were found
+	if !hasRows {
+		return order, errors.NewNotFound(errors.ErrOrderNotFound)
 	}
 
 	return order, nil
@@ -415,4 +429,25 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 	}
 
 	return histories, nil
+}
+
+// UpdateOrderStatus updates the status of an order
+func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus) error {
+	query := `UPDATE orders SET status = ? WHERE id_order = ?`
+
+	result, err := r.DB.ExecContext(ctx, query, status, orderID)
+	if err != nil {
+		return fmt.Errorf("error updating order status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFound(errors.ErrOrderNotFound)
+	}
+
+	return nil
 }

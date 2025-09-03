@@ -30,4 +30,8 @@ var (
 	// Order History Errors
 	ErrCreatingOrderHistory = errors.New("error creating order history")
 	ErrGettingOrderHistory  = errors.New("error getting order history")
+	// Order Status Transition Errors
+	ErrInvalidStatusTransition = NewBadRequest(errors.New("invalid status transition"))
+	ErrOrderAlreadyCancelled   = NewBadRequest(errors.New("order is already cancelled and cannot be modified"))
+	ErrOrderAlreadyDelivered   = NewBadRequest(errors.New("order is already delivered and cannot be modified"))
 )

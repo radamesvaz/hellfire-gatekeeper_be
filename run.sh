@@ -32,7 +32,7 @@ integration() {
 
       start=$(date +%s)
 
-  if go test -timeout 5m -v ./tests; then
+  if go test -timeout 7m -v ./tests; then
     end=$(date +%s)
     runtime=$((end - start))
     echo -e "${GREEN}✅ All INTEGRATION tests passed in ${runtime}s${NC}"

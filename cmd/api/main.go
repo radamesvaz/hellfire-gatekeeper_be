@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/gorilla/handlers"
 	"github.com/joho/godotenv"
 	h "github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
@@ -93,6 +94,14 @@ func main() {
 	auth.HandleFunc("/orders/{id}/status", orderHandler.UpdateOrderStatus).Methods("PATCH")
 	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
+	// CORS setup for local FE development
+	allowedOrigins := handlers.AllowedOrigins([]string{
+		"http://localhost:5173",
+		"http://localhost:3000",
+	})
+	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
+	allowedHeaders := handlers.AllowedHeaders([]string{"Authorization", "Content-Type"})
+
 	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
-	http.ListenAndServe(":8080", r)
+	http.ListenAndServe(":8080", handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders)(r))
 }

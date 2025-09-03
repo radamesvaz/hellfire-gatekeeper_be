@@ -249,3 +249,31 @@ func IsValidStatus(status pModel.ProductStatus) bool {
 		return false
 	}
 }
+
+// UpdateProductStock updates only the stock of a product
+func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint64, newStock uint64) error {
+	fmt.Printf("Updating product stock to %d for product id = %d", newStock, idProduct)
+
+	result, err := r.DB.Exec(
+		"UPDATE products SET stock = ? WHERE id_product = ?",
+		newStock,
+		idProduct,
+	)
+
+	if err != nil {
+		fmt.Printf("Error updating product stock: %v", err)
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		fmt.Printf("Could not get the rows affected: %v", err)
+	}
+
+	if rows == 0 {
+		return errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	fmt.Printf("Stock updated successfully. Rows affected: %v", rows)
+	return nil
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
+	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
@@ -184,9 +185,12 @@ func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	// Get user ID from JWT token (you'll need to implement this)
-	// For now, we'll use a placeholder
-	userID := uint64(1) // TODO: Extract from JWT token
+	// Get user ID from JWT token
+	userID, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Unauthorized: invalid token", http.StatusUnauthorized)
+		return
+	}
 
 	// Create status updater service
 	statusUpdater := orderService.NewStatusUpdater(h.Repo)

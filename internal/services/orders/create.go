@@ -16,10 +16,21 @@ import (
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
+// Interfaces for dependencies (to enable testing without DB)
+type orderCreatorRepository interface {
+	CreateOrderOrchestrator(ctx context.Context, order oModel.CreateFullOrder) (uint64, error)
+	CreateOrderHistory(ctx context.Context, order oModel.OrderHistory) error
+}
+
+type productCreatorRepository interface {
+	GetProductsByIDs(ctx context.Context, ids []uint64) ([]pModel.Product, error)
+	UpdateProductStock(ctx context.Context, idProduct uint64, newStock uint64) error
+}
+
 type Creator struct {
-	OrderRepo   ordersRepository.OrderRepository
+	OrderRepo   orderCreatorRepository
 	UserRepo    userRepo.Repository
-	ProductRepo productRepo.ProductRepository
+	ProductRepo productCreatorRepository
 }
 
 func NewCreator(
@@ -29,11 +40,12 @@ func NewCreator(
 ) *Creator {
 	return &Creator{
 		UserRepo:    userRepo,
-		ProductRepo: productRepo,
-		OrderRepo:   orderRepo,
+		ProductRepo: &productRepo,
+		OrderRepo:   &orderRepo,
 	}
 }
 
+// CreateOrder creates a costumer order
 func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPayload, deliveryDate time.Time) error {
 	// Find user or create it if not found
 	user, err := c.GetOrCreateUser(ctx, payload)
@@ -111,6 +123,18 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 	if err != nil {
 		// Log the error but don't fail the order creation
 		fmt.Printf("Warning: failed to create order history: %v", err)
+	}
+
+	// Update product stock after successful order creation
+	for _, item := range payload.Items {
+		product := productMap[item.IdProduct]
+		newStock := product.Stock - item.Quantity
+
+		err := c.ProductRepo.UpdateProductStock(ctx, product.ID, newStock)
+		if err != nil {
+			// Log the error but don't fail the order creation
+			fmt.Printf("Warning: failed to update product stock for product %d: %v", product.ID, err)
+		}
 	}
 
 	return nil

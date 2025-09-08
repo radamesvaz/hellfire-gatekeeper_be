@@ -67,8 +67,22 @@ func (s *Service) isValidImageType(file *multipart.FileHeader) bool {
 		"image/webp": true,
 	}
 
+	// Check by Content-Type first
 	contentType := file.Header.Get("Content-Type")
-	return allowedTypes[contentType]
+	if allowedTypes[contentType] {
+		return true
+	}
+
+	// Fallback: check by file extension
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowedExtensions := map[string]bool{
+		".jpg":  true,
+		".jpeg": true,
+		".png":  true,
+		".webp": true,
+	}
+
+	return allowedExtensions[ext]
 }
 
 // generateFilename generates a unique filename for the image

@@ -113,24 +113,27 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Handle images if this was a multipart request
 	if strings.Contains(contentType, "multipart/form-data") && h.ImageService != nil {
-		files := r.MultipartForm.File["images"]
-		if len(files) > 0 {
-			// Save images
-			imageURLs, err = h.ImageService.SaveProductImages(newProduct.ID, files)
-			if err != nil {
-				http.Error(w, "Failed to save images", http.StatusInternalServerError)
-				return
-			}
+		// Get files from the parsed multipart form
+		if r.MultipartForm != nil && r.MultipartForm.File != nil {
+			files := r.MultipartForm.File["images"]
+			if len(files) > 0 {
+				// Save images
+				imageURLs, err = h.ImageService.SaveProductImages(newProduct.ID, files)
+				if err != nil {
+					http.Error(w, "Failed to save images", http.StatusInternalServerError)
+					return
+				}
 
-			// Update product with image URLs
-			err = h.Repo.UpdateProductImages(ctx, newProduct.ID, imageURLs)
-			if err != nil {
-				http.Error(w, "Failed to update product images", http.StatusInternalServerError)
-				return
-			}
+				// Update product with image URLs
+				err = h.Repo.UpdateProductImages(ctx, newProduct.ID, imageURLs)
+				if err != nil {
+					http.Error(w, "Failed to update product images", http.StatusInternalServerError)
+					return
+				}
 
-			// Update the product object with image URLs
-			newProduct.ImageURLs = imageURLs
+				// Update the product object with image URLs
+				newProduct.ImageURLs = imageURLs
+			}
 		}
 	}
 

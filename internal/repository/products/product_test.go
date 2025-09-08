@@ -279,15 +279,18 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Available:   true,
 				Stock:       66,
 				Status:      pModel.StatusActive,
+				ImageURLs:   []string{},
 			},
 			mockError: nil,
 			expected: pModel.Product{
+				ID:          1,
 				Name:        "Producto prueba test OK",
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
 				Stock:       66,
 				Status:      pModel.StatusActive,
+				ImageURLs:   []string{},
 			},
 			expectedError: false,
 		},
@@ -298,6 +301,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
+				ImageURLs:   []string{},
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -311,6 +315,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "",
 				Price:       20.3,
 				Available:   true,
+				ImageURLs:   []string{},
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -324,6 +329,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       0,
 				Available:   true,
+				ImageURLs:   []string{},
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -337,8 +343,8 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
-						(name, description, price, available, stock, status) 
-						VALUES (?, ?, ?, ?, ?, ?) `,
+						(name, description, price, available, stock, status, image_urls) 
+						VALUES (?, ?, ?, ?, ?, ?, ?) `,
 					),
 				).
 					WithArgs(
@@ -348,8 +354,9 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Available,
 						tt.expected.Stock,
 						tt.payload.Status,
+						"[]", // JSON marshaled empty array for image_urls
 					).
-					WillReturnResult(sqlmock.NewResult(0, 1))
+					WillReturnResult(sqlmock.NewResult(1, 1))
 			}
 
 			product, err := repo.CreateProduct(context.Background(), tt.payload)

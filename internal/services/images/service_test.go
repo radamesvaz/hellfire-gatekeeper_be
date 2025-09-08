@@ -175,31 +175,37 @@ func TestService_isValidImageType(t *testing.T) {
 
 	tests := []struct {
 		name        string
+		filename    string
 		contentType string
 		expected    bool
 	}{
 		{
 			name:        "Valid JPEG",
+			filename:    "test.jpg",
 			contentType: "image/jpeg",
 			expected:    true,
 		},
 		{
 			name:        "Valid PNG",
+			filename:    "test.png",
 			contentType: "image/png",
 			expected:    true,
 		},
 		{
 			name:        "Valid WebP",
+			filename:    "test.webp",
 			contentType: "image/webp",
 			expected:    true,
 		},
 		{
 			name:        "Invalid text file",
+			filename:    "test.txt",
 			contentType: "text/plain",
 			expected:    false,
 		},
 		{
 			name:        "Invalid PDF",
+			filename:    "test.pdf",
 			contentType: "application/pdf",
 			expected:    false,
 		},
@@ -207,7 +213,7 @@ func TestService_isValidImageType(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileHeader := createTestFileHeader("test.jpg", tt.contentType)
+			fileHeader := createTestFileHeader(tt.filename, tt.contentType)
 			result := service.isValidImageType(fileHeader)
 			assert.Equal(t, tt.expected, result)
 		})

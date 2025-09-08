@@ -161,11 +161,18 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
 	}
 
+	// Convert imageURLs to JSON
+	imageURLsJSON, err := json.Marshal(product.ImageURLs)
+	if err != nil {
+		fmt.Printf("Error marshaling image URLs: %v", err)
+		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
+	}
+
 	result, err := r.DB.Exec(
 		`INSERT INTO products 
-		(name, description, price, available, stock, status) 
-		VALUES (?, ?, ?, ?, ?, ?) `,
-		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status)
+		(name, description, price, available, stock, status, image_urls) 
+		VALUES (?, ?, ?, ?, ?, ?, ?) `,
+		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON))
 
 	if err != nil {
 		fmt.Printf("Error creating the product: %v", err)
@@ -185,9 +192,9 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 	createdProduct.Available = product.Available
 	createdProduct.Stock = product.Stock
 	createdProduct.Status = product.Status
+	createdProduct.ImageURLs = product.ImageURLs
 
 	return createdProduct, nil
-
 }
 
 // Updating a product status
@@ -343,50 +350,4 @@ func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uin
 
 	fmt.Printf("Product images updated successfully. Rows affected: %v", rows)
 	return nil
-}
-
-// CreateProductWithImages creates a product with image URLs
-func (r *ProductRepository) CreateProductWithImages(_ context.Context, product pModel.Product, imageURLs []string) (pModel.Product, error) {
-	fmt.Printf("Creating product with images: %v", product.Name)
-
-	createdProduct := pModel.Product{}
-
-	if product.Name == "" || product.Description == "" || product.Price == 0 {
-		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
-	}
-
-	// Convert imageURLs to JSON
-	imageURLsJSON, err := json.Marshal(imageURLs)
-	if err != nil {
-		fmt.Printf("Error marshaling image URLs: %v", err)
-		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
-	}
-
-	result, err := r.DB.Exec(
-		`INSERT INTO products 
-		(name, description, price, available, stock, status, image_urls) 
-		VALUES (?, ?, ?, ?, ?, ?, ?) `,
-		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON))
-
-	if err != nil {
-		fmt.Printf("Error creating the product: %v", err)
-		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
-	}
-
-	insertedID, err := result.LastInsertId()
-	if err != nil {
-		fmt.Printf("Error getting the last insert ID: %v", err)
-		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
-	}
-
-	createdProduct.ID = uint64(insertedID)
-	createdProduct.Name = product.Name
-	createdProduct.Description = product.Description
-	createdProduct.Price = product.Price
-	createdProduct.Available = product.Available
-	createdProduct.Stock = product.Stock
-	createdProduct.Status = product.Status
-	createdProduct.ImageURLs = imageURLs
-
-	return createdProduct, nil
 }

@@ -21,8 +21,10 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	repository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
+	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -279,8 +281,17 @@ func TestCreateProductWithImages(t *testing.T) {
 	repository := repository.ProductRepository{
 		DB: db,
 	}
+
+	// Setup test directory for images
+	testDir := "test_uploads"
+	err := os.MkdirAll(testDir, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(testDir)
+
+	imageService := imagesService.New(testDir)
 	handler := handlers.ProductHandler{
-		Repo: &repository,
+		Repo:         &repository,
+		ImageService: imageService,
 	}
 
 	// Setup the router

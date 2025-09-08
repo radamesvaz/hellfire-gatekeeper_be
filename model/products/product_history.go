@@ -21,6 +21,7 @@ type ProductHistory struct {
 	Available   bool          `json:"available"`
 	Stock       uint64        `json:"stock"`
 	Status      ProductStatus `json:"status"`
+	ImageURLs   []string      `json:"image_urls"`
 	ModifiedOn  sql.NullTime  `json:"modified_on"`
 	ModifiedBy  uint64        `json:"modified_by"`
 	Action      ProductAction `json:"action"`

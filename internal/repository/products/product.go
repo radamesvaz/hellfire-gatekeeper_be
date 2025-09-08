@@ -3,6 +3,7 @@ package products
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -19,7 +20,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 	fmt.Println(
 		"Getting all products",
 	)
-	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, stock, status, created_on FROM products")
+	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products")
 	if err != nil {
 		fmt.Printf("Error getting the products: %v", err)
 		return nil, err
@@ -29,6 +30,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 	var products []pModel.Product
 	for rows.Next() {
 		var product pModel.Product
+		var imageURLsJSON sql.NullString
 		if err := rows.Scan(
 			&product.ID,
 			&product.Name,
@@ -37,11 +39,26 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 			&product.Available,
 			&product.Stock,
 			&product.Status,
+			&imageURLsJSON,
 			&product.CreatedOn,
 		); err != nil {
 			fmt.Printf("Error mapping the products: %v", err)
 			return nil, err
 		}
+
+		// Parse image URLs from JSON
+		if imageURLsJSON.Valid && imageURLsJSON.String != "" {
+			var imageURLs []string
+			if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
+				fmt.Printf("Error parsing image URLs: %v", err)
+				product.ImageURLs = []string{}
+			} else {
+				product.ImageURLs = imageURLs
+			}
+		} else {
+			product.ImageURLs = []string{}
+		}
+
 		products = append(products, product)
 	}
 	return products, nil
@@ -55,9 +72,10 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 	)
 
 	product := pModel.Product{}
+	var imageURLsJSON sql.NullString
 
 	err := r.DB.QueryRow(
-		"SELECT id_product, name, description, price, available, stock, status, created_on FROM products WHERE id_product = ?",
+		"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = ?",
 		idProduct,
 	).Scan(
 		&product.ID,
@@ -67,6 +85,7 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 		&product.Available,
 		&product.Stock,
 		&product.Status,
+		&imageURLsJSON,
 		&product.CreatedOn,
 	)
 
@@ -77,6 +96,19 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 		}
 		fmt.Printf("Error retrieving the product: %v", err)
 		return product, errors.NewNotFound(errors.ErrCouldNotGetTheProduct)
+	}
+
+	// Parse image URLs from JSON
+	if imageURLsJSON.Valid && imageURLsJSON.String != "" {
+		var imageURLs []string
+		if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
+			fmt.Printf("Error parsing image URLs: %v", err)
+			product.ImageURLs = []string{}
+		} else {
+			product.ImageURLs = imageURLs
+		}
+	} else {
+		product.ImageURLs = []string{}
 	}
 
 	return product, nil
@@ -276,4 +308,85 @@ func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint
 
 	fmt.Printf("Stock updated successfully. Rows affected: %v", rows)
 	return nil
+}
+
+// UpdateProductImages updates the image URLs for a product
+func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uint64, imageURLs []string) error {
+	fmt.Printf("Updating product images for product id = %d", idProduct)
+
+	// Convert imageURLs to JSON
+	imageURLsJSON, err := json.Marshal(imageURLs)
+	if err != nil {
+		fmt.Printf("Error marshaling image URLs: %v", err)
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	result, err := r.DB.Exec(
+		"UPDATE products SET image_urls = ? WHERE id_product = ?",
+		string(imageURLsJSON),
+		idProduct,
+	)
+
+	if err != nil {
+		fmt.Printf("Error updating product images: %v", err)
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		fmt.Printf("Could not get the rows affected: %v", err)
+	}
+
+	if rows == 0 {
+		return errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	fmt.Printf("Product images updated successfully. Rows affected: %v", rows)
+	return nil
+}
+
+// CreateProductWithImages creates a product with image URLs
+func (r *ProductRepository) CreateProductWithImages(_ context.Context, product pModel.Product, imageURLs []string) (pModel.Product, error) {
+	fmt.Printf("Creating product with images: %v", product.Name)
+
+	createdProduct := pModel.Product{}
+
+	if product.Name == "" || product.Description == "" || product.Price == 0 {
+		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
+	}
+
+	// Convert imageURLs to JSON
+	imageURLsJSON, err := json.Marshal(imageURLs)
+	if err != nil {
+		fmt.Printf("Error marshaling image URLs: %v", err)
+		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
+	}
+
+	result, err := r.DB.Exec(
+		`INSERT INTO products 
+		(name, description, price, available, stock, status, image_urls) 
+		VALUES (?, ?, ?, ?, ?, ?, ?) `,
+		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON))
+
+	if err != nil {
+		fmt.Printf("Error creating the product: %v", err)
+		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
+	}
+
+	insertedID, err := result.LastInsertId()
+	if err != nil {
+		fmt.Printf("Error getting the last insert ID: %v", err)
+		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
+	}
+
+	createdProduct.ID = uint64(insertedID)
+	createdProduct.Name = product.Name
+	createdProduct.Description = product.Description
+	createdProduct.Price = product.Price
+	createdProduct.Available = product.Available
+	createdProduct.Stock = product.Stock
+	createdProduct.Status = product.Status
+	createdProduct.ImageURLs = imageURLs
+
+	return createdProduct, nil
 }

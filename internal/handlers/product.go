@@ -12,11 +12,13 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
+	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 )
 
 type ProductHandler struct {
-	Repo *productsRepository.ProductRepository
+	Repo         *productsRepository.ProductRepository
+	ImageService *imagesService.Service
 }
 
 // Get all products
@@ -68,6 +70,19 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 
 // Create a product - Updates the table and history table
 func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
+	// Check if request is multipart/form-data
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "application/json" {
+		h.createProductJSON(w, r)
+		return
+	}
+
+	// Handle multipart/form-data
+	h.createProductMultipart(w, r)
+}
+
+// createProductJSON handles JSON requests (backward compatibility)
+func (h *ProductHandler) createProductJSON(w http.ResponseWriter, r *http.Request) {
 	var req pModel.CreateProductRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -104,6 +119,110 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Product created successfully",
+	})
+}
+
+// createProductMultipart handles multipart/form-data requests with images
+func (h *ProductHandler) createProductMultipart(w http.ResponseWriter, r *http.Request) {
+	// Parse multipart form (max 10MB)
+	err := r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		http.Error(w, "Error parsing form", http.StatusBadRequest)
+		return
+	}
+
+	// Extract product data from form
+	req := pModel.CreateProductRequest{
+		Name:        r.FormValue("name"),
+		Description: r.FormValue("description"),
+		Price:       parseFloat64(r.FormValue("price")),
+		Available:   r.FormValue("available") == "true",
+		Stock:       parseUint64(r.FormValue("stock")),
+		Status:      pModel.ProductStatus(r.FormValue("status")),
+	}
+
+	// Validate required fields
+	if req.Name == "" || req.Description == "" || req.Price == 0 {
+		http.Error(w, "Missing required fields", http.StatusBadRequest)
+		return
+	}
+
+	product := pModel.Product{
+		Name:        req.Name,
+		Description: req.Description,
+		Price:       req.Price,
+		Available:   req.Available,
+		Stock:       req.Stock,
+		Status:      req.Status,
+	}
+
+	ctx := r.Context()
+
+	// Handle image uploads
+	var imageURLs []string
+	if h.ImageService != nil {
+		files := r.MultipartForm.File["images"]
+		if len(files) > 0 {
+			// Create product first to get ID
+			newProduct, err := h.Repo.CreateProductWithImages(ctx, product, []string{})
+			if err != nil {
+				http.Error(w, "Failed to create product", http.StatusInternalServerError)
+				return
+			}
+
+			// Save images
+			imageURLs, err = h.ImageService.SaveProductImages(newProduct.ID, files)
+			if err != nil {
+				http.Error(w, "Failed to save images", http.StatusInternalServerError)
+				return
+			}
+
+			// Update product with image URLs
+			err = h.Repo.UpdateProductImages(ctx, newProduct.ID, imageURLs)
+			if err != nil {
+				http.Error(w, "Failed to update product images", http.StatusInternalServerError)
+				return
+			}
+
+			product.ID = newProduct.ID
+			product.ImageURLs = imageURLs
+		} else {
+			// No images, create product normally
+			newProduct, err := h.Repo.CreateProductWithImages(ctx, product, []string{})
+			if err != nil {
+				http.Error(w, "Failed to create product", http.StatusInternalServerError)
+				return
+			}
+			product.ID = newProduct.ID
+		}
+	} else {
+		// No image service, create product normally
+		newProduct, err := h.Repo.CreateProduct(ctx, product)
+		if err != nil {
+			http.Error(w, "Failed to create product", http.StatusInternalServerError)
+			return
+		}
+		product.ID = newProduct.ID
+	}
+
+	// Update history
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
+		return
+	}
+
+	err = h.UpdateHistoryTable(ctx, &product, product.ID, idUser, pModel.ActionCreate)
+	if err != nil {
+		fmt.Printf("Error creating the history record for create product :%v", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":    "Product created successfully",
+		"product_id": product.ID,
+		"image_urls": imageURLs,
 	})
 }
 
@@ -224,4 +343,27 @@ func (h *ProductHandler) UpdateHistoryTable(
 		return err
 	}
 	return nil
+}
+
+// Helper functions for parsing form values
+func parseFloat64(s string) float64 {
+	if s == "" {
+		return 0
+	}
+	val, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return val
+}
+
+func parseUint64(s string) uint64 {
+	if s == "" {
+		return 0
+	}
+	val, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return val
 }

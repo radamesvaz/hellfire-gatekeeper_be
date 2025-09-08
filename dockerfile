@@ -4,11 +4,13 @@ WORKDIR /app
 COPY . .
 
 RUN go mod tidy
-RUN go build -o app ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o api ./cmd/api
 
 FROM alpine:latest
 
+RUN apk --no-cache add ca-certificates
 WORKDIR /root/
-COPY --from=builder /app/app .
 
-CMD ["./app"]
+COPY --from=builder /app/api .
+
+CMD ["./api"]

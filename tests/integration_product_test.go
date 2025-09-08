@@ -150,6 +150,7 @@ func TestGetAllProducts(t *testing.T) {
 			"available": true,
 			"stock": 6,
 			"status": "active",
+			"image_urls": [],
 			"created_on": "2025-04-14T10:00:00Z"
 		},
 		{
@@ -160,6 +161,7 @@ func TestGetAllProducts(t *testing.T) {
 			"available": true,
 			"stock": 2,
 			"status": "active",
+			"image_urls": [],
 			"created_on": "2025-04-14T10:00:00Z"
 		}]`,
 	)
@@ -200,6 +202,7 @@ func TestGetProductByID(t *testing.T) {
 			"available": true,
 			"stock": 6,
 			"status": "active",
+			"image_urls": [],
 			"created_on": "2025-04-14T10:00:00Z"
 		}`,
 	)
@@ -242,6 +245,65 @@ func TestCreateProduct(t *testing.T) {
 
 	payload := `{
 		"name": "Pie de parchita",
+		"description": "Base de galleta maria, decorado con merengue suizo",
+		"price": 18.0,
+		"available": true,
+		"stock": 6,
+		"status": "active"
+	  }`
+
+	// Send the simulated request
+	req := httptest.NewRequest("POST", "/auth/products", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	expected := fmt.Sprint(
+		`{
+			"message": "Product created successfully"
+		}`,
+	)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestCreateProductWithImages(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+	handler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
+
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	if err != nil {
+		t.Fatalf("Error creating a JWT for integration testing: %v", err)
+	}
+
+	// Test JSON request (backward compatibility)
+	payload := `{
+		"name": "Pie de parchita con imagen",
 		"description": "Base de galleta maria, decorado con merengue suizo",
 		"price": 18.0,
 		"available": true,

@@ -38,13 +38,15 @@ services:
     ports:
       - "8080:8080"
     environment:
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
       DB_HOST: mysql_db
-      DB_USER: ${MYSQL_USER}
-      DB_PASSWORD: ${MYSQL_PASSWORD}
-      DB_NAME: ${MYSQL_DATABASE}
       DB_PORT: ${DB_PORT}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES}
+    volumes:
+      - ./uploads:/app/uploads
 
 volumes:
   mysql_data:

@@ -16,6 +16,7 @@ import (
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
@@ -51,7 +52,15 @@ func main() {
 
 	// Product setup
 	productRepo := &productsRepository.ProductRepository{DB: db}
-	productHandler := &h.ProductHandler{Repo: productRepo}
+
+	// Image service setup
+	uploadDir := "uploads"
+	imageService := imagesService.New(uploadDir)
+
+	productHandler := &h.ProductHandler{
+		Repo:         productRepo,
+		ImageService: imageService,
+	}
 
 	// Auth setup
 	userRepo := user.UserRepository{DB: db}
@@ -70,6 +79,10 @@ func main() {
 	}
 
 	r := mux.NewRouter()
+
+	// Serve static files (images)
+	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
+
 	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
 	// Auth endpoints
@@ -98,6 +111,7 @@ func main() {
 	allowedOrigins := handlers.AllowedOrigins([]string{
 		"http://localhost:5173",
 		"http://localhost:3000",
+		"http://localhost:8000",
 	})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 	allowedHeaders := handlers.AllowedHeaders([]string{"Authorization", "Content-Type"})

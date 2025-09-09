@@ -49,6 +49,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"available",
 				"stock",
 				"status",
+				"image_urls",
 				"created_on",
 			}),
 			mockError: nil,
@@ -63,7 +64,8 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				"price",
 				"available",
 				"stock",
-				"stauts",
+				"status",
+				"image_urls",
 				"created_on",
 			}).AddRow(
 				"1",
@@ -73,6 +75,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				true,
 				5,
 				"active",
+				"[]",
 				createdOn,
 			).AddRow(
 				"2",
@@ -82,6 +85,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 				false,
 				0,
 				"inactive",
+				"[]",
 				createdOn,
 			),
 			mockError: nil,
@@ -94,6 +98,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					Available:   true,
 					Stock:       5,
 					Status:      "active",
+					ImageURLs:   []string{},
 					CreatedOn:   createdOn,
 				},
 				{
@@ -104,6 +109,7 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 					Available:   false,
 					Stock:       0,
 					Status:      "inactive",
+					ImageURLs:   []string{},
 					CreatedOn:   createdOn,
 				},
 			},
@@ -112,10 +118,10 @@ func TestProductRepository_GetAllProducts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.mockRows != nil {
-				mock.ExpectQuery("SELECT id_product, name, description, price, available, stock, status, created_on FROM products").
+				mock.ExpectQuery("SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products").
 					WillReturnRows(tt.mockRows)
 			} else {
-				mock.ExpectQuery("SELECT id_product, name, description, price, available, stock, status, created_on FROM products").
+				mock.ExpectQuery("SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products").
 					WillReturnError(tt.mockError)
 			}
 
@@ -168,7 +174,8 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"price",
 				"available",
 				"stock",
-				"stauts",
+				"status",
+				"image_urls",
 				"created_on",
 			}).AddRow(
 				"1",
@@ -178,15 +185,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				true,
 				5,
 				"active",
-				createdOn,
-			).AddRow(
-				"2",
-				"Suspiros",
-				"Suspiros para fiesta desc test",
-				10,
-				false,
-				0,
-				"deleted",
+				"[]",
 				createdOn,
 			),
 			mockError: nil,
@@ -198,6 +197,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				Available:   true,
 				Stock:       5,
 				Status:      "active",
+				ImageURLs:   []string{},
 				CreatedOn:   createdOn,
 			},
 			idProductForLookup: 1,
@@ -212,17 +212,9 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"available",
 				"stock",
 				"status",
+				"image_urls",
 				"created_on",
-			}).AddRow(
-				"1",
-				"Torta de chocolate test",
-				"Test descripcion de la torta test",
-				30,
-				true,
-				1,
-				"inactive",
-				createdOn,
-			),
+			}),
 			mockError:          errors.ErrProductNotFound,
 			errorStatus:        404,
 			expected:           pModel.Product{},
@@ -234,13 +226,13 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, stock, status, created_on FROM products WHERE id_product = ?",
+					"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = ?",
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, stock, status, created_on FROM products WHERE id_product = ?",
+					"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = ?",
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnRows(tt.mockRows)
@@ -287,15 +279,18 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Available:   true,
 				Stock:       66,
 				Status:      pModel.StatusActive,
+				ImageURLs:   []string{},
 			},
 			mockError: nil,
 			expected: pModel.Product{
+				ID:          1,
 				Name:        "Producto prueba test OK",
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
 				Stock:       66,
 				Status:      pModel.StatusActive,
+				ImageURLs:   []string{},
 			},
 			expectedError: false,
 		},
@@ -306,6 +301,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       20.3,
 				Available:   true,
+				ImageURLs:   []string{},
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -319,6 +315,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "",
 				Price:       20.3,
 				Available:   true,
+				ImageURLs:   []string{},
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -332,6 +329,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				Description: "Esta es la descripcion del producto de prueba",
 				Price:       0,
 				Available:   true,
+				ImageURLs:   []string{},
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -345,8 +343,8 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
-						(name, description, price, available, stock, status) 
-						VALUES (?, ?, ?, ?, ?, ?) `,
+						(name, description, price, available, stock, status, image_urls) 
+						VALUES (?, ?, ?, ?, ?, ?, ?) `,
 					),
 				).
 					WithArgs(
@@ -356,8 +354,9 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Available,
 						tt.expected.Stock,
 						tt.payload.Status,
+						"[]", // JSON marshaled empty array for image_urls
 					).
-					WillReturnResult(sqlmock.NewResult(0, 1))
+					WillReturnResult(sqlmock.NewResult(1, 1))
 			}
 
 			product, err := repo.CreateProduct(context.Background(), tt.payload)

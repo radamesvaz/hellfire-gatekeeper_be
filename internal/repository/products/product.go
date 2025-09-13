@@ -319,15 +319,18 @@ func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint
 
 // UpdateProductImages updates the image URLs for a product
 func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uint64, imageURLs []string) error {
-	fmt.Printf("Updating product images for product id = %d", idProduct)
+	fmt.Printf("Updating product images for product id = %d\n", idProduct)
 
 	// Convert imageURLs to JSON
 	imageURLsJSON, err := json.Marshal(imageURLs)
 	if err != nil {
-		fmt.Printf("Error marshaling image URLs: %v", err)
+		fmt.Printf("Error marshaling image URLs: %v\n", err)
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 
+	fmt.Printf("DEBUG: Marshaled image URLs JSON: %s\n", string(imageURLsJSON))
+
+	fmt.Printf("DEBUG: About to execute SQL UPDATE for product %d\n", idProduct)
 	result, err := r.DB.Exec(
 		"UPDATE products SET image_urls = ? WHERE id_product = ?",
 		string(imageURLsJSON),
@@ -335,9 +338,11 @@ func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uin
 	)
 
 	if err != nil {
-		fmt.Printf("Error updating product images: %v", err)
+		fmt.Printf("Error updating product images: %v\n", err)
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
+
+	fmt.Printf("DEBUG: SQL UPDATE executed successfully\n")
 
 	rows, err := result.RowsAffected()
 	if err != nil {

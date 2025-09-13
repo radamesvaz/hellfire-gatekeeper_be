@@ -533,3 +533,150 @@ func TestDeleteProduct(t *testing.T) {
 	// Verify response structure - the actual message is "Product status updated successfully"
 	assert.Equal(t, "Product status updated successfully", response["message"])
 }
+
+func TestUpdateProductWithImages(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+
+	// Setup test directory for images
+	testDir := "test_uploads"
+	err := os.MkdirAll(testDir, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(testDir)
+
+	imageService := imagesService.New(testDir)
+	handler := handlers.ProductHandler{
+		Repo:         &repository,
+		ImageService: imageService,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	authRouter.HandleFunc("/products/{id}", handler.UpdateProduct).Methods("PUT")
+
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	if err != nil {
+		t.Fatalf("Error creating a JWT for integration testing: %v", err)
+	}
+
+	// Create a multipart form with updated product data and new images
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+
+	// Add form fields
+	w.WriteField("name", "Brownie Clásico - ACTUALIZADO CON IMÁGENES")
+	w.WriteField("description", "Delicioso brownie de chocolate - ahora con imágenes")
+	w.WriteField("price", "4.0")
+	w.WriteField("available", "true")
+	w.WriteField("stock", "8")
+	w.WriteField("status", "active")
+
+	// Create test image files
+	image1Content := []byte("fake updated image 1 content")
+	image2Content := []byte("fake updated image 2 content")
+
+	// Add first image
+	fw1, err := w.CreateFormFile("images", "updated_image1.jpg")
+	require.NoError(t, err)
+	_, err = fw1.Write(image1Content)
+	require.NoError(t, err)
+
+	// Add second image
+	fw2, err := w.CreateFormFile("images", "updated_image2.png")
+	require.NoError(t, err)
+	_, err = fw2.Write(image2Content)
+	require.NoError(t, err)
+
+	w.Close()
+
+	// Send the multipart request to update product with ID 1
+	req := httptest.NewRequest("PUT", "/auth/products/1", &b)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Verify response
+	if rr.Code != http.StatusOK {
+		t.Logf("Response body: %s", rr.Body.String())
+		t.Logf("Response status: %d", rr.Code)
+	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Parse response
+	var response map[string]interface{}
+	err = json.Unmarshal(rr.Body.Bytes(), &response)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Product updated successfully", response["message"])
+
+	// Verify images were saved to disk
+	productDir := filepath.Join(testDir, "products", "1")
+
+	// Check that the directory was created
+	_, err = os.Stat(productDir)
+	assert.NoError(t, err)
+
+	// Check that image files exist
+	files, err := os.ReadDir(productDir)
+	require.NoError(t, err)
+	assert.Len(t, files, 2)
+
+	// Verify the image files have the correct content
+	for _, file := range files {
+		filePath := filepath.Join(productDir, file.Name())
+		content, err := os.ReadFile(filePath)
+		require.NoError(t, err)
+
+		// Check that the content is one of our test images
+		contentStr := string(content)
+		assert.True(t, contentStr == "fake updated image 1 content" || contentStr == "fake updated image 2 content",
+			"File content should match one of our test images")
+	}
+
+	// Verify the product was updated in the database
+	ctx := context.Background()
+	updatedProduct, err := repository.GetProductByID(ctx, 1)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Brownie Clásico - ACTUALIZADO CON IMÁGENES", updatedProduct.Name)
+	assert.Equal(t, "Delicioso brownie de chocolate - ahora con imágenes", updatedProduct.Description)
+	assert.Equal(t, 4.0, updatedProduct.Price)
+	assert.Equal(t, uint64(8), updatedProduct.Stock)
+	assert.Len(t, updatedProduct.ImageURLs, 2)
+
+	// Verify the image URLs have the correct format
+	for _, imageURL := range updatedProduct.ImageURLs {
+		// Check that the URL starts with the correct path
+		expectedPrefix := "/uploads/products/1/"
+		assert.True(t, strings.HasPrefix(imageURL, expectedPrefix),
+			"Image URL %s should start with %s", imageURL, expectedPrefix)
+
+		// Check that the URL ends with a valid image extension
+		validExtensions := []string{".jpg", ".jpeg", ".png", ".webp"}
+		hasValidExtension := false
+		for _, ext := range validExtensions {
+			if strings.HasSuffix(imageURL, ext) {
+				hasValidExtension = true
+				break
+			}
+		}
+		assert.True(t, hasValidExtension, "Image URL %s should end with a valid image extension", imageURL)
+	}
+}

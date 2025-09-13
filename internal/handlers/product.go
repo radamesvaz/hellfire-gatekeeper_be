@@ -70,12 +70,22 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	// Parse request based on content type
 	if strings.Contains(contentType, "multipart/form-data") {
 		// Handle multipart/form-data (with potential images)
-		var err error
-		req, imageURLs, err = h.parseMultipartRequest(r)
+		name, description, price, available, stock, status, err := h.parseMultipartForm(r)
 		if err != nil {
 			http.Error(w, "Failed to parse multipart request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+
+		// Create request struct from parsed values
+		req = pModel.CreateProductRequest{
+			Name:        name,
+			Description: description,
+			Price:       price,
+			Available:   available,
+			Stock:       stock,
+			Status:      status,
+		}
+		imageURLs = []string{} // Will be populated later if images are present
 	} else {
 		// Handle JSON request (backward compatibility)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -160,30 +170,29 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// parseMultipartRequest parses multipart/form-data requests
-func (h *ProductHandler) parseMultipartRequest(r *http.Request) (pModel.CreateProductRequest, []string, error) {
-	var req pModel.CreateProductRequest
-	var imageURLs []string
-
+// parseMultipartForm parses multipart/form-data requests and returns common product fields
+func (h *ProductHandler) parseMultipartForm(r *http.Request) (name, description string, price float64, available bool, stock uint64, status pModel.ProductStatus, err error) {
 	// Parse multipart form
-	err := r.ParseMultipartForm(32 << 20) // 32 MB max
+	err = r.ParseMultipartForm(32 << 20) // 32 MB max
 	if err != nil {
-		return req, nil, fmt.Errorf("failed to parse multipart form: %w", err)
+		return "", "", 0, false, 0, "", fmt.Errorf("failed to parse multipart form: %w", err)
 	}
 
 	// Extract form values
-	req.Name = r.FormValue("name")
-	req.Description = r.FormValue("description")
-	req.Price = parseFloat64(r.FormValue("price"))
-	req.Available = r.FormValue("available") == "true"
-	req.Stock = parseUint64(r.FormValue("stock"))
-	req.Status = pModel.ProductStatus(r.FormValue("status"))
+	name = r.FormValue("name")
+	description = r.FormValue("description")
+	price = parseFloat64(r.FormValue("price"))
+	available = r.FormValue("available") == "true"
+	stock = parseUint64(r.FormValue("stock"))
+	status = pModel.ProductStatus(r.FormValue("status"))
 
-	return req, imageURLs, nil
+	return name, description, price, available, stock, status, nil
 }
 
-// UpdateProduct - Update a product
+// UpdateProduct - Update a product (handles both JSON and multipart/form-data)
 func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	idStr := mux.Vars(r)["id"]
 	id, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -191,10 +200,37 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	contentType := r.Header.Get("Content-Type")
 	var req pModel.UpdateProductRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+	var imageURLs []string
+
+	// Parse request based on content type
+	if strings.Contains(contentType, "multipart/form-data") {
+		// Handle multipart/form-data (with potential images)
+		name, description, price, available, stock, status, err := h.parseMultipartForm(r)
+		if err != nil {
+			http.Error(w, "Failed to parse multipart request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Create request struct from parsed values
+		req = pModel.UpdateProductRequest{
+			Name:        name,
+			Description: description,
+			Price:       price,
+			Available:   available,
+			Stock:       stock,
+			Status:      status,
+			ImageURLs:   []string{}, // Will be populated later if images are present
+		}
+		imageURLs = []string{} // Will be populated later if images are present
+	} else {
+		// Handle JSON request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		imageURLs = req.ImageURLs // Use image URLs from JSON request
 	}
 
 	product := pModel.Product{
@@ -203,13 +239,64 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		Description: req.Description,
 		Price:       req.Price,
 		Available:   req.Available,
+		Stock:       req.Stock,
 		Status:      req.Status,
+		ImageURLs:   imageURLs,
 	}
 
-	ctx := r.Context()
+	ctx = r.Context()
+
+	// Update product basic fields
 	if err := h.Repo.UpdateProduct(ctx, product); err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
+	}
+
+	// Handle images if this was a multipart request
+	if strings.Contains(contentType, "multipart/form-data") && h.ImageService != nil {
+		// Get files from the parsed multipart form
+		if r.MultipartForm != nil && r.MultipartForm.File != nil {
+			files := r.MultipartForm.File["images"]
+			if len(files) > 0 {
+				// Get existing product to preserve current images
+				existingProduct, err := h.Repo.GetProductByID(ctx, id)
+				if err != nil {
+					fmt.Printf("Warning: Failed to get existing product: %v\n", err)
+					// Continue with empty existing images
+					existingProduct = pModel.Product{ImageURLs: []string{}}
+				}
+
+				// Save new images
+				newImageURLs, err := h.ImageService.SaveProductImages(id, files)
+				if err != nil {
+					http.Error(w, "Failed to save images", http.StatusInternalServerError)
+					return
+				}
+
+				// Combine existing and new image URLs
+				allImageURLs := append(existingProduct.ImageURLs, newImageURLs...)
+
+				// Update product with all image URLs (existing + new)
+				fmt.Printf("DEBUG: About to update product images for ID %d with URLs: %v\n", id, allImageURLs)
+				err = h.Repo.UpdateProductImages(ctx, id, allImageURLs)
+				if err != nil {
+					fmt.Printf("DEBUG: Error updating product images: %v\n", err)
+					http.Error(w, "Failed to update product images", http.StatusInternalServerError)
+					return
+				}
+				fmt.Printf("DEBUG: Successfully updated product images\n")
+
+				// Update the product object with all image URLs
+				product.ImageURLs = allImageURLs
+			}
+		}
+	} else if len(imageURLs) > 0 {
+		// Update image URLs from JSON request
+		err = h.Repo.UpdateProductImages(ctx, id, imageURLs)
+		if err != nil {
+			http.Error(w, "Failed to update product images", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	idUser, err := middleware.GetUserIDFromContext(ctx)

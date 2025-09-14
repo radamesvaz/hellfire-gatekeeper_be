@@ -33,8 +33,8 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Check if product exists
-	_, err = h.Repo.GetProductByID(ctx, productID)
+	// Get existing product (validates existence and gets current data)
+	existingProduct, err := h.Repo.GetProductByID(ctx, productID)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -69,13 +69,6 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, fmt.Sprintf("Invalid image type: %s", file.Filename), http.StatusBadRequest)
 			return
 		}
-	}
-
-	// Get existing product to preserve current images
-	existingProduct, err := h.Repo.GetProductByID(ctx, productID)
-	if err != nil {
-		http.Error(w, "Failed to get existing product", http.StatusInternalServerError)
-		return
 	}
 
 	// Save new images

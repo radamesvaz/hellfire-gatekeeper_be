@@ -304,8 +304,13 @@ func TestCreateProductWithImages(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(testDir)
 
+	// Setup handlers
+	productHandler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
 	imageService := imagesService.New(testDir)
-	handler := handlers.ProductHandler{
+	imageHandler := handlers.ImageHandler{
 		Repo:         &repository,
 		ImageService: imageService,
 	}
@@ -321,24 +326,63 @@ func TestCreateProductWithImages(t *testing.T) {
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
 
-	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
+	// Add routes for both product and image handlers
+	authRouter.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
+	authRouter.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
 
 	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
 
-	// Create a multipart form with product data and images
+	// Step 1: Create product with JSON
+	createData := map[string]interface{}{
+		"name":        "Pie de parchita con imagen",
+		"description": "Base de galleta maria, decorado con merengue suizo",
+		"price":       18.0,
+		"available":   true,
+		"stock":       6,
+		"status":      "active",
+	}
+
+	jsonData, err := json.Marshal(createData)
+	require.NoError(t, err)
+
+	// Send JSON request to create product
+	req := httptest.NewRequest("POST", "/auth/products", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Verify product creation response
+	if rr.Code != http.StatusOK {
+		t.Logf("Product creation response body: %s", rr.Body.String())
+		t.Logf("Product creation response status: %d", rr.Code)
+	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Parse product creation response
+	var productResponse map[string]interface{}
+	err = json.Unmarshal(rr.Body.Bytes(), &productResponse)
+	require.NoError(t, err)
+	assert.Equal(t, "Product created successfully", productResponse["message"])
+	assert.NotNil(t, productResponse["product_id"])
+	assert.NotNil(t, productResponse["image_urls"])
+
+	// Get the created product ID
+	productID, ok := productResponse["product_id"].(float64)
+	require.True(t, ok)
+	productIDStr := fmt.Sprintf("%.0f", productID)
+
+	// Verify image_urls is an empty array initially
+	imageURLs, ok := productResponse["image_urls"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, imageURLs, 0)
+
+	// Step 2: Add images using multipart form
 	var b bytes.Buffer
 	w := multipart.NewWriter(&b)
-
-	// Add form fields
-	w.WriteField("name", "Pie de parchita con imagen")
-	w.WriteField("description", "Base de galleta maria, decorado con merengue suizo")
-	w.WriteField("price", "18.0")
-	w.WriteField("available", "true")
-	w.WriteField("stock", "6")
-	w.WriteField("status", "active")
 
 	// Create test image files
 	image1Content := []byte("fake image 1 content")
@@ -358,37 +402,35 @@ func TestCreateProductWithImages(t *testing.T) {
 
 	w.Close()
 
-	// Send the multipart request
-	req := httptest.NewRequest("POST", "/auth/products", &b)
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+jwt)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	// Send multipart request to add images
+	imageReq := httptest.NewRequest("POST", fmt.Sprintf("/auth/products/%s/images", productIDStr), &b)
+	imageReq.Header.Set("Content-Type", w.FormDataContentType())
+	imageReq.Header.Set("Authorization", "Bearer "+jwt)
+	imageRr := httptest.NewRecorder()
+	router.ServeHTTP(imageRr, imageReq)
 
-	// Verify response
-	if rr.Code != http.StatusOK {
-		t.Logf("Response body: %s", rr.Body.String())
-		t.Logf("Response status: %d", rr.Code)
+	// Verify image addition response
+	if imageRr.Code != http.StatusOK {
+		t.Logf("Image addition response body: %s", imageRr.Body.String())
+		t.Logf("Image addition response status: %d", imageRr.Code)
 	}
-	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, http.StatusOK, imageRr.Code)
 
-	// Parse response to get product ID and image URLs
-	var response map[string]interface{}
-	err = json.Unmarshal(rr.Body.Bytes(), &response)
+	// Parse image addition response
+	var imageResponse map[string]interface{}
+	err = json.Unmarshal(imageRr.Body.Bytes(), &imageResponse)
 	require.NoError(t, err)
+	assert.Equal(t, "Images added successfully", imageResponse["message"])
+	assert.Contains(t, imageResponse, "new_images")
+	assert.Contains(t, imageResponse, "all_images")
 
-	assert.Equal(t, "Product created successfully", response["message"])
-	assert.NotNil(t, response["product_id"])
-	assert.NotNil(t, response["image_urls"])
-
-	// Verify image URLs are returned
-	imageURLs, ok := response["image_urls"].([]interface{})
+	// Verify final image URLs count
+	finalImageURLs, ok := imageResponse["all_images"].([]interface{})
 	require.True(t, ok)
-	assert.Len(t, imageURLs, 2)
+	assert.Len(t, finalImageURLs, 2)
 
 	// Verify images were saved to disk
-	productID := response["product_id"].(float64)
-	productDir := filepath.Join(testDir, "products", fmt.Sprintf("%.0f", productID))
+	productDir := filepath.Join(testDir, "products", productIDStr)
 
 	// Check that the directory was created
 	_, err = os.Stat(productDir)
@@ -400,12 +442,12 @@ func TestCreateProductWithImages(t *testing.T) {
 	assert.Len(t, files, 2)
 
 	// Verify the image URLs in the response have the correct format
-	for _, imageURLInterface := range imageURLs {
+	for _, imageURLInterface := range finalImageURLs {
 		imageURL, ok := imageURLInterface.(string)
 		require.True(t, ok, "Image URL should be a string")
 
 		// Check that the URL starts with the correct path
-		expectedPrefix := fmt.Sprintf("/uploads/products/%.0f/", productID)
+		expectedPrefix := fmt.Sprintf("/uploads/products/%s/", productIDStr)
 		assert.True(t, strings.HasPrefix(imageURL, expectedPrefix),
 			"Image URL %s should start with %s", imageURL, expectedPrefix)
 
@@ -551,8 +593,13 @@ func TestUpdateProductWithImages(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(testDir)
 
+	// Setup handlers
+	productHandler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
 	imageService := imagesService.New(testDir)
-	handler := handlers.ProductHandler{
+	imageHandler := handlers.ImageHandler{
 		Repo:         &repository,
 		ImageService: imageService,
 	}
@@ -568,24 +615,52 @@ func TestUpdateProductWithImages(t *testing.T) {
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
 
-	authRouter.HandleFunc("/products/{id}", handler.UpdateProduct).Methods("PUT")
+	// Add routes for both product and image handlers
+	authRouter.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
+	authRouter.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
 
 	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
 
-	// Create a multipart form with updated product data and new images
+	// Step 1: Update product data with JSON
+	updateData := map[string]interface{}{
+		"name":        "Brownie Clásico - ACTUALIZADO CON IMÁGENES",
+		"description": "Delicioso brownie de chocolate - ahora con imágenes",
+		"price":       4.0,
+		"available":   true,
+		"stock":       8,
+		"status":      "active",
+		"image_urls":  []string{}, // Empty initially
+	}
+
+	jsonData, err := json.Marshal(updateData)
+	require.NoError(t, err)
+
+	// Send JSON request to update product
+	req := httptest.NewRequest("PUT", "/auth/products/1", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Verify product update response
+	if rr.Code != http.StatusOK {
+		t.Logf("Product update response body: %s", rr.Body.String())
+		t.Logf("Product update response status: %d", rr.Code)
+	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Parse product update response
+	var productResponse map[string]interface{}
+	err = json.Unmarshal(rr.Body.Bytes(), &productResponse)
+	require.NoError(t, err)
+	assert.Equal(t, "Product updated successfully", productResponse["message"])
+
+	// Step 2: Add images using multipart form
 	var b bytes.Buffer
 	w := multipart.NewWriter(&b)
-
-	// Add form fields
-	w.WriteField("name", "Brownie Clásico - ACTUALIZADO CON IMÁGENES")
-	w.WriteField("description", "Delicioso brownie de chocolate - ahora con imágenes")
-	w.WriteField("price", "4.0")
-	w.WriteField("available", "true")
-	w.WriteField("stock", "8")
-	w.WriteField("status", "active")
 
 	// Create test image files
 	image1Content := []byte("fake updated image 1 content")
@@ -605,26 +680,27 @@ func TestUpdateProductWithImages(t *testing.T) {
 
 	w.Close()
 
-	// Send the multipart request to update product with ID 1
-	req := httptest.NewRequest("PUT", "/auth/products/1", &b)
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	req.Header.Set("Authorization", "Bearer "+jwt)
-	rr := httptest.NewRecorder()
-	router.ServeHTTP(rr, req)
+	// Send multipart request to add images
+	imageReq := httptest.NewRequest("POST", "/auth/products/1/images", &b)
+	imageReq.Header.Set("Content-Type", w.FormDataContentType())
+	imageReq.Header.Set("Authorization", "Bearer "+jwt)
+	imageRr := httptest.NewRecorder()
+	router.ServeHTTP(imageRr, imageReq)
 
-	// Verify response
-	if rr.Code != http.StatusOK {
-		t.Logf("Response body: %s", rr.Body.String())
-		t.Logf("Response status: %d", rr.Code)
+	// Verify image addition response
+	if imageRr.Code != http.StatusOK {
+		t.Logf("Image addition response body: %s", imageRr.Body.String())
+		t.Logf("Image addition response status: %d", imageRr.Code)
 	}
-	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, http.StatusOK, imageRr.Code)
 
-	// Parse response
-	var response map[string]interface{}
-	err = json.Unmarshal(rr.Body.Bytes(), &response)
+	// Parse image addition response
+	var imageResponse map[string]interface{}
+	err = json.Unmarshal(imageRr.Body.Bytes(), &imageResponse)
 	require.NoError(t, err)
-
-	assert.Equal(t, "Product updated successfully", response["message"])
+	assert.Equal(t, "Images added successfully", imageResponse["message"])
+	assert.Contains(t, imageResponse, "new_images")
+	assert.Contains(t, imageResponse, "all_images")
 
 	// Verify images were saved to disk
 	productDir := filepath.Join(testDir, "products", "1")
@@ -659,7 +735,7 @@ func TestUpdateProductWithImages(t *testing.T) {
 	assert.Equal(t, "Delicioso brownie de chocolate - ahora con imágenes", updatedProduct.Description)
 	assert.Equal(t, 4.0, updatedProduct.Price)
 	assert.Equal(t, uint64(8), updatedProduct.Stock)
-	assert.Len(t, updatedProduct.ImageURLs, 2)
+	assert.Len(t, updatedProduct.ImageURLs, 2) // Should have 2 images after adding them
 
 	// Verify the image URLs have the correct format
 	for _, imageURL := range updatedProduct.ImageURLs {

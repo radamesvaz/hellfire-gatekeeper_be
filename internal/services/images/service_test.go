@@ -214,7 +214,7 @@ func TestService_isValidImageType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fileHeader := createTestFileHeader(tt.filename, tt.contentType)
-			result := service.isValidImageType(fileHeader)
+			result := service.IsValidImageType(fileHeader)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -275,4 +275,68 @@ func createTestFileHeader(filename, contentType string) *multipart.FileHeader {
 	files[0].Header["Content-Type"] = []string{contentType}
 
 	return files[0]
+}
+
+func TestService_DeleteImage(t *testing.T) {
+	// Setup test directory
+	testDir := "test_uploads"
+	err := os.MkdirAll(testDir, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(testDir)
+
+	service := New(testDir)
+
+	tests := []struct {
+		name             string
+		imageURL         string
+		setupFile        bool
+		expectedError    bool
+		expectedErrorMsg string
+	}{
+		{
+			name:          "HAPPY PATH: Delete existing image",
+			imageURL:      "/uploads/products/1/test.jpg",
+			setupFile:     true,
+			expectedError: false,
+		},
+		{
+			name:             "SAD PATH: Delete non-existing image",
+			imageURL:         "/uploads/products/1/nonexistent.jpg",
+			setupFile:        false,
+			expectedError:    true,
+			expectedErrorMsg: "image file not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup test file if needed
+			if tt.setupFile {
+				imagePath := service.GetImagePath(tt.imageURL)
+				dir := filepath.Dir(imagePath)
+				err := os.MkdirAll(dir, 0755)
+				require.NoError(t, err)
+
+				err = os.WriteFile(imagePath, []byte("test image content"), 0644)
+				require.NoError(t, err)
+			}
+
+			// Test DeleteImage
+			err := service.DeleteImage(tt.imageURL)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+				if tt.expectedErrorMsg != "" {
+					assert.Contains(t, err.Error(), tt.expectedErrorMsg)
+				}
+			} else {
+				assert.NoError(t, err)
+
+				// Verify file was deleted
+				imagePath := service.GetImagePath(tt.imageURL)
+				_, err := os.Stat(imagePath)
+				assert.True(t, os.IsNotExist(err), "File should be deleted")
+			}
+		})
+	}
 }

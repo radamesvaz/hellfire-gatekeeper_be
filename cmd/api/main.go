@@ -57,7 +57,13 @@ func main() {
 	uploadDir := "uploads"
 	imageService := imagesService.New(uploadDir)
 
+	// Product handler (only for product data)
 	productHandler := &h.ProductHandler{
+		Repo: productRepo,
+	}
+
+	// Image handler (only for image management)
+	imageHandler := &h.ImageHandler{
 		Repo:         productRepo,
 		ImageService: imageService,
 	}
@@ -96,10 +102,15 @@ func main() {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
 
-	// Product endpoints
+	// Product endpoints (data only)
 	auth.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProductStatus).Methods("PATCH")
+
+	// Image endpoints (image management)
+	auth.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
+	auth.HandleFunc("/products/{id}/images", imageHandler.ReplaceProductImages).Methods("PUT")
+	auth.HandleFunc("/products/{id}/images/{imageUrl}", imageHandler.DeleteProductImage).Methods("DELETE")
 
 	// Order endnpoints
 	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
@@ -111,7 +122,7 @@ func main() {
 	allowedOrigins := handlers.AllowedOrigins([]string{
 		"http://localhost:5173",
 		"http://localhost:3000",
-		"http://localhost:8000",
+		"http://localhost:5000",
 	})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 	allowedHeaders := handlers.AllowedHeaders([]string{"Authorization", "Content-Type"})

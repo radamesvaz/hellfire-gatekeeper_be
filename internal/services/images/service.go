@@ -36,7 +36,7 @@ func (s *Service) SaveProductImages(productID uint64, files []*multipart.FileHea
 
 	for i, file := range files {
 		// Validate file type
-		if !s.isValidImageType(file) {
+		if !s.IsValidImageType(file) {
 			return nil, fmt.Errorf("invalid file type: %s", file.Filename)
 		}
 
@@ -58,8 +58,8 @@ func (s *Service) SaveProductImages(productID uint64, files []*multipart.FileHea
 	return imageURLs, nil
 }
 
-// isValidImageType checks if the file is a valid image type
-func (s *Service) isValidImageType(file *multipart.FileHeader) bool {
+// IsValidImageType checks if the file is a valid image type
+func (s *Service) IsValidImageType(file *multipart.FileHeader) bool {
 	allowedTypes := map[string]bool{
 		"image/jpeg": true,
 		"image/jpg":  true,
@@ -127,6 +127,24 @@ func (s *Service) DeleteProductImages(productID uint64) error {
 	// Remove directory and all its contents
 	if err := os.RemoveAll(productDir); err != nil {
 		return fmt.Errorf("failed to delete product images: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteImage deletes a specific image file
+func (s *Service) DeleteImage(imageURL string) error {
+	// Get the full path to the image
+	imagePath := s.GetImagePath(imageURL)
+
+	// Check if file exists
+	if _, err := os.Stat(imagePath); os.IsNotExist(err) {
+		return fmt.Errorf("image file not found: %s", imagePath)
+	}
+
+	// Delete the file
+	if err := os.Remove(imagePath); err != nil {
+		return fmt.Errorf("failed to delete image file %s: %w", imagePath, err)
 	}
 
 	return nil

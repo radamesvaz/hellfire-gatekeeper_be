@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -755,4 +756,231 @@ func TestUpdateProductWithImages(t *testing.T) {
 		}
 		assert.True(t, hasValidExtension, "Image URL %s should end with a valid image extension", imageURL)
 	}
+}
+
+func TestDeleteProductImage(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+
+	// Setup test directory for images
+	testDir := "test_uploads"
+	err := os.MkdirAll(testDir, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(testDir)
+
+	// Setup handlers
+	productHandler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+
+	imageService := imagesService.New(testDir)
+	imageHandler := handlers.ImageHandler{
+		Repo:         &repository,
+		ImageService: imageService,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	// Add routes for both product and image handlers
+	authRouter.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
+	authRouter.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
+	authRouter.HandleFunc("/products/{id}/images", imageHandler.DeleteProductImage).Methods("DELETE")
+
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	if err != nil {
+		t.Fatalf("Error creating a JWT for integration testing: %v", err)
+	}
+
+	// Step 1: Update product data with JSON
+	updateData := map[string]interface{}{
+		"name":        "Producto para Test de Eliminación",
+		"description": "Producto con múltiples imágenes para probar eliminación",
+		"price":       5.0,
+		"available":   true,
+		"stock":       10,
+		"status":      "active",
+		"image_urls":  []string{}, // Empty initially
+	}
+
+	jsonData, err := json.Marshal(updateData)
+	require.NoError(t, err)
+
+	// Send JSON request to update product
+	req := httptest.NewRequest("PUT", "/auth/products/1", bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	// Verify product update response
+	if rr.Code != http.StatusOK {
+		t.Logf("Product update response body: %s", rr.Body.String())
+		t.Logf("Product update response status: %d", rr.Code)
+	}
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Parse product update response
+	var productResponse map[string]interface{}
+	err = json.Unmarshal(rr.Body.Bytes(), &productResponse)
+	require.NoError(t, err)
+	assert.Equal(t, "Product updated successfully", productResponse["message"])
+
+	// Step 2: Add multiple images using multipart form
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+
+	// Create test image files
+	image1Content := []byte("fake image 1 content for deletion test")
+	image2Content := []byte("fake image 2 content for deletion test")
+	image3Content := []byte("fake image 3 content for deletion test")
+
+	// Add first image
+	fw1, err := w.CreateFormFile("images", "test_image1.jpg")
+	require.NoError(t, err)
+	_, err = fw1.Write(image1Content)
+	require.NoError(t, err)
+
+	// Add second image
+	fw2, err := w.CreateFormFile("images", "test_image2.png")
+	require.NoError(t, err)
+	_, err = fw2.Write(image2Content)
+	require.NoError(t, err)
+
+	// Add third image
+	fw3, err := w.CreateFormFile("images", "test_image3.webp")
+	require.NoError(t, err)
+	_, err = fw3.Write(image3Content)
+	require.NoError(t, err)
+
+	w.Close()
+
+	// Send multipart request to add images
+	imageReq := httptest.NewRequest("POST", "/auth/products/1/images", &b)
+	imageReq.Header.Set("Content-Type", w.FormDataContentType())
+	imageReq.Header.Set("Authorization", "Bearer "+jwt)
+	imageRr := httptest.NewRecorder()
+	router.ServeHTTP(imageRr, imageReq)
+
+	// Verify image addition response
+	if imageRr.Code != http.StatusOK {
+		t.Logf("Image addition response body: %s", imageRr.Body.String())
+		t.Logf("Image addition response status: %d", imageRr.Code)
+	}
+	assert.Equal(t, http.StatusOK, imageRr.Code)
+
+	// Parse image addition response
+	var imageResponse map[string]interface{}
+	err = json.Unmarshal(imageRr.Body.Bytes(), &imageResponse)
+	require.NoError(t, err)
+	assert.Equal(t, "Images added successfully", imageResponse["message"])
+	assert.Contains(t, imageResponse, "new_images")
+	assert.Contains(t, imageResponse, "all_images")
+
+	// Get the list of all images
+	allImages, ok := imageResponse["all_images"].([]interface{})
+	require.True(t, ok)
+	assert.Len(t, allImages, 3) // Should have 3 images
+
+	// Verify images were saved to disk
+	productDir := filepath.Join(testDir, "products", "1")
+
+	// Check that the directory was created
+	_, err = os.Stat(productDir)
+	assert.NoError(t, err)
+
+	// Check that all 3 image files exist
+	files, err := os.ReadDir(productDir)
+	require.NoError(t, err)
+	assert.Len(t, files, 3)
+
+	// Step 3: Delete a specific image (the second one)
+	imageToDelete := allImages[1].(string) // Get the second image URL
+	t.Logf("Deleting image: %s", imageToDelete)
+
+	// Use query parameter instead of path parameter to avoid issues with slashes in URL
+	deleteReq := httptest.NewRequest("DELETE", "/auth/products/1/images?imageUrl="+url.QueryEscape(imageToDelete), nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+jwt)
+	deleteRr := httptest.NewRecorder()
+	router.ServeHTTP(deleteRr, deleteReq)
+
+	// Verify delete response
+	if deleteRr.Code != http.StatusOK {
+		t.Logf("Delete response body: %s", deleteRr.Body.String())
+		t.Logf("Delete response status: %d", deleteRr.Code)
+	}
+	assert.Equal(t, http.StatusOK, deleteRr.Code)
+
+	// Parse delete response
+	var deleteResponse map[string]interface{}
+	err = json.Unmarshal(deleteRr.Body.Bytes(), &deleteResponse)
+	require.NoError(t, err)
+	assert.Equal(t, "Image deleted successfully", deleteResponse["message"])
+
+	// Step 4: Verify the image was deleted from the filesystem
+	filesAfterDelete, err := os.ReadDir(productDir)
+	require.NoError(t, err)
+	assert.Len(t, filesAfterDelete, 2) // Should have 2 images left
+
+	// Verify the specific image file was deleted
+	imageFileName := filepath.Base(imageToDelete)
+	imageFilePath := filepath.Join(productDir, imageFileName)
+	_, err = os.Stat(imageFilePath)
+	assert.Error(t, err) // File should not exist
+
+	// Step 5: Verify the image was removed from the database
+	ctx := context.Background()
+	updatedProduct, err := repository.GetProductByID(ctx, 1)
+	require.NoError(t, err)
+
+	assert.Len(t, updatedProduct.ImageURLs, 2) // Should have 2 images left
+
+	// Verify the deleted image is not in the remaining images
+	for _, remainingImageURL := range updatedProduct.ImageURLs {
+		assert.NotEqual(t, imageToDelete, remainingImageURL, "Deleted image should not be in remaining images")
+	}
+
+	// Step 6: Verify the remaining images are still intact
+	remainingImages := updatedProduct.ImageURLs
+	assert.Len(t, remainingImages, 2)
+
+	// Verify the remaining images exist in the filesystem
+	for _, remainingImageURL := range remainingImages {
+		remainingImageFileName := filepath.Base(remainingImageURL)
+		remainingImageFilePath := filepath.Join(productDir, remainingImageFileName)
+		_, err = os.Stat(remainingImageFilePath)
+		assert.NoError(t, err, "Remaining image %s should still exist", remainingImageFileName)
+	}
+
+	// Step 7: Verify the remaining images have the correct content
+	for _, file := range filesAfterDelete {
+		filePath := filepath.Join(productDir, file.Name())
+		content, err := os.ReadFile(filePath)
+		require.NoError(t, err)
+
+		// Check that the content is one of our remaining test images
+		contentStr := string(content)
+		assert.True(t,
+			contentStr == "fake image 1 content for deletion test" ||
+				contentStr == "fake image 3 content for deletion test",
+			"File content should match one of our remaining test images")
+	}
+
+	t.Logf("Successfully deleted image: %s", imageToDelete)
+	t.Logf("Remaining images: %v", remainingImages)
 }

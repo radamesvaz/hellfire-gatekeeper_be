@@ -154,5 +154,7 @@ func (s *Service) DeleteImage(imageURL string) error {
 func (s *Service) GetImagePath(imageURL string) string {
 	// Remove leading slash from URL
 	cleanURL := strings.TrimPrefix(imageURL, "/")
+	// Remove uploads/ prefix if present
+	cleanURL = strings.TrimPrefix(cleanURL, "uploads/")
 	return filepath.Join(s.UploadDir, cleanURL)
 }

@@ -118,10 +118,16 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get product ID and image URL from URL
+	// Get product ID from URL path
 	vars := mux.Vars(r)
 	productIDStr := vars["id"]
-	imageURL := vars["imageUrl"]
+
+	// Get image URL from query parameter
+	imageURL := r.URL.Query().Get("imageUrl")
+	if imageURL == "" {
+		http.Error(w, "Image URL is required", http.StatusBadRequest)
+		return
+	}
 
 	productID, err := strconv.ParseUint(productIDStr, 10, 64)
 	if err != nil {

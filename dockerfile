@@ -13,4 +13,8 @@ WORKDIR /root/
 
 COPY --from=builder /app/api .
 
+# Create uploads directory and symlink
+RUN mkdir -p /app/uploads
+RUN ln -s /app/uploads /root/uploads
+
 CMD ["./api"]

@@ -50,6 +50,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"paid",
 				"created_on",
 				"user_name",
+				"phone",
 				"id_order_item",
 				"id_product",
 				"product_name",
@@ -65,6 +66,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					false,
 					time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					"Client Example",
+					"66-6666",
 					1,
 					2,
 					"Product A",
@@ -80,6 +82,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					false,
 					createdOn,
 					"Client Example",
+					"66-6666",
 					2,
 					1,
 					"Product B",
@@ -94,6 +97,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				true,
 				time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 				"Client Example",
+				"66-6666",
 				3,
 				1,
 				"Product B",
@@ -110,6 +114,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					Paid:         false,
 					CreatedOn:    time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					User:         "Client Example",
+					Phone:        "66-6666",
 					OrderItems: []oModel.OrderItems{
 						{
 							ID:        1,
@@ -137,6 +142,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					Paid:         true,
 					CreatedOn:    time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					User:         "Client Example",
+					Phone:        "66-6666",
 					OrderItems: []oModel.OrderItems{
 						{
 							ID:        3,
@@ -169,6 +175,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 						o.paid,
 						o.created_on,
 						u.name AS user_name,
+						u.phone,
 						oi.id_order_item,
 						oi.id_product,
 						p.name AS product_name,
@@ -176,7 +183,8 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					FROM orders o
 					INNER JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product`,
+					INNER JOIN products p ON oi.id_product = p.id_product
+					ORDER BY o.id_order`,
 					),
 				).
 					WillReturnError(sql.ErrNoRows)
@@ -193,6 +201,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 						o.paid,
 						o.created_on,
 						u.name AS user_name,
+						u.phone,
 						oi.id_order_item,
 						oi.id_product,
 						p.name AS product_name,
@@ -200,7 +209,8 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					FROM orders o
 					INNER JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product`,
+					INNER JOIN products p ON oi.id_product = p.id_product
+					ORDER BY o.id_order`,
 					),
 				).
 					WillReturnRows(tt.mockRows)
@@ -254,6 +264,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"paid",
 				"created_on",
 				"user_name",
+				"phone",
 				"id_order_item",
 				"id_product",
 				"product_name",
@@ -269,6 +280,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					false,
 					createdOn,
 					"Client Example",
+					"66-6666",
 					1,
 					2,
 					"Product A",
@@ -284,6 +296,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					false,
 					createdOn,
 					"Client Example",
+					"66-6666",
 					2,
 					1,
 					"Product B",
@@ -299,6 +312,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				Paid:         false,
 				CreatedOn:    time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC),
 				User:         "Client Example",
+				Phone:        "66-6666",
 				OrderItems: []oModel.OrderItems{
 					{
 						ID:        1,
@@ -332,14 +346,15 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"paid",
 				"created_on",
 				"user_name",
+				"phone",
 				"id_order_item",
 				"id_product",
 				"product_name",
 				"quantity",
 			}).
-				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, "Client Example",
+				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, "Client Example", "66-6666",
 					1, 2, "Product A", 2).
-				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, "Client Example",
+				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, "Client Example", "66-6666",
 					2, 1, "Product B", 3),
 			expected: oModel.OrderResponse{
 				ID:           1,
@@ -351,6 +366,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				Paid:         false,
 				CreatedOn:    time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC),
 				User:         "Client Example",
+				Phone:        "66-6666",
 				OrderItems: []oModel.OrderItems{
 					{
 						ID:        1,
@@ -390,6 +406,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						o.paid,
 						o.created_on,
 						u.name AS user_name,
+						u.phone,
 						oi.id_order_item,
 						oi.id_product,
 						p.name AS product_name,
@@ -416,6 +433,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						o.paid,
 						o.created_on,
 						u.name AS user_name,
+						u.phone,
 						oi.id_order_item,
 						oi.id_product,
 						p.name AS product_name,

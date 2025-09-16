@@ -96,6 +96,7 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 		Note:         payload.Note,
 		Price:        totalPrice,
 		Status:       oModel.StatusPending,
+		Paid:         false, // Default to false when creating an order
 		OrderItems:   mapItemsToInternalModel(payload.Items),
 	}
 
@@ -115,6 +116,7 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 			Time:  order.DeliveryDate,
 			Valid: !order.DeliveryDate.IsZero(),
 		},
+		Paid:       order.Paid,
 		ModifiedBy: order.IdUser, // The user who created the order
 		Action:     oModel.ActionCreate,
 	}

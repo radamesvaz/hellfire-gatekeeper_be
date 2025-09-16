@@ -41,6 +41,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 				Price:        50.0,
 				Note:         "Test order",
 				DeliveryDate: sql.NullTime{Time: deliveryDate, Valid: true},
+				Paid:         false,
 				ModifiedBy:   1,
 				Action:       oModel.ActionCreate,
 			},
@@ -56,6 +57,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 				Price:        50.0,
 				Note:         "Updated order",
 				DeliveryDate: sql.NullTime{Time: deliveryDate, Valid: true},
+				Paid:         true,
 				ModifiedBy:   1,
 				Action:       oModel.ActionUpdate,
 			},
@@ -71,6 +73,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 				Price:        50.0,
 				Note:         "Cancelled order",
 				DeliveryDate: sql.NullTime{Time: deliveryDate, Valid: true},
+				Paid:         false,
 				ModifiedBy:   1,
 				Action:       oModel.ActionDelete,
 			},
@@ -86,6 +89,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 				Price:        50.0,
 				Note:         "Test order",
 				DeliveryDate: sql.NullTime{Time: deliveryDate, Valid: true},
+				Paid:         false,
 				ModifiedBy:   1,
 				Action:       oModel.ActionCreate,
 			},
@@ -106,6 +110,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 							total_price, 
 							note,
 							delivery_date,
+							paid,
 							modified_by, 
 							action
 							) 
@@ -114,6 +119,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 							?, 
 							?, 
 							?, 
+							?,
 							?,
 							?,
 							?, 
@@ -130,6 +136,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 							total_price, 
 							note,
 							delivery_date,
+							paid,
 							modified_by, 
 							action
 							) 
@@ -138,6 +145,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 							?, 
 							?, 
 							?, 
+							?,
 							?,
 							?,
 							?, 

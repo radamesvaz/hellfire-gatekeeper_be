@@ -47,6 +47,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"status",
 				"note",
 				"delivery_date",
+				"paid",
 				"created_on",
 				"user_name",
 				"id_order_item",
@@ -61,6 +62,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					"pending",
 					"note testing",
 					time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+					false,
 					time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					"Client Example",
 					1,
@@ -75,6 +77,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					"pending",
 					"note testing",
 					deliveryDate,
+					false,
 					createdOn,
 					"Client Example",
 					2,
@@ -88,6 +91,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"delivered",
 				"note testing",
 				time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+				true,
 				time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 				"Client Example",
 				3,
@@ -103,6 +107,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					Status:       oModel.StatusPending,
 					Note:         "note testing",
 					DeliveryDate: time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+					Paid:         false,
 					CreatedOn:    time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					User:         "Client Example",
 					OrderItems: []oModel.OrderItems{
@@ -129,6 +134,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					Status:       oModel.StatusDelivered,
 					Note:         "note testing",
 					DeliveryDate: time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+					Paid:         true,
 					CreatedOn:    time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					User:         "Client Example",
 					OrderItems: []oModel.OrderItems{
@@ -160,6 +166,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 						o.status,
 						o.note,
 						o.delivery_date,
+						o.paid,
 						o.created_on,
 						u.name AS user_name,
 						oi.id_order_item,
@@ -183,6 +190,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 						o.status,
 						o.note,
 						o.delivery_date,
+						o.paid,
 						o.created_on,
 						u.name AS user_name,
 						oi.id_order_item,
@@ -243,6 +251,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"status",
 				"note",
 				"delivery_date",
+				"paid",
 				"created_on",
 				"user_name",
 				"id_order_item",
@@ -257,6 +266,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					"pending",
 					"note testing",
 					deliveryDate,
+					false,
 					createdOn,
 					"Client Example",
 					1,
@@ -271,6 +281,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					"pending",
 					"note testing",
 					deliveryDate,
+					false,
 					createdOn,
 					"Client Example",
 					2,
@@ -285,6 +296,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				Status:       oModel.StatusPending,
 				Note:         "note testing",
 				DeliveryDate: time.Date(2025, 4, 30, 10, 0, 0, 0, time.UTC),
+				Paid:         false,
 				CreatedOn:    time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC),
 				User:         "Client Example",
 				OrderItems: []oModel.OrderItems{
@@ -317,6 +329,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"total_price",
 				"status", "note",
 				"delivery_date",
+				"paid",
 				"created_on",
 				"user_name",
 				"id_order_item",
@@ -324,9 +337,9 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"product_name",
 				"quantity",
 			}).
-				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
+				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, "Client Example",
 					1, 2, "Product A", 2).
-				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, createdOn, "Client Example",
+				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, "Client Example",
 					2, 1, "Product B", 3),
 			expected: oModel.OrderResponse{
 				ID:           1,
@@ -335,6 +348,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				Status:       oModel.StatusPending,
 				Note:         "note testing",
 				DeliveryDate: time.Date(2025, 4, 30, 10, 0, 0, 0, time.UTC),
+				Paid:         false,
 				CreatedOn:    time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC),
 				User:         "Client Example",
 				OrderItems: []oModel.OrderItems{
@@ -373,6 +387,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						o.status,
 						o.note,
 						o.delivery_date,
+						o.paid,
 						o.created_on,
 						u.name AS user_name,
 						oi.id_order_item,
@@ -398,6 +413,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						o.status,
 						o.note,
 						o.delivery_date,
+						o.paid,
 						o.created_on,
 						u.name AS user_name,
 						oi.id_order_item,
@@ -451,6 +467,7 @@ func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
 				Note:         "Éxito total",
 				Price:        100.0,
 				Status:       oModel.StatusPending,
+				Paid:         false,
 				OrderItems: []oModel.OrderItemRequest{
 					{IdProduct: 2, Quantity: 3},
 					{IdProduct: 5, Quantity: 1},
@@ -459,8 +476,8 @@ func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
 			mockBehavior: func() {
 				mock.ExpectBegin()
 				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
-				)).WithArgs(1, 100.0, oModel.StatusPending, "Éxito total", deliveryDate).
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES (?, ?, ?, ?, ?, ?)",
+				)).WithArgs(1, 100.0, oModel.StatusPending, "Éxito total", deliveryDate, false).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 
 				mock.ExpectExec(regexp.QuoteMeta(
@@ -485,6 +502,7 @@ func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
 				Note:         "Este fallo es intencional",
 				Price:        100.0,
 				Status:       oModel.StatusPending,
+				Paid:         false,
 				OrderItems: []oModel.OrderItemRequest{
 					{IdProduct: 2, Quantity: 3},
 					{IdProduct: 99, Quantity: 1},
@@ -493,8 +511,8 @@ func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
 			mockBehavior: func() {
 				mock.ExpectBegin()
 				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
-				)).WithArgs(1, 100.0, oModel.StatusPending, "Este fallo es intencional", deliveryDate).
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES (?, ?, ?, ?, ?, ?)",
+				)).WithArgs(1, 100.0, oModel.StatusPending, "Este fallo es intencional", deliveryDate, false).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 
 				mock.ExpectExec(regexp.QuoteMeta(
@@ -559,6 +577,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 				Note:         "entregar a la tarde",
 				Price:        20,
 				Status:       oModel.StatusPending,
+				Paid:         false,
 			},
 			expectedError: false,
 			errorStatus:   0,
@@ -570,23 +589,25 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES (?, ?, ?, ?, ?, ?)",
 				)).WithArgs(
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
 					tt.orderRequest.Status,
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
+					tt.orderRequest.Paid,
 				).WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
 			} else {
 				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)",
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES (?, ?, ?, ?, ?, ?)",
 				)).WithArgs(
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
 					oModel.StatusPending,
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
+					tt.orderRequest.Paid,
 				).WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
 			}
 

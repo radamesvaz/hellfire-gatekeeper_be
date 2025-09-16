@@ -115,7 +115,7 @@ func main() {
 	// Order endnpoints
 	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 	auth.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
-	auth.HandleFunc("/orders/{id}/status", orderHandler.UpdateOrderStatus).Methods("PATCH")
+	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// CORS setup for local FE development

@@ -110,7 +110,7 @@ func main() {
 	// Image endpoints (image management)
 	auth.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
 	auth.HandleFunc("/products/{id}/images", imageHandler.ReplaceProductImages).Methods("PUT")
-	auth.HandleFunc("/products/{id}/images/{imageUrl}", imageHandler.DeleteProductImage).Methods("DELETE")
+	auth.HandleFunc("/products/{id}/images", imageHandler.DeleteProductImage).Methods("DELETE")
 
 	// Order endnpoints
 	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")

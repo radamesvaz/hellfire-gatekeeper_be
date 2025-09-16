@@ -151,14 +151,24 @@ func TestService_GetImagePath(t *testing.T) {
 		expectedPath string
 	}{
 		{
-			name:         "HAPPY PATH: Valid image URL",
+			name:         "HAPPY PATH: Valid image URL with uploads prefix",
 			imageURL:     "/uploads/products/1/main.jpg",
-			expectedPath: filepath.Join("/uploads", "uploads", "products", "1", "main.jpg"),
+			expectedPath: filepath.Join("/uploads", "products", "1", "main.jpg"),
 		},
 		{
-			name:         "HAPPY PATH: URL without leading slash",
+			name:         "HAPPY PATH: URL without leading slash but with uploads prefix",
 			imageURL:     "uploads/products/1/main.jpg",
-			expectedPath: filepath.Join("/uploads", "uploads", "products", "1", "main.jpg"),
+			expectedPath: filepath.Join("/uploads", "products", "1", "main.jpg"),
+		},
+		{
+			name:         "HAPPY PATH: URL without uploads prefix",
+			imageURL:     "/products/1/main.jpg",
+			expectedPath: filepath.Join("/uploads", "products", "1", "main.jpg"),
+		},
+		{
+			name:         "HAPPY PATH: URL without leading slash and without uploads prefix",
+			imageURL:     "products/1/main.jpg",
+			expectedPath: filepath.Join("/uploads", "products", "1", "main.jpg"),
 		},
 	}
 

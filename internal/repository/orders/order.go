@@ -37,6 +37,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
             o.paid,
             o.created_on, 
             u.name AS user_name, 
+            u.phone,
             oi.id_order_item, 
             oi.id_product, 
             p.name AS product_name, 
@@ -45,6 +46,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
         INNER JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
         INNER JOIN products p ON oi.id_product = p.id_product
+        ORDER BY o.id_order
     `
 
 	rows, err := r.DB.QueryContext(ctx, query)
@@ -66,6 +68,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 			paid         bool
 			createdOn    time.Time
 			userName     string
+			phone        string
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
@@ -82,6 +85,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 			&paid,
 			&createdOn,
 			&userName,
+			&phone,
 			&idOrderItem,
 			&idProduct,
 			&productName,
@@ -102,6 +106,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 				Paid:         paid,
 				CreatedOn:    createdOn,
 				User:         userName,
+				Phone:        phone,
 				OrderItems:   []oModel.OrderItems{},
 			}
 		}
@@ -139,6 +144,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
             o.paid,
             o.created_on, 
             u.name AS user_name, 
+            u.phone,
             oi.id_order_item, 
             oi.id_product, 
             p.name AS product_name, 
@@ -177,6 +183,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			paid         bool
 			createdOn    time.Time
 			userName     string
+			phone        string
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
@@ -193,6 +200,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			&paid,
 			&createdOn,
 			&userName,
+			&phone,
 			&idOrderItem,
 			&idProduct,
 			&productName,
@@ -212,6 +220,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			order.Paid = paid
 			order.CreatedOn = createdOn
 			order.User = userName
+			order.Phone = phone
 			firstRow = false
 		}
 

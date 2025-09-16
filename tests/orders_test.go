@@ -85,7 +85,8 @@ func TestGetAllOrders(t *testing.T) {
             }
         ],
         "created_on": "2025-04-01T10:00:00Z",
-        "delivery_date": "2025-04-05T00:00:00Z"
+        "delivery_date": "2025-04-05T00:00:00Z",
+        "paid": false
     	},
     {
         "id_order": 2,
@@ -104,7 +105,8 @@ func TestGetAllOrders(t *testing.T) {
             }
         ],
         "created_on": "2025-04-14T10:00:00Z",
-        "delivery_date": "2025-04-20T00:00:00Z"
+        "delivery_date": "2025-04-20T00:00:00Z",
+        "paid": false
     },
     {
         "id_order": 3,
@@ -130,7 +132,8 @@ func TestGetAllOrders(t *testing.T) {
             }
         ],
         "created_on": "2025-04-20T10:00:00Z",
-        "delivery_date": "2025-04-25T00:00:00Z"
+        "delivery_date": "2025-04-25T00:00:00Z",
+        "paid": false
     }
 ]`,
 	)
@@ -199,7 +202,8 @@ func TestGetOrderByID(t *testing.T) {
         }
     ],
     "created_on": "2025-04-01T10:00:00Z",
-    "delivery_date": "2025-04-05T00:00:00Z"
+    "delivery_date": "2025-04-05T00:00:00Z",
+    "paid": false
 }`,
 	)
 
@@ -380,7 +384,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
 
-	authRouter.HandleFunc("/orders/{id}/status", orderHandler.UpdateOrderStatus).Methods("PATCH")
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Create a test order first
 	today := time.Now()
@@ -424,7 +428,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 
 	// Update order status from 'pending' to 'preparing'
 	updatePayload := `{"status": "preparing"}`
-	updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d/status", orderID), strings.NewReader(updatePayload))
+	updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d", orderID), strings.NewReader(updatePayload))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.Header.Set("Authorization", "Bearer "+jwt)
 	updateRR := httptest.NewRecorder()
@@ -491,7 +495,7 @@ func TestUpdateOrderStatus_ValidTransitions(t *testing.T) {
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
 
-	authRouter.HandleFunc("/orders/{id}/status", orderHandler.UpdateOrderStatus).Methods("PATCH")
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// Create a test order
@@ -553,7 +557,7 @@ func TestUpdateOrderStatus_ValidTransitions(t *testing.T) {
 
 			// Update to new status
 			updatePayload := fmt.Sprintf(`{"status": "%s"}`, tc.toStatus)
-			updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d/status", orderID), strings.NewReader(updatePayload))
+			updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d", orderID), strings.NewReader(updatePayload))
 			updateReq.Header.Set("Content-Type", "application/json")
 			updateReq.Header.Set("Authorization", "Bearer "+jwt)
 			updateRR := httptest.NewRecorder()
@@ -603,7 +607,7 @@ func TestUpdateOrderStatus_InvalidTransitions(t *testing.T) {
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
 
-	authRouter.HandleFunc("/orders/{id}/status", orderHandler.UpdateOrderStatus).Methods("PATCH")
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// Create a test order
@@ -665,7 +669,7 @@ func TestUpdateOrderStatus_InvalidTransitions(t *testing.T) {
 
 			// Try to update to invalid status
 			updatePayload := fmt.Sprintf(`{"status": "%s"}`, tc.toStatus)
-			updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d/status", orderID), strings.NewReader(updatePayload))
+			updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d", orderID), strings.NewReader(updatePayload))
 			updateReq.Header.Set("Content-Type", "application/json")
 			updateReq.Header.Set("Authorization", "Bearer "+jwt)
 			updateRR := httptest.NewRecorder()
@@ -711,7 +715,7 @@ func TestUpdateOrderStatus_OrderNotFound(t *testing.T) {
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
 
-	authRouter.HandleFunc("/orders/{id}/status", orderHandler.UpdateOrderStatus).Methods("PATCH")
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Generate JWT for authentication
 	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
@@ -720,10 +724,151 @@ func TestUpdateOrderStatus_OrderNotFound(t *testing.T) {
 	// Try to update non-existent order
 	nonExistentOrderID := uint64(99999)
 	updatePayload := `{"status": "preparing"}`
-	updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d/status", nonExistentOrderID), strings.NewReader(updatePayload))
+	updateReq := httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d", nonExistentOrderID), strings.NewReader(updatePayload))
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.Header.Set("Authorization", "Bearer "+jwt)
 	updateRR := httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	// Should fail with NotFound
+	assert.Equal(t, http.StatusNotFound, updateRR.Code, "Update of non-existent order should fail with NotFound")
+}
+
+func TestUpdateOrder_StatusAndPaid(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	// Order setup
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+
+	// Generate JWT for authentication
+	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	assert.NoError(t, jwtErr, "Should be able to generate JWT")
+
+	// Test updating only paid status
+	updatePayload := `{"paid": true}`
+	updateReq := httptest.NewRequest("PATCH", "/auth/orders/2", strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR := httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	assert.Equal(t, http.StatusOK, updateRR.Code, "Update paid status should be successful")
+
+	// Verify the paid status was actually updated
+	ctx := context.Background()
+	var actualPaid bool
+	err := db.QueryRowContext(ctx, "SELECT paid FROM orders WHERE id_order = ?", 2).Scan(&actualPaid)
+	assert.NoError(t, err, "Should be able to query updated order paid status")
+	assert.True(t, actualPaid, "Order paid status should be updated to true")
+
+	// Test updating only status
+	updatePayload = `{"status": "preparing"}`
+	updateReq = httptest.NewRequest("PATCH", "/auth/orders/2", strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR = httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	assert.Equal(t, http.StatusOK, updateRR.Code, "Update status should be successful")
+
+	// Verify the status was actually updated
+	var actualStatus string
+	err = db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = ?", 2).Scan(&actualStatus)
+	assert.NoError(t, err, "Should be able to query updated order status")
+	assert.Equal(t, "preparing", actualStatus, "Order status should be updated to preparing")
+
+	// Test updating both status and paid at the same time
+	updatePayload = `{"status": "ready", "paid": false}`
+	updateReq = httptest.NewRequest("PATCH", "/auth/orders/2", strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR = httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	assert.Equal(t, http.StatusOK, updateRR.Code, "Update both fields should be successful")
+
+	// Verify both fields were updated
+	var actualStatus2 string
+	var actualPaid2 bool
+	err = db.QueryRowContext(ctx, "SELECT status, paid FROM orders WHERE id_order = ?", 2).Scan(&actualStatus2, &actualPaid2)
+	assert.NoError(t, err, "Should be able to query updated order fields")
+	assert.Equal(t, "ready", actualStatus2, "Order status should be updated to ready")
+	assert.False(t, actualPaid2, "Order paid status should be updated to false")
+}
+
+func TestUpdateOrder_InvalidPayload(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupMySQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	// Order setup
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	// Setup the router
+	router := mux.NewRouter()
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+
+	// Generate JWT for authentication
+	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	assert.NoError(t, jwtErr, "Should be able to generate JWT")
+
+	// Test with empty payload
+	updatePayload := `{}`
+	updateReq := httptest.NewRequest("PATCH", "/auth/orders/1", strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR := httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	assert.Equal(t, http.StatusBadRequest, updateRR.Code, "Empty payload should fail")
+
+	// Test with invalid status
+	updatePayload = `{"status": "invalid_status"}`
+	updateReq = httptest.NewRequest("PATCH", "/auth/orders/1", strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR = httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	assert.Equal(t, http.StatusBadRequest, updateRR.Code, "Invalid status should fail")
+
+	// Test with non-existent order
+	nonExistentOrderID := uint64(99999)
+	updatePayload = `{"paid": true}`
+	updateReq = httptest.NewRequest("PATCH", fmt.Sprintf("/auth/orders/%d", nonExistentOrderID), strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR = httptest.NewRecorder()
 	router.ServeHTTP(updateRR, updateReq)
 
 	// Should fail with NotFound

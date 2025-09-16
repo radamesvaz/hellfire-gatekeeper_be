@@ -20,6 +20,7 @@ type Order struct {
 	Note         string      `json:"note"`
 	CreatedOn    time.Time   `json:"created_on"`
 	DeliveryDate time.Time   `json:"delivery_date"`
+	Paid         bool        `json:"paid" gorm:"default:false"`
 }
 
 type OrderResponse struct {
@@ -32,6 +33,7 @@ type OrderResponse struct {
 	OrderItems   []OrderItems
 	CreatedOn    time.Time `json:"created_on"`
 	DeliveryDate time.Time `json:"delivery_date"`
+	Paid         bool      `json:"paid"`
 }
 
 type CreateOrderPayload struct {
@@ -49,6 +51,7 @@ type CreateOrderRequest struct {
 	Note         string      `json:"note"`
 	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
 	Status       OrderStatus `json:"status"`
+	Paid         bool        `json:"paid" gorm:"default:false"`
 }
 
 type CreateFullOrder struct {
@@ -57,5 +60,6 @@ type CreateFullOrder struct {
 	Note         string      `json:"note"`
 	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
 	Status       OrderStatus `json:"status"`
+	Paid         bool        `json:"paid" gorm:"default:false"`
 	OrderItems   []OrderItemRequest
 }

@@ -1,0 +1,1 @@
+-- This migration doesn't need a down script as it only sets default values

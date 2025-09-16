@@ -1,0 +1,3 @@
+ALTER TABLE orders ADD COLUMN paid BOOLEAN DEFAULT FALSE AFTER delivery_date;
+
+ALTER TABLE orders_history ADD COLUMN paid BOOLEAN DEFAULT FALSE AFTER delivery_date;

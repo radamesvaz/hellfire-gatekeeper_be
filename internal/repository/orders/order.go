@@ -34,6 +34,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.paid,
             o.created_on, 
             u.name AS user_name, 
             oi.id_order_item, 
@@ -62,6 +63,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 			status       string
 			note         string
 			deliveryDate time.Time
+			paid         bool
 			createdOn    time.Time
 			userName     string
 			idOrderItem  uint64
@@ -77,6 +79,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 			&status,
 			&note,
 			&deliveryDate,
+			&paid,
 			&createdOn,
 			&userName,
 			&idOrderItem,
@@ -96,6 +99,7 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
 				Status:       oModel.OrderStatus(status),
 				Note:         note,
 				DeliveryDate: deliveryDate,
+				Paid:         paid,
 				CreatedOn:    createdOn,
 				User:         userName,
 				OrderItems:   []oModel.OrderItems{},
@@ -132,6 +136,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.paid,
             o.created_on, 
             u.name AS user_name, 
             oi.id_order_item, 
@@ -169,6 +174,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			status       string
 			note         string
 			deliveryDate time.Time
+			paid         bool
 			createdOn    time.Time
 			userName     string
 			idOrderItem  uint64
@@ -184,6 +190,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			&status,
 			&note,
 			&deliveryDate,
+			&paid,
 			&createdOn,
 			&userName,
 			&idOrderItem,
@@ -202,6 +209,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			order.Status = oModel.OrderStatus(status)
 			order.Note = note
 			order.DeliveryDate = deliveryDate
+			order.Paid = paid
 			order.CreatedOn = createdOn
 			order.User = userName
 			firstRow = false
@@ -248,6 +256,7 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 		Note:         order.Note,
 		Price:        order.Price,
 		Status:       order.Status,
+		Paid:         order.Paid,
 	}
 	orderID, err := r.CreateOrder(ctx, tx, orderRequest)
 
@@ -283,7 +292,7 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (id uint64, err error) {
 	fmt.Printf("Creating order for user: %v", order.IdUser)
 	exec := execerFrom(tx, r.DB)
-	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date) VALUES (?, ?, ?, ?, ?)`
+	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES (?, ?, ?, ?, ?, ?)`
 
 	result, err := exec.ExecContext(
 		ctx,
@@ -293,6 +302,7 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		order.Status,
 		order.Note,
 		order.DeliveryDate,
+		order.Paid,
 	)
 
 	if err != nil {
@@ -346,6 +356,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		total_price, 
 		note,
 		delivery_date,
+		paid,
 		modified_by, 
 		action
 		) 
@@ -356,6 +367,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		?, 
 		?,
 		?,
+		?,
 		?, 
 		?)`,
 		order.IDOrder,
@@ -364,6 +376,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		order.Price,
 		order.Note,
 		order.DeliveryDate,
+		order.Paid,
 		order.ModifiedBy,
 		order.Action,
 	)
@@ -391,7 +404,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderHistory, error) {
 	query := `
 		SELECT id_order_history, id_order, id_user, status, total_price, note, 
-			delivery_date, modified_on, modified_by, action
+			delivery_date, paid, modified_on, modified_by, action
 		FROM orders_history 
 		WHERE id_order = ?
 		ORDER BY modified_on DESC
@@ -414,6 +427,7 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 			&history.Price,
 			&history.Note,
 			&history.DeliveryDate,
+			&history.Paid,
 			&history.ModifiedOn,
 			&history.ModifiedBy,
 			&history.Action,
@@ -438,6 +452,27 @@ func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64,
 	result, err := r.DB.ExecContext(ctx, query, status, orderID)
 	if err != nil {
 		return fmt.Errorf("error updating order status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return errors.NewNotFound(errors.ErrOrderNotFound)
+	}
+
+	return nil
+}
+
+// UpdateOrderPaidStatus updates the paid status of an order
+func (r *OrderRepository) UpdateOrderPaidStatus(ctx context.Context, orderID uint64, paid bool) error {
+	query := `UPDATE orders SET paid = ? WHERE id_order = ?`
+
+	result, err := r.DB.ExecContext(ctx, query, paid, orderID)
+	if err != nil {
+		return fmt.Errorf("error updating order paid status: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()

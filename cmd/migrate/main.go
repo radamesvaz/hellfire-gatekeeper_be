@@ -54,7 +54,19 @@ func main() {
 	// Run migrations
 	fmt.Println("🔄 Running database migrations...")
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		log.Fatalf("Could not run migrations: %v", err)
+		// If database is dirty, force version to 1 and try again
+		if err.Error() == "Dirty database version 1. Fix and force version." {
+			fmt.Println("⚠️  Database is dirty, forcing version to 1...")
+			if forceErr := m.Force(1); forceErr != nil {
+				log.Fatalf("Could not force version: %v", forceErr)
+			}
+			fmt.Println("🔄 Retrying migrations...")
+			if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
+				log.Fatalf("Could not run migrations after force: %v", retryErr)
+			}
+		} else {
+			log.Fatalf("Could not run migrations: %v", err)
+		}
 	}
 
 	fmt.Println("✅ Database migrations completed successfully!")

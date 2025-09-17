@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: hellfire-gatekeeper-api
+    env: go
+    buildCommand: chmod +x start.sh && go build -o migrate ./cmd/migrate && go build -o api ./cmd/api
+    startCommand: ./start.sh
+    envVars:
+      - key: MYSQL_USER
+        sync: false
+      - key: MYSQL_PASSWORD
+        sync: false
+      - key: MYSQL_DATABASE
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRATION_MINUTES
+        value: "60"
+      - key: PORT
+        value: "10000"
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+
+# No database needed - using Supabase instead

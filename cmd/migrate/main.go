@@ -65,9 +65,9 @@ func main() {
 				version := matches[1]
 				fmt.Printf("⚠️  Database is dirty at version %s, cleaning and resetting...\n", version)
 				
-				// Force version to 0 (no migrations applied)
-				if forceErr := m.Force(0); forceErr != nil {
-					log.Fatalf("Could not force version to 0: %v", forceErr)
+				// Force version to 1 (first migration)
+				if forceErr := m.Force(1); forceErr != nil {
+					log.Fatalf("Could not force version to 1: %v", forceErr)
 				}
 				
 				// Drop all tables to start fresh

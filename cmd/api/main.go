@@ -18,8 +18,8 @@ import (
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -35,15 +35,21 @@ func main() {
 	dbName := os.Getenv("MYSQL_DATABASE")
 	secret := os.Getenv("JWT_SECRET")
 	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
+	port := os.Getenv("PORT")
 	exp, err := strconv.Atoi(expMinutes)
 	if err != nil {
 		fmt.Printf("could not get the expMinutes from env: %v", err)
 		panic(err)
 	}
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
-		dbUser, dbPassword, dbHost, dbPort, dbName)
-	db, err := sql.Open("mysql", dsn)
+	// Set default port if not provided
+	if port == "" {
+		port = "8080"
+	}
+
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		dbHost, dbPort, dbUser, dbPassword, dbName)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		fmt.Printf("Could not connect to the DB")
 		panic(err)
@@ -127,6 +133,6 @@ func main() {
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 	allowedHeaders := handlers.AllowedHeaders([]string{"Authorization", "Content-Type"})
 
-	fmt.Println("🚀 Servidor corriendo en http://localhost:8080")
-	http.ListenAndServe(":8080", handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders)(r))
+	fmt.Printf("🚀 Servidor corriendo en http://localhost:%s\n", port)
+	http.ListenAndServe(":"+port, handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders)(r))
 }

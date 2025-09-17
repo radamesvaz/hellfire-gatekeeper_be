@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -54,15 +56,23 @@ func main() {
 	// Run migrations
 	fmt.Println("🔄 Running database migrations...")
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		// If database is dirty, force version to 1 and try again
-		if err.Error() == "Dirty database version 1. Fix and force version." {
-			fmt.Println("⚠️  Database is dirty, forcing version to 1...")
-			if forceErr := m.Force(1); forceErr != nil {
-				log.Fatalf("Could not force version: %v", forceErr)
-			}
-			fmt.Println("🔄 Retrying migrations...")
-			if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
-				log.Fatalf("Could not run migrations after force: %v", retryErr)
+		// If database is dirty, force version and try again
+		if strings.Contains(err.Error(), "Dirty database version") {
+			// Extract version number from error message
+			re := regexp.MustCompile(`Dirty database version (\d+)`)
+			matches := re.FindStringSubmatch(err.Error())
+			if len(matches) > 1 {
+				version := matches[1]
+				fmt.Printf("⚠️  Database is dirty at version %s, forcing version...\n", version)
+				if forceErr := m.Force(1); forceErr != nil {
+					log.Fatalf("Could not force version: %v", forceErr)
+				}
+				fmt.Println("🔄 Retrying migrations...")
+				if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
+					log.Fatalf("Could not run migrations after force: %v", retryErr)
+				}
+			} else {
+				log.Fatalf("Could not parse dirty version: %v", err)
 			}
 		} else {
 			log.Fatalf("Could not run migrations: %v", err)

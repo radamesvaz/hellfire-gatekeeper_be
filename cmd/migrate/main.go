@@ -63,13 +63,36 @@ func main() {
 			matches := re.FindStringSubmatch(err.Error())
 			if len(matches) > 1 {
 				version := matches[1]
-				fmt.Printf("⚠️  Database is dirty at version %s, forcing version...\n", version)
-				if forceErr := m.Force(1); forceErr != nil {
-					log.Fatalf("Could not force version: %v", forceErr)
+				fmt.Printf("⚠️  Database is dirty at version %s, cleaning and resetting...\n", version)
+				
+				// Force version to 0 (no migrations applied)
+				if forceErr := m.Force(0); forceErr != nil {
+					log.Fatalf("Could not force version to 0: %v", forceErr)
 				}
-				fmt.Println("🔄 Retrying migrations...")
+				
+				// Drop all tables to start fresh
+				fmt.Println("🗑️  Dropping all tables to start fresh...")
+				dropTables := []string{
+					"DROP TABLE IF EXISTS order_items CASCADE;",
+					"DROP TABLE IF EXISTS orders_history CASCADE;",
+					"DROP TABLE IF EXISTS orders CASCADE;",
+					"DROP TABLE IF EXISTS products_history CASCADE;",
+					"DROP TABLE IF EXISTS products CASCADE;",
+					"DROP TABLE IF EXISTS users CASCADE;",
+					"DROP TABLE IF EXISTS roles CASCADE;",
+					"DROP TYPE IF EXISTS order_status CASCADE;",
+					"DROP TYPE IF EXISTS history_action CASCADE;",
+				}
+				
+				for _, dropSQL := range dropTables {
+					if _, execErr := db.Exec(dropSQL); execErr != nil {
+						fmt.Printf("⚠️  Warning: Could not execute %s: %v\n", dropSQL, execErr)
+					}
+				}
+				
+				fmt.Println("🔄 Running migrations from scratch...")
 				if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
-					log.Fatalf("Could not run migrations after force: %v", retryErr)
+					log.Fatalf("Could not run migrations after reset: %v", retryErr)
 				}
 			} else {
 				log.Fatalf("Could not parse dirty version: %v", err)

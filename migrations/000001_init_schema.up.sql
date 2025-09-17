@@ -1,6 +1,15 @@
--- Create ENUM types for PostgreSQL
-CREATE TYPE order_status AS ENUM ('pending', 'preparing', 'ready', 'delivered', 'cancelled');
-CREATE TYPE history_action AS ENUM ('update', 'delete');
+-- Create ENUM types for PostgreSQL (if not exists)
+DO $$ BEGIN
+    CREATE TYPE order_status AS ENUM ('pending', 'preparing', 'ready', 'delivered', 'cancelled');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+    CREATE TYPE history_action AS ENUM ('update', 'delete');
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
 
 CREATE TABLE users (
     id_user SERIAL PRIMARY KEY,

@@ -80,6 +80,7 @@ func main() {
 					"DROP TABLE IF EXISTS products CASCADE;",
 					"DROP TABLE IF EXISTS users CASCADE;",
 					"DROP TABLE IF EXISTS roles CASCADE;",
+					"DROP TABLE IF EXISTS schema_migrations CASCADE;",
 					"DROP TYPE IF EXISTS order_status CASCADE;",
 					"DROP TYPE IF EXISTS history_action CASCADE;",
 				}
@@ -110,6 +111,7 @@ func main() {
 				"DROP TABLE IF EXISTS products CASCADE;",
 				"DROP TABLE IF EXISTS users CASCADE;",
 				"DROP TABLE IF EXISTS roles CASCADE;",
+				"DROP TABLE IF EXISTS schema_migrations CASCADE;",
 				"DROP TYPE IF EXISTS order_status CASCADE;",
 				"DROP TYPE IF EXISTS history_action CASCADE;",
 			}

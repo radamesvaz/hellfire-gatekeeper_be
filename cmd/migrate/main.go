@@ -98,11 +98,33 @@ func main() {
 				log.Fatalf("Could not parse dirty version: %v", err)
 			}
 		} else if strings.Contains(err.Error(), "no migration found for version 0") {
-			fmt.Println("⚠️  Migration failed due to missing version 0 down migration. Forcing version to 1...")
-			if forceErr := m.Force(1); forceErr != nil {
-				log.Fatalf("Could not force version to 1 after specific error: %v", forceErr)
+			fmt.Println("⚠️  Migration failed due to missing version 0 down migration. Cleaning database and starting fresh...")
+			
+			// Drop all tables and custom types first
+			fmt.Println("🗑️  Dropping all tables to start fresh...")
+			dropTables := []string{
+				"DROP TABLE IF EXISTS order_items CASCADE;",
+				"DROP TABLE IF EXISTS orders_history CASCADE;",
+				"DROP TABLE IF EXISTS orders CASCADE;",
+				"DROP TABLE IF EXISTS products_history CASCADE;",
+				"DROP TABLE IF EXISTS products CASCADE;",
+				"DROP TABLE IF EXISTS users CASCADE;",
+				"DROP TABLE IF EXISTS roles CASCADE;",
+				"DROP TYPE IF EXISTS order_status CASCADE;",
+				"DROP TYPE IF EXISTS history_action CASCADE;",
 			}
-			fmt.Println("🔄 Retrying migrations after force...")
+			
+			for _, dropSQL := range dropTables {
+				if _, execErr := db.Exec(dropSQL); execErr != nil {
+					fmt.Printf("⚠️  Warning: Could not execute %s: %v\n", dropSQL, execErr)
+				}
+			}
+			
+			// Force version to 0 (no migrations applied)
+			if forceErr := m.Force(0); forceErr != nil {
+				log.Fatalf("Could not force version to 0 after specific error: %v", forceErr)
+			}
+			fmt.Println("🔄 Running all migrations from scratch...")
 			if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
 				log.Fatalf("Could not run migrations after force (specific error): %v", retryErr)
 			}

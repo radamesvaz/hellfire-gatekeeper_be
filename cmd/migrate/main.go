@@ -97,6 +97,15 @@ func main() {
 			} else {
 				log.Fatalf("Could not parse dirty version: %v", err)
 			}
+		} else if strings.Contains(err.Error(), "no migration found for version 0") {
+			fmt.Println("⚠️  Migration failed due to missing version 0 down migration. Forcing version to 1...")
+			if forceErr := m.Force(1); forceErr != nil {
+				log.Fatalf("Could not force version to 1 after specific error: %v", forceErr)
+			}
+			fmt.Println("🔄 Retrying migrations after force...")
+			if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
+				log.Fatalf("Could not run migrations after force (specific error): %v", retryErr)
+			}
 		} else {
 			log.Fatalf("Could not run migrations: %v", err)
 		}

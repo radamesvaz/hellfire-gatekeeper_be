@@ -1,2 +1,2 @@
-ALTER TABLE orders_history
-MODIFY action ENUM('create', 'update', 'delete');
+-- Note: action column already exists as history_action type from initial schema
+-- No changes needed as the enum type is already defined

@@ -1,2 +1,1 @@
-ALTER TABLE products_history
-MODIFY action ENUM('update', 'delete');
+-- Note: action column remains as history_action type from initial schema

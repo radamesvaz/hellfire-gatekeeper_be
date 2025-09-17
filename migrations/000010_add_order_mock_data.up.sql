@@ -17,22 +17,23 @@ VALUES
 --   (4, 4, 'cancelled', 40, 'this one is canceled', '2025-04-20 10:00:00', '2025-04-25 10:00:00');
 
 
-ALTER TABLE order_items DROP FOREIGN KEY order_items_ibfk_1;
+-- Drop existing constraints and recreate for PostgreSQL
+ALTER TABLE order_items DROP CONSTRAINT IF EXISTS order_items_ibfk_1;
+ALTER TABLE order_items DROP CONSTRAINT IF EXISTS fk_order;
+ALTER TABLE order_items DROP CONSTRAINT IF EXISTS fk_product;
 
-ALTER TABLE order_items DROP PRIMARY KEY;
+-- Drop and recreate the table with proper structure
+DROP TABLE IF EXISTS order_items;
 
-ALTER TABLE order_items CHANGE id_order_items id_order_item INT NOT NULL;
+CREATE TABLE order_items (
+    id_order_item SERIAL PRIMARY KEY,
+    id_order INT NOT NULL,
+    id_product INT NOT NULL,
+    quantity INT NOT NULL,
+    CONSTRAINT fk_order FOREIGN KEY (id_order) REFERENCES orders(id_order) ON DELETE CASCADE,
+    CONSTRAINT fk_product FOREIGN KEY (id_product) REFERENCES products(id_product) ON DELETE CASCADE
+);
 
-ALTER TABLE order_items ADD COLUMN id_order INT NOT NULL AFTER id_order_item;
-
-ALTER TABLE order_items MODIFY id_order_item INT NOT NULL AUTO_INCREMENT, ADD PRIMARY KEY (id_order_item);
-
-ALTER TABLE order_items
-  ADD CONSTRAINT fk_order FOREIGN KEY (id_order) REFERENCES orders(id_order) ON DELETE CASCADE,
-  ADD CONSTRAINT fk_product FOREIGN KEY (id_product) REFERENCES products(id_product) ON DELETE CASCADE;
-
-
-DELETE FROM order_items where id_order_item IN (1,2,3,4,5);
 INSERT INTO order_items (id_order_item, id_product, id_order, quantity) 
     VALUES
     (1, 1, 1, 2),

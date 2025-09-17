@@ -37,7 +37,7 @@ CREATE TABLE products_history (
     price DECIMAL(10,2) NOT NULL,
     available BOOLEAN,
     modified_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    modified_by VARCHAR(100),
+    modified_by INT,
     action history_action NOT NULL,
     FOREIGN KEY (id_product) REFERENCES products(id_product) ON DELETE CASCADE
 );
@@ -58,7 +58,7 @@ CREATE TABLE orders_history (
     status order_status NOT NULL,
     total_price DECIMAL(10,2) NOT NULL,
     modified_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    modified_by VARCHAR(100),
+    modified_by INT,
     action history_action NOT NULL,
     FOREIGN KEY (id_order) REFERENCES orders(id_order) ON DELETE CASCADE,
     FOREIGN KEY (id_user) REFERENCES users(id_user) ON DELETE CASCADE

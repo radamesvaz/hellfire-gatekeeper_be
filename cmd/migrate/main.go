@@ -103,4 +103,5 @@ func main() {
 	}
 
 	fmt.Println("✅ Database migrations completed successfully!")
+	fmt.Println("🎉 All migrations applied correctly!")
 }

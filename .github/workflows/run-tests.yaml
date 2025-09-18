@@ -21,15 +21,19 @@ jobs:
 
       - name: Set up environment file
         run: |
-          echo "MYSQL_USER=TEST_USER" >> .env
-          echo "MYSQL_PASSWORD=TEST_PASS" >> .env
-          echo "MYSQL_DATABASE=test_db" >> .env
-          echo "MYSQL_ROOT_PASSWORD=TEST_ROOT_PASS" >> .env
-          echo "DB_PORT=3306" >> .env
+          echo "CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }}" >> .env
+          echo "CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }}" >> .env
+          echo "CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}" >> .env
+          echo "DB_HOST=localhost" >> .env
+          echo "DB_PORT=5432" >> .env
+          echo "DB_USER=test" >> .env
+          echo "DB_PASSWORD=test" >> .env
+          echo "DB_NAME=test_db" >> .env
+          echo "JWT_SECRET=test_jwt_secret" >> .env
+          echo "JWT_EXPIRATION_MINUTES=60" >> .env
 
       - name: Install Go dependencies
         run: go mod tidy
 
-      - name: Run all tests
-        if: hashFiles('tests/**') != ''
-        run: bash ./run.sh tests
+      - name: Run unit tests
+        run: go test ./internal/... -v

@@ -1,12 +1,12 @@
 -- DELETE FROM orders_history WHERE id_order IN (1, 2, 3, 4);
 DELETE FROM orders WHERE id_order IN (1, 2, 3, 4);
 
-INSERT INTO orders (id_order, id_user, status, total_price, note, created_on, delivery_date)
+INSERT INTO orders (id_user, status, total_price, note, created_on, delivery_date)
 VALUES
-  (1, 2, 'delivered', 40, 'make it bright', '2025-04-1 10:00:00', '2025-04-5 10:00:00'),
-  (2, 2, 'pending', 20, 'deliver at the door', '2025-04-14 10:00:00', '2025-04-20 10:00:00'),
-  (3, 2, 'preparing', 40, 'not so sweet', '2025-04-20 10:00:00', '2025-04-25 10:00:00'),
-  (4, 2, 'cancelled', 40, 'this one is canceled', '2025-04-20 10:00:00', '2025-04-25 10:00:00');
+  (2, 'delivered', 40, 'make it bright', '2025-04-1 10:00:00'::timestamp, '2025-04-5 10:00:00'::timestamp),
+  (2, 'pending', 20, 'deliver at the door', '2025-04-14 10:00:00'::timestamp, '2025-04-20 10:00:00'::timestamp),
+  (2, 'preparing', 40, 'not so sweet', '2025-04-20 10:00:00'::timestamp, '2025-04-25 10:00:00'::timestamp),
+  (2, 'cancelled', 40, 'this one is canceled', '2025-04-20 10:00:00'::timestamp, '2025-04-25 10:00:00'::timestamp);
 
 
 -- INSERT INTO orders_history (id_orders_history, id_order, id_user, status, total_price, note, modified_on, modified_by, action, delivery_date)
@@ -34,10 +34,10 @@ CREATE TABLE order_items (
     CONSTRAINT fk_product FOREIGN KEY (id_product) REFERENCES products(id_product) ON DELETE CASCADE
 );
 
-INSERT INTO order_items (id_order_item, id_product, id_order, quantity) 
+INSERT INTO order_items (id_product, id_order, quantity) 
     VALUES
-    (1, 1, 1, 2),
-    (2, 2, 1, 10),
-    (3, 2, 2, 2),
-    (4, 1, 3, 2),
-    (5, 2, 3, 1);
+    (1, (SELECT id_order FROM orders WHERE note = 'make it bright'), 2),
+    (2, (SELECT id_order FROM orders WHERE note = 'make it bright'), 10),
+    (2, (SELECT id_order FROM orders WHERE note = 'deliver at the door'), 2),
+    (1, (SELECT id_order FROM orders WHERE note = 'not so sweet'), 2),
+    (2, (SELECT id_order FROM orders WHERE note = 'not so sweet'), 1);

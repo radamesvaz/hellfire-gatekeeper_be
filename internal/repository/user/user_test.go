@@ -131,13 +131,13 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = ?"),
+					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = $1"),
 				).
 					WithArgs(tt.emailForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = ?"),
+					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = $1"),
 				).
 					WithArgs(tt.emailForLookup).
 					WillReturnRows(tt.mockRows)
@@ -211,17 +211,17 @@ func TestUserRepository_CreateUser(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
-				mock.ExpectExec(
-					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES (?, ?, ?, ?, ?)"),
+				mock.ExpectQuery(
+					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id_user"),
 				).
 					WithArgs(tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
-					WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
+					WillReturnRows(sqlmock.NewRows([]string{"id_user"}).AddRow(tt.expected))
 			} else {
-				mock.ExpectExec(
-					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES (?, ?, ?, ?, ?)"),
+				mock.ExpectQuery(
+					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id_user"),
 				).
 					WithArgs(tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
-					WillReturnResult(sqlmock.NewResult(int64(tt.expected), 1))
+					WillReturnRows(sqlmock.NewRows([]string{"id_user"}).AddRow(tt.expected))
 			}
 
 			userID, err := repo.CreateUser(context.Background(), tt.payload)

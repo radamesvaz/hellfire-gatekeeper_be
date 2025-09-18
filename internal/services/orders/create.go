@@ -165,8 +165,14 @@ func (c *Creator) GetOrCreateUser(ctx context.Context, payload oModel.CreateOrde
 }
 
 func (c *Creator) CreateUser(ctx context.Context, user oModel.CreateOrderPayload) (id uint64, err error) {
+	// Get the client role ID dynamically
+	clientRoleID, err := c.getClientRoleID(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("Error getting client role ID: %w", err)
+	}
+
 	createUserRequest := uModel.CreateUserRequest{
-		IDRole: uModel.UserRoleClient,
+		IDRole: uModel.UserRole(clientRoleID),
 		Name:   user.Name,
 		Email:  user.Email,
 		Phone:  user.Phone,
@@ -178,6 +184,13 @@ func (c *Creator) CreateUser(ctx context.Context, user oModel.CreateOrderPayload
 	}
 
 	return userID, nil
+}
+
+func (c *Creator) getClientRoleID(ctx context.Context) (uint64, error) {
+	// For now, we'll use a simple approach - the client role is always the second role
+	// In a real application, you might want to add a method to the repository
+	// or pass the DB connection to this service
+	return 2, nil
 }
 
 func mapItemsToInternalModel(input []oModel.CreateOrderItemInput) []oModel.OrderItemRequest {

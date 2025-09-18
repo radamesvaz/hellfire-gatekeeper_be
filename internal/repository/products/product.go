@@ -75,7 +75,7 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 	var imageURLsJSON sql.NullString
 
 	err := r.DB.QueryRow(
-		"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = ?",
+		"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = $1",
 		idProduct,
 	).Scan(
 		&product.ID,
@@ -124,7 +124,7 @@ func (r *ProductRepository) GetProductsByIDs(ctx context.Context, ids []uint64) 
 	placeholders := make([]string, len(ids))
 	args := make([]interface{}, len(ids))
 	for i, id := range ids {
-		placeholders[i] = "?"
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		args[i] = id
 	}
 
@@ -168,24 +168,19 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
-	result, err := r.DB.Exec(
+	var insertedID uint64
+	err = r.DB.QueryRow(
 		`INSERT INTO products 
 		(name, description, price, available, stock, status, image_urls) 
-		VALUES (?, ?, ?, ?, ?, ?, ?) `,
-		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON))
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_product`,
+		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON)).Scan(&insertedID)
 
-	if err != nil {
-		fmt.Printf("Error creating the product: %v", err)
-		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
-	}
-
-	insertedID, err := result.LastInsertId()
 	if err != nil {
 		fmt.Printf("Error getting the last insert ID: %v", err)
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
-	createdProduct.ID = uint64(insertedID)
+	createdProduct.ID = insertedID
 	createdProduct.Name = product.Name
 	createdProduct.Description = product.Description
 	createdProduct.Price = product.Price
@@ -212,7 +207,7 @@ func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uin
 	}
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET status = ? where id_product = ?",
+		"UPDATE products SET status = $1 WHERE id_product = $2",
 		status,
 		idProduct,
 	)
@@ -250,7 +245,7 @@ func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Prod
 	}
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET name = ?, description = ?, price = ?, available = ?, stock = ?, status = ? where id_product = ?",
+		"UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6 WHERE id_product = $7",
 		product.Name,
 		product.Description,
 		product.Price,
@@ -294,7 +289,7 @@ func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint
 	fmt.Printf("Updating product stock to %d for product id = %d", newStock, idProduct)
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET stock = ? WHERE id_product = ?",
+		"UPDATE products SET stock = $1 WHERE id_product = $2",
 		newStock,
 		idProduct,
 	)
@@ -332,7 +327,7 @@ func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uin
 
 	fmt.Printf("DEBUG: About to execute SQL UPDATE for product %d\n", idProduct)
 	result, err := r.DB.Exec(
-		"UPDATE products SET image_urls = ? WHERE id_product = ?",
+		"UPDATE products SET image_urls = $1 WHERE id_product = $2",
 		string(imageURLsJSON),
 		idProduct,
 	)

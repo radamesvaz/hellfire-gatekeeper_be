@@ -700,23 +700,15 @@ func TestUpdateProductWithImages(t *testing.T) {
 	assert.Equal(t, uint64(8), updatedProduct.Stock)
 	assert.Len(t, updatedProduct.ImageURLs, 2) // Should have 2 images after adding them
 
-	// Verify the image URLs have the correct format
+	// Verify the image URLs are Cloudinary URLs
 	for _, imageURL := range updatedProduct.ImageURLs {
-		// Check that the URL starts with the correct path
-		expectedPrefix := "/uploads/products/1/"
-		assert.True(t, strings.HasPrefix(imageURL, expectedPrefix),
-			"Image URL %s should start with %s", imageURL, expectedPrefix)
+		// Check that the URL is a Cloudinary URL
+		assert.True(t, strings.Contains(imageURL, "cloudinary.com"),
+			"Image URL %s should be a Cloudinary URL", imageURL)
 
-		// Check that the URL ends with a valid image extension
-		validExtensions := []string{".jpg", ".jpeg", ".png", ".webp"}
-		hasValidExtension := false
-		for _, ext := range validExtensions {
-			if strings.HasSuffix(imageURL, ext) {
-				hasValidExtension = true
-				break
-			}
-		}
-		assert.True(t, hasValidExtension, "Image URL %s should end with a valid image extension", imageURL)
+		// Check that the URL contains the bakery/products path
+		assert.True(t, strings.Contains(imageURL, "bakery/products"),
+			"Image URL %s should contain bakery/products path", imageURL)
 	}
 }
 
@@ -897,8 +889,8 @@ func TestDeleteProductImage(t *testing.T) {
 
 	// Step 4: Verify the image was deleted from Cloudinary
 	// Check that the remaining images are still Cloudinary URLs
-	remainingImages, ok := deleteResponse["all_images"].([]interface{})
-	require.True(t, ok)
+	remainingImages, ok := deleteResponse["remaining_images"].([]interface{})
+	require.True(t, ok, "remaining_images should be present in response")
 	assert.Len(t, remainingImages, 2) // Should have 2 images left
 
 	// Verify all remaining images are Cloudinary URLs

@@ -443,7 +443,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 
 	// Verify the order status was actually updated in the database
 	var actualStatus string
-	err = db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = ?", orderID).Scan(&actualStatus)
+	err = db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = $1", orderID).Scan(&actualStatus)
 	assert.NoError(t, err, "Should be able to query updated order status")
 	assert.Equal(t, "preparing", actualStatus, "Order status should be updated to 'preparing'")
 

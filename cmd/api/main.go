@@ -131,6 +131,8 @@ func main() {
 		"http://localhost:5000",
 		"https://confettideliadmin.netlify.app",
 		"https://confettideliadmin.netlify.app/",
+		"https://confettideli.netlify.app",
+		"https://confettideli.netlify.app/",
 	})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 	allowedHeaders := handlers.AllowedHeaders([]string{"Authorization", "Content-Type"})

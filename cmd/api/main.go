@@ -124,11 +124,13 @@ func main() {
 	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
-	// CORS setup for local FE development
+	// CORS setup for local FE development and production
 	allowedOrigins := handlers.AllowedOrigins([]string{
 		"http://localhost:5173",
 		"http://localhost:3000",
 		"http://localhost:5000",
+		"https://confettideliadmin.netlify.app",
+		"https://confettideliadmin.netlify.app/",
 	})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 	allowedHeaders := handlers.AllowedHeaders([]string{"Authorization", "Content-Type"})

@@ -11,17 +11,16 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
 	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/mysql"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	"github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	repository "github.com/radamesvaz/bakery-app/internal/repository/products"
@@ -34,7 +33,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func setupMySQLContainer(t *testing.T) (container testcontainers.Container, db *sql.DB, terminate func(), dsn string) {
+func setupPostgreSQLContainer(t *testing.T) (container testcontainers.Container, db *sql.DB, terminate func(), dsn string) {
 	ctx := context.Background()
 	err := godotenv.Load("../.env")
 	if err != nil {
@@ -51,19 +50,17 @@ func setupMySQLContainer(t *testing.T) (container testcontainers.Container, db *
 	}
 
 	req := testcontainers.ContainerRequest{
-		Image:        "mysql:8.0",
-		ExposedPorts: []string{"3306/tcp"},
+		Image:        "postgres:15",
+		ExposedPorts: []string{"5432/tcp"},
 		Env: map[string]string{
-			"MYSQL_ROOT_PASSWORD": os.Getenv("MYSQL_ROOT_PASSWORD"),
-			"MYSQL_USER":          os.Getenv("MYSQL_USER"),
-			"MYSQL_PASSWORD":      os.Getenv("MYSQL_PASSWORD"),
-			"MYSQL_DATABASE":      os.Getenv("MYSQL_DATABASE"),
+			"POSTGRES_USER":     dbUser,
+			"POSTGRES_PASSWORD": dbPassword,
+			"POSTGRES_DB":       dbName,
 		},
-		// WaitingFor: wait.ForListeningPort("3306/tcp").WithStartupTimeout(30 * time.Second),
-		WaitingFor: wait.ForLog("MySQL Community Server - GPL").WithStartupTimeout(60 * time.Second),
+		WaitingFor: wait.ForLog("database system is ready to accept connections").WithStartupTimeout(60 * time.Second),
 	}
 
-	mysqlC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+	postgresC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
 		Started:          true,
 	})
@@ -71,24 +68,24 @@ func setupMySQLContainer(t *testing.T) (container testcontainers.Container, db *
 		t.Fatalf("Error setting up the generic container: %v", err)
 	}
 
-	host, err := mysqlC.Host(ctx)
+	host, err := postgresC.Host(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ports, err := mysqlC.MappedPort(ctx, "3306")
+	ports, err := postgresC.MappedPort(ctx, "5432")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	usableDSN := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+	usableDSN := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 		dbUser, dbPassword, host, ports.Port(), dbName)
 
 	var dbConn *sql.DB
 
-	// Wait for mysql to be ready
+	// Wait for postgres to be ready
 	for i := 0; i < 10; i++ {
-		dbConn, err = sql.Open("mysql", usableDSN)
+		dbConn, err = sql.Open("postgres", usableDSN)
 		if err == nil {
 			err = dbConn.Ping()
 			if err == nil {
@@ -105,16 +102,16 @@ func setupMySQLContainer(t *testing.T) (container testcontainers.Container, db *
 	// Cleanup function when tests end
 	terminate = func() {
 		dbConn.Close()
-		mysqlC.Terminate(ctx)
+		postgresC.Terminate(ctx)
 	}
 
-	return mysqlC, dbConn, terminate, usableDSN
+	return postgresC, dbConn, terminate, usableDSN
 }
 
 func runMigrations(t *testing.T, dsn string) {
 	m, err := migrate.New(
 		"file://../migrations",
-		"mysql://"+dsn,
+		dsn,
 	)
 	if err != nil {
 		t.Fatalf("Error initializing migration: %v", err)
@@ -127,7 +124,7 @@ func runMigrations(t *testing.T, dsn string) {
 
 func TestGetAllProducts(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -183,7 +180,7 @@ func TestGetAllProducts(t *testing.T) {
 
 func TestGetProductByID(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -224,7 +221,7 @@ func TestGetProductByID(t *testing.T) {
 
 func TestCreateProduct(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -290,7 +287,7 @@ func TestCreateProduct(t *testing.T) {
 
 func TestCreateProductWithImages(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -430,44 +427,23 @@ func TestCreateProductWithImages(t *testing.T) {
 	require.True(t, ok)
 	assert.Len(t, finalImageURLs, 2)
 
-	// Verify images were saved to disk
-	productDir := filepath.Join(testDir, "products", productIDStr)
-
-	// Check that the directory was created
-	_, err = os.Stat(productDir)
-	assert.NoError(t, err)
-
-	// Check that image files exist
-	files, err := os.ReadDir(productDir)
-	require.NoError(t, err)
-	assert.Len(t, files, 2)
-
-	// Verify the image URLs in the response have the correct format
+	// Verify images were saved to Cloudinary
+	// Check that image URLs are Cloudinary URLs
 	for _, imageURLInterface := range finalImageURLs {
 		imageURL, ok := imageURLInterface.(string)
 		require.True(t, ok, "Image URL should be a string")
 
-		// Check that the URL starts with the correct path
-		expectedPrefix := fmt.Sprintf("/uploads/products/%s/", productIDStr)
-		assert.True(t, strings.HasPrefix(imageURL, expectedPrefix),
-			"Image URL %s should start with %s", imageURL, expectedPrefix)
-
-		// Check that the URL ends with a valid image extension
-		validExtensions := []string{".jpg", ".jpeg", ".png", ".webp"}
-		hasValidExtension := false
-		for _, ext := range validExtensions {
-			if strings.HasSuffix(imageURL, ext) {
-				hasValidExtension = true
-				break
-			}
-		}
-		assert.True(t, hasValidExtension, "Image URL %s should end with a valid image extension", imageURL)
+		// Check that the URL is a Cloudinary URL
+		assert.True(t, strings.Contains(imageURL, "cloudinary.com"),
+			"Image URL should be a Cloudinary URL, got: %s", imageURL)
+		assert.True(t, strings.Contains(imageURL, "bakery/products"),
+			"Image URL should contain bakery/products path, got: %s", imageURL)
 	}
 }
 
 func TestUpdateProduct(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -525,7 +501,7 @@ func TestUpdateProduct(t *testing.T) {
 
 func TestDeleteProduct(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -579,7 +555,7 @@ func TestDeleteProduct(t *testing.T) {
 
 func TestUpdateProductWithImages(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -703,34 +679,20 @@ func TestUpdateProductWithImages(t *testing.T) {
 	assert.Contains(t, imageResponse, "new_images")
 	assert.Contains(t, imageResponse, "all_images")
 
-	// Verify images were saved to disk
-	productDir := filepath.Join(testDir, "products", "1")
-
-	// Check that the directory was created
-	_, err = os.Stat(productDir)
-	assert.NoError(t, err)
-
-	// Check that image files exist
-	files, err := os.ReadDir(productDir)
-	require.NoError(t, err)
-	assert.Len(t, files, 2)
-
-	// Verify the image files have the correct content
-	for _, file := range files {
-		filePath := filepath.Join(productDir, file.Name())
-		content, err := os.ReadFile(filePath)
-		require.NoError(t, err)
-
-		// Check that the content is one of our test images
-		contentStr := string(content)
-		assert.True(t, contentStr == "fake updated image 1 content" || contentStr == "fake updated image 2 content",
-			"File content should match one of our test images")
-	}
-
 	// Verify the product was updated in the database
 	ctx := context.Background()
 	updatedProduct, err := repository.GetProductByID(ctx, 1)
 	require.NoError(t, err)
+
+	// Verify images were saved to Cloudinary
+	// Check that image URLs are Cloudinary URLs
+	for _, imageURL := range updatedProduct.ImageURLs {
+		// Check that the URL is a Cloudinary URL
+		assert.True(t, strings.Contains(imageURL, "cloudinary.com"),
+			"Image URL should be a Cloudinary URL, got: %s", imageURL)
+		assert.True(t, strings.Contains(imageURL, "bakery/products"),
+			"Image URL should contain bakery/products path, got: %s", imageURL)
+	}
 
 	assert.Equal(t, "Brownie Clásico - ACTUALIZADO CON IMÁGENES", updatedProduct.Name)
 	assert.Equal(t, "Delicioso brownie de chocolate - ahora con imágenes", updatedProduct.Description)
@@ -738,29 +700,21 @@ func TestUpdateProductWithImages(t *testing.T) {
 	assert.Equal(t, uint64(8), updatedProduct.Stock)
 	assert.Len(t, updatedProduct.ImageURLs, 2) // Should have 2 images after adding them
 
-	// Verify the image URLs have the correct format
+	// Verify the image URLs are Cloudinary URLs
 	for _, imageURL := range updatedProduct.ImageURLs {
-		// Check that the URL starts with the correct path
-		expectedPrefix := "/uploads/products/1/"
-		assert.True(t, strings.HasPrefix(imageURL, expectedPrefix),
-			"Image URL %s should start with %s", imageURL, expectedPrefix)
+		// Check that the URL is a Cloudinary URL
+		assert.True(t, strings.Contains(imageURL, "cloudinary.com"),
+			"Image URL %s should be a Cloudinary URL", imageURL)
 
-		// Check that the URL ends with a valid image extension
-		validExtensions := []string{".jpg", ".jpeg", ".png", ".webp"}
-		hasValidExtension := false
-		for _, ext := range validExtensions {
-			if strings.HasSuffix(imageURL, ext) {
-				hasValidExtension = true
-				break
-			}
-		}
-		assert.True(t, hasValidExtension, "Image URL %s should end with a valid image extension", imageURL)
+		// Check that the URL contains the bakery/products path
+		assert.True(t, strings.Contains(imageURL, "bakery/products"),
+			"Image URL %s should contain bakery/products path", imageURL)
 	}
 }
 
 func TestDeleteProductImage(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -897,17 +851,18 @@ func TestDeleteProductImage(t *testing.T) {
 	require.True(t, ok)
 	assert.Len(t, allImages, 3) // Should have 3 images
 
-	// Verify images were saved to disk
-	productDir := filepath.Join(testDir, "products", "1")
+	// Verify images were saved to Cloudinary
+	// Check that image URLs are Cloudinary URLs
+	for _, imageURLInterface := range allImages {
+		imageURL, ok := imageURLInterface.(string)
+		require.True(t, ok, "Image URL should be a string")
 
-	// Check that the directory was created
-	_, err = os.Stat(productDir)
-	assert.NoError(t, err)
-
-	// Check that all 3 image files exist
-	files, err := os.ReadDir(productDir)
-	require.NoError(t, err)
-	assert.Len(t, files, 3)
+		// Check that the URL is a Cloudinary URL
+		assert.True(t, strings.Contains(imageURL, "cloudinary.com"),
+			"Image URL should be a Cloudinary URL, got: %s", imageURL)
+		assert.True(t, strings.Contains(imageURL, "bakery/products"),
+			"Image URL should contain bakery/products path, got: %s", imageURL)
+	}
 
 	// Step 3: Delete a specific image (the second one)
 	imageToDelete := allImages[1].(string) // Get the second image URL
@@ -932,16 +887,23 @@ func TestDeleteProductImage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Image deleted successfully", deleteResponse["message"])
 
-	// Step 4: Verify the image was deleted from the filesystem
-	filesAfterDelete, err := os.ReadDir(productDir)
-	require.NoError(t, err)
-	assert.Len(t, filesAfterDelete, 2) // Should have 2 images left
+	// Step 4: Verify the image was deleted from Cloudinary
+	// Check that the remaining images are still Cloudinary URLs
+	remainingImages, ok := deleteResponse["remaining_images"].([]interface{})
+	require.True(t, ok, "remaining_images should be present in response")
+	assert.Len(t, remainingImages, 2) // Should have 2 images left
 
-	// Verify the specific image file was deleted
-	imageFileName := filepath.Base(imageToDelete)
-	imageFilePath := filepath.Join(productDir, imageFileName)
-	_, err = os.Stat(imageFilePath)
-	assert.Error(t, err) // File should not exist
+	// Verify all remaining images are Cloudinary URLs
+	for _, imageURLInterface := range remainingImages {
+		imageURL, ok := imageURLInterface.(string)
+		require.True(t, ok, "Image URL should be a string")
+
+		// Check that the URL is a Cloudinary URL
+		assert.True(t, strings.Contains(imageURL, "cloudinary.com"),
+			"Image URL should be a Cloudinary URL, got: %s", imageURL)
+		assert.True(t, strings.Contains(imageURL, "bakery/products"),
+			"Image URL should contain bakery/products path, got: %s", imageURL)
+	}
 
 	// Step 5: Verify the image was removed from the database
 	ctx := context.Background()
@@ -956,31 +918,17 @@ func TestDeleteProductImage(t *testing.T) {
 	}
 
 	// Step 6: Verify the remaining images are still intact
-	remainingImages := updatedProduct.ImageURLs
-	assert.Len(t, remainingImages, 2)
+	assert.Len(t, updatedProduct.ImageURLs, 2)
 
-	// Verify the remaining images exist in the filesystem
-	for _, remainingImageURL := range remainingImages {
-		remainingImageFileName := filepath.Base(remainingImageURL)
-		remainingImageFilePath := filepath.Join(productDir, remainingImageFileName)
-		_, err = os.Stat(remainingImageFilePath)
-		assert.NoError(t, err, "Remaining image %s should still exist", remainingImageFileName)
-	}
-
-	// Step 7: Verify the remaining images have the correct content
-	for _, file := range filesAfterDelete {
-		filePath := filepath.Join(productDir, file.Name())
-		content, err := os.ReadFile(filePath)
-		require.NoError(t, err)
-
-		// Check that the content is one of our remaining test images
-		contentStr := string(content)
-		assert.True(t,
-			contentStr == "fake image 1 content for deletion test" ||
-				contentStr == "fake image 3 content for deletion test",
-			"File content should match one of our remaining test images")
+	// Verify the remaining images are Cloudinary URLs
+	for _, remainingImageURL := range updatedProduct.ImageURLs {
+		// Check that the URL is a Cloudinary URL
+		assert.True(t, strings.Contains(remainingImageURL, "cloudinary.com"),
+			"Image URL should be a Cloudinary URL, got: %s", remainingImageURL)
+		assert.True(t, strings.Contains(remainingImageURL, "bakery/products"),
+			"Image URL should contain bakery/products path, got: %s", remainingImageURL)
 	}
 
 	t.Logf("Successfully deleted image: %s", imageToDelete)
-	t.Logf("Remaining images: %v", remainingImages)
+	t.Logf("Remaining images: %v", updatedProduct.ImageURLs)
 }

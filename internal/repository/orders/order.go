@@ -153,7 +153,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
         INNER JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
         INNER JOIN products p ON oi.id_product = p.id_product
-        WHERE o.id_order = ?
+        WHERE o.id_order = $1
     `
 	order := oModel.OrderResponse{}
 	order.OrderItems = []oModel.OrderItems{}
@@ -300,10 +300,10 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 
 func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (id uint64, err error) {
 	fmt.Printf("Creating order for user: %v", order.IdUser)
-	exec := execerFrom(tx, r.DB)
-	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES (?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order`
 
-	result, err := exec.ExecContext(
+	var insertedID uint64
+	err = tx.QueryRowContext(
 		ctx,
 		query,
 		order.IdUser,
@@ -312,26 +312,20 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		order.Note,
 		order.DeliveryDate,
 		order.Paid,
-	)
+	).Scan(&insertedID)
 
 	if err != nil {
 		fmt.Printf("Error creating the order: %v", err)
 		return 0, errors.NewInternalServerError(errors.ErrCreatingOrder)
 	}
 
-	insertedID, err := result.LastInsertId()
-	if err != nil {
-		fmt.Printf("Error getting the last insert ID: %v", err)
-		return 0, errors.NewInternalServerError(errors.ErrGettingTheOrderID)
-	}
-
-	return uint64(insertedID), nil
+	return insertedID, nil
 }
 
 func (r *OrderRepository) createOrderItemTx(ctx context.Context, tx *sql.Tx, items []oModel.OrderItemRequest) error {
 	fmt.Printf("creating items for order: %v", items[0].IdOrder)
 	exec := execerFrom(tx, r.DB)
-	query := `INSERT INTO order_items (id_order, id_product, quantity) VALUES (?, ?, ?)`
+	query := `INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)`
 
 	for _, item := range items {
 		_, err := exec.ExecContext(ctx, query, item.IdOrder, item.IdProduct, item.Quantity)
@@ -370,15 +364,15 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		action
 		) 
 		VALUES (
-		?,
-		?, 
-		?, 
-		?, 
-		?,
-		?,
-		?,
-		?, 
-		?)`,
+		$1,
+		$2, 
+		$3, 
+		$4, 
+		$5,
+		$6,
+		$7,
+		$8, 
+		$9)`,
 		order.IDOrder,
 		order.IdUser,
 		order.Status,
@@ -415,7 +409,7 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 		SELECT id_order_history, id_order, id_user, status, total_price, note, 
 			delivery_date, paid, modified_on, modified_by, action
 		FROM orders_history 
-		WHERE id_order = ?
+		WHERE id_order = $1
 		ORDER BY modified_on DESC
 	`
 
@@ -456,7 +450,7 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 
 // UpdateOrderStatus updates the status of an order
 func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus) error {
-	query := `UPDATE orders SET status = ? WHERE id_order = ?`
+	query := `UPDATE orders SET status = $1 WHERE id_order = $2`
 
 	result, err := r.DB.ExecContext(ctx, query, status, orderID)
 	if err != nil {
@@ -477,7 +471,7 @@ func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64,
 
 // UpdateOrderPaidStatus updates the paid status of an order
 func (r *OrderRepository) UpdateOrderPaidStatus(ctx context.Context, orderID uint64, paid bool) error {
-	query := `UPDATE orders SET paid = ? WHERE id_order = ?`
+	query := `UPDATE orders SET paid = $1 WHERE id_order = $2`
 
 	result, err := r.DB.ExecContext(ctx, query, paid, orderID)
 	if err != nil {

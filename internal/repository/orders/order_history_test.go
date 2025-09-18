@@ -115,15 +115,15 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 							action
 							) 
 							VALUES (
-							?,
-							?, 
-							?, 
-							?, 
-							?,
-							?,
-							?,
-							?, 
-							?)`,
+							$1,
+							$2, 
+							$3, 
+							$4, 
+							$5,
+							$6,
+							$7,
+							$8, 
+							$9)`,
 					),
 				).WillReturnError(tt.mockError)
 			} else {
@@ -141,15 +141,15 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 							action
 							) 
 							VALUES (
-							?,
-							?, 
-							?, 
-							?, 
-							?,
-							?,
-							?,
-							?, 
-							?)`,
+							$1,
+							$2, 
+							$3, 
+							$4, 
+							$5,
+							$6,
+							$7,
+							$8, 
+							$9)`,
 					),
 				).WillReturnResult(sqlmock.NewResult(1, 1))
 			}

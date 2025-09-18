@@ -1,2 +1,5 @@
--- Note: action column already exists as history_action type from initial schema
--- No changes needed as the enum type is already defined
+-- Add 'create' to history_action enum
+DO $$ BEGIN
+    ALTER TYPE history_action ADD VALUE IF NOT EXISTS 'create';
+EXCEPTION WHEN duplicate_object THEN null;
+END $$;

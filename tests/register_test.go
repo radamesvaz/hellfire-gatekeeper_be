@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/golang-migrate/migrate/v4/database/mysql"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
@@ -21,7 +21,7 @@ import (
 
 func TestRegister_Success(t *testing.T) {
 	// Setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -80,7 +80,7 @@ func TestRegister_Success(t *testing.T) {
 
 func TestRegister_EmailAlreadyExists(t *testing.T) {
 	// Setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -133,7 +133,7 @@ func TestRegister_EmailAlreadyExists(t *testing.T) {
 
 func TestRegister_WeakPassword(t *testing.T) {
 	// Setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -207,7 +207,7 @@ func TestRegister_WeakPassword(t *testing.T) {
 
 func TestRegister_InvalidEmail(t *testing.T) {
 	// Setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -273,7 +273,7 @@ func TestRegister_InvalidEmail(t *testing.T) {
 
 func TestRegister_InvalidJSON(t *testing.T) {
 	// Setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -310,7 +310,7 @@ func TestRegister_InvalidJSON(t *testing.T) {
 
 func TestRegister_MissingFields(t *testing.T) {
 	// Setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)

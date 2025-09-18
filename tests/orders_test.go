@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/golang-migrate/migrate/v4/database/mysql"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 	"github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
@@ -26,7 +26,7 @@ import (
 
 func TestGetAllOrders(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -147,7 +147,7 @@ func TestGetAllOrders(t *testing.T) {
 
 func TestGetOrderByID(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -217,7 +217,7 @@ func TestGetOrderByID(t *testing.T) {
 
 func TestCreateOrder(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -272,7 +272,7 @@ func TestCreateOrder(t *testing.T) {
 
 func TestOrderHistoryMigration(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -295,7 +295,7 @@ func TestOrderHistoryMigration(t *testing.T) {
 
 func TestCreateOrder_WithOrderHistory(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -364,7 +364,7 @@ func TestCreateOrder_WithOrderHistory(t *testing.T) {
 
 func TestUpdateOrderStatus_Success(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -443,7 +443,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 
 	// Verify the order status was actually updated in the database
 	var actualStatus string
-	err = db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = ?", orderID).Scan(&actualStatus)
+	err = db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = $1", orderID).Scan(&actualStatus)
 	assert.NoError(t, err, "Should be able to query updated order status")
 	assert.Equal(t, "preparing", actualStatus, "Order status should be updated to 'preparing'")
 
@@ -475,7 +475,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 
 func TestUpdateOrderStatus_ValidTransitions(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -556,7 +556,7 @@ func TestUpdateOrderStatus_ValidTransitions(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("%s_to_%s", tc.fromStatus, tc.toStatus), func(t *testing.T) {
 			// Set the current status
-			_, err := db.ExecContext(ctx, "UPDATE orders SET status = ? WHERE id_order = ?", tc.fromStatus, orderID)
+			_, err := db.ExecContext(ctx, "UPDATE orders SET status = $1 WHERE id_order = $2", tc.fromStatus, orderID)
 			assert.NoError(t, err, "Should be able to set order status")
 
 			// Update to new status
@@ -573,7 +573,7 @@ func TestUpdateOrderStatus_ValidTransitions(t *testing.T) {
 
 				// Verify the status was actually updated
 				var actualStatus string
-				err := db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = ?", orderID).Scan(&actualStatus)
+				err := db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = $1", orderID).Scan(&actualStatus)
 				assert.NoError(t, err, "Should be able to query updated order status")
 				assert.Equal(t, tc.toStatus, actualStatus,
 					fmt.Sprintf("Order status should be updated from %s to %s", tc.fromStatus, tc.toStatus))
@@ -587,7 +587,7 @@ func TestUpdateOrderStatus_ValidTransitions(t *testing.T) {
 
 func TestUpdateOrderStatus_InvalidTransitions(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -668,7 +668,7 @@ func TestUpdateOrderStatus_InvalidTransitions(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.description, func(t *testing.T) {
 			// Set the current status
-			_, updateErr := db.ExecContext(ctx, "UPDATE orders SET status = ? WHERE id_order = ?", tc.fromStatus, orderID)
+			_, updateErr := db.ExecContext(ctx, "UPDATE orders SET status = $1 WHERE id_order = $2", tc.fromStatus, orderID)
 			assert.NoError(t, updateErr, "Should be able to set order status")
 
 			// Try to update to invalid status
@@ -685,7 +685,7 @@ func TestUpdateOrderStatus_InvalidTransitions(t *testing.T) {
 
 			// Verify the status was NOT changed
 			var actualStatus string
-			queryErr := db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = ?", orderID).Scan(&actualStatus)
+			queryErr := db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = $1", orderID).Scan(&actualStatus)
 			assert.NoError(t, queryErr, "Should be able to query order status")
 			assert.Equal(t, tc.fromStatus, actualStatus,
 				fmt.Sprintf("Order status should remain %s after failed transition", tc.fromStatus))
@@ -695,7 +695,7 @@ func TestUpdateOrderStatus_InvalidTransitions(t *testing.T) {
 
 func TestUpdateOrderStatus_OrderNotFound(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -740,7 +740,7 @@ func TestUpdateOrderStatus_OrderNotFound(t *testing.T) {
 
 func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)
@@ -779,7 +779,7 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 	// Verify the paid status was actually updated
 	ctx := context.Background()
 	var actualPaid bool
-	err := db.QueryRowContext(ctx, "SELECT paid FROM orders WHERE id_order = ?", 2).Scan(&actualPaid)
+	err := db.QueryRowContext(ctx, "SELECT paid FROM orders WHERE id_order = $1", 2).Scan(&actualPaid)
 	assert.NoError(t, err, "Should be able to query updated order paid status")
 	assert.True(t, actualPaid, "Order paid status should be updated to true")
 
@@ -795,7 +795,7 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 
 	// Verify the status was actually updated
 	var actualStatus string
-	err = db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = ?", 2).Scan(&actualStatus)
+	err = db.QueryRowContext(ctx, "SELECT status FROM orders WHERE id_order = $1", 2).Scan(&actualStatus)
 	assert.NoError(t, err, "Should be able to query updated order status")
 	assert.Equal(t, "preparing", actualStatus, "Order status should be updated to preparing")
 
@@ -812,7 +812,7 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 	// Verify both fields were updated
 	var actualStatus2 string
 	var actualPaid2 bool
-	err = db.QueryRowContext(ctx, "SELECT status, paid FROM orders WHERE id_order = ?", 2).Scan(&actualStatus2, &actualPaid2)
+	err = db.QueryRowContext(ctx, "SELECT status, paid FROM orders WHERE id_order = $1", 2).Scan(&actualStatus2, &actualPaid2)
 	assert.NoError(t, err, "Should be able to query updated order fields")
 	assert.Equal(t, "ready", actualStatus2, "Order status should be updated to ready")
 	assert.False(t, actualPaid2, "Order paid status should be updated to false")
@@ -820,7 +820,7 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 
 func TestUpdateOrder_InvalidPayload(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)

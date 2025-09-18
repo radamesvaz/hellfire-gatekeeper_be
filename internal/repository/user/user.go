@@ -23,7 +23,7 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 	user := uModel.User{}
 
 	err := r.DB.QueryRow(
-		"SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = ?",
+		"SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = $1",
 		email,
 	).Scan(
 		&user.ID,
@@ -50,9 +50,10 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserRequest) (id uint64, err error) {
 	fmt.Printf("Creating user")
 
-	query := `INSERT INTO users (id_role, name, email, password_hash, phone) VALUES (?, ?, ?, ?, ?)`
+	query := `INSERT INTO users (id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id_user`
 
-	result, err := r.DB.ExecContext(
+	var insertedID uint64
+	err = r.DB.QueryRowContext(
 		ctx,
 		query,
 		user.IDRole,
@@ -60,20 +61,14 @@ func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserR
 		user.Email,
 		user.Password,
 		user.Phone,
-	)
+	).Scan(&insertedID)
 
 	if err != nil {
 		fmt.Printf("Error creating the user: %v", err)
 		return 0, errors.NewInternalServerError(errors.ErrCreatingUser)
 	}
 
-	insertedID, err := result.LastInsertId()
-	if err != nil {
-		fmt.Printf("Error getting the last insert ID: %v", err)
-		return 0, errors.NewInternalServerError(errors.ErrGettingTheUserID)
-	}
-
-	return uint64(insertedID), nil
+	return insertedID, nil
 }
 
 // EmailExists checks if an email already exists in the database
@@ -82,7 +77,7 @@ func (r *UserRepository) EmailExists(email string) (bool, error) {
 
 	var count int
 	err := r.DB.QueryRow(
-		"SELECT COUNT(*) FROM users WHERE email = ?",
+		"SELECT COUNT(*) FROM users WHERE email = $1",
 		email,
 	).Scan(&count)
 

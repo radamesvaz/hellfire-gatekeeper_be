@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/golang-migrate/migrate/v4/database/mysql"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
@@ -18,7 +18,7 @@ import (
 
 func TestLogin(t *testing.T) {
 	// setup
-	_, db, terminate, dsn := setupMySQLContainer(t)
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
 	runMigrations(t, dsn)

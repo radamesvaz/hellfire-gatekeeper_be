@@ -226,13 +226,13 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = ?",
+					regexp.QuoteMeta("SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = $1"),
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = ?",
+					regexp.QuoteMeta("SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = $1"),
 				).
 					WithArgs(tt.idProductForLookup).
 					WillReturnRows(tt.mockRows)
@@ -340,11 +340,11 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if !tt.expectedError {
-				mock.ExpectExec(
+				mock.ExpectQuery(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
 						(name, description, price, available, stock, status, image_urls) 
-						VALUES (?, ?, ?, ?, ?, ?, ?) `,
+						VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_product`,
 					),
 				).
 					WithArgs(
@@ -356,7 +356,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Status,
 						"[]", // JSON marshaled empty array for image_urls
 					).
-					WillReturnResult(sqlmock.NewResult(1, 1))
+					WillReturnRows(sqlmock.NewRows([]string{"id_product"}).AddRow(1))
 			}
 
 			product, err := repo.CreateProduct(context.Background(), tt.payload)
@@ -470,13 +470,13 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET status = ? where id_product = ?"),
+					regexp.QuoteMeta("UPDATE products SET status = $1 WHERE id_product = $2"),
 				).
 					WithArgs(tt.status, tt.idProductForUpdate).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			} else {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET status = ? where id_product = ?"),
+					regexp.QuoteMeta("UPDATE products SET status = $1 WHERE id_product = $2"),
 				).
 					WithArgs(tt.status, tt.idProductForUpdate).
 					WillReturnResult(sqlmock.NewResult(0, 1))
@@ -635,13 +635,13 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, stock = ?, status = ? where id_product = ?"),
+					regexp.QuoteMeta("UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6 WHERE id_product = $7"),
 				).
 					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Stock, tt.payload.Status, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			} else {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET name = ?, description = ?, price = ?, available = ?, stock = ?, status = ? where id_product = ?"),
+					regexp.QuoteMeta("UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6 WHERE id_product = $7"),
 				).
 					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Stock, tt.payload.Status, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 1))
@@ -671,7 +671,7 @@ func TestProductRepo_GetProductsByIDs(t *testing.T) {
 		AddRow(1, "Torta Chocolate", 12.5, 5).
 		AddRow(2, "Torta Vainilla", 10.0, 3)
 
-	query := "SELECT id_product, name, price, stock FROM products WHERE id_product IN (?,?)"
+	query := "SELECT id_product, name, price, stock FROM products WHERE id_product IN ($1,$2)"
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs(1, 2).

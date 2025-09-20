@@ -26,6 +26,20 @@ type OrderRepository struct {
 // - ([]oModel.OrderResponse): A list of orders with their products.
 // - (error): If the query, scan, or row iteration fails.
 func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse, error) {
+	return r.GetOrdersWithFilters(ctx, false, nil)
+}
+
+// GetOrdersWithFilters fetches orders with optional status filtering.
+//
+// Parameters:
+// - ctx (context.Context): The context for query execution.
+// - ignoreStatus (bool): If true, returns all orders including deleted ones. If false, excludes deleted orders.
+// - statusFilter (*string): Optional specific status to filter by. If nil, uses ignoreStatus logic.
+//
+// Returns:
+// - ([]oModel.OrderResponse): A list of orders with their products.
+// - (error): If the query, scan, or row iteration fails.
+func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus bool, statusFilter *string) ([]oModel.OrderResponse, error) {
 	query := `
         SELECT 
             o.id_order, 
@@ -46,10 +60,28 @@ func (r *OrderRepository) GetOrders(ctx context.Context) ([]oModel.OrderResponse
         INNER JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
         INNER JOIN products p ON oi.id_product = p.id_product
-        ORDER BY o.id_order
     `
 
-	rows, err := r.DB.QueryContext(ctx, query)
+	// Add WHERE clause based on filters
+	whereClause := ""
+	if statusFilter != nil {
+		// Filter by specific status
+		whereClause = " WHERE o.status = $1"
+	} else if !ignoreStatus {
+		// Exclude deleted orders by default
+		whereClause = " WHERE o.status != 'deleted'"
+	}
+
+	query += whereClause + " ORDER BY o.id_order"
+
+	var rows *sql.Rows
+	var err error
+
+	if statusFilter != nil {
+		rows, err = r.DB.QueryContext(ctx, query, *statusFilter)
+	} else {
+		rows, err = r.DB.QueryContext(ctx, query)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error executing query to fetch orders: %w", err)
 	}

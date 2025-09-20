@@ -40,13 +40,22 @@ func setupPostgreSQLContainer(t *testing.T) (container testcontainers.Container,
 		fmt.Printf("⚠ Could not load .env file: %v", err)
 	}
 
-	dbUser := os.Getenv("MYSQL_USER")
-	dbPassword := os.Getenv("MYSQL_PASSWORD")
-	dbName := os.Getenv("MYSQL_DATABASE")
+	dbUser := os.Getenv("POSTGRES_USER")
+	if dbUser == "" {
+		dbUser = os.Getenv("PGUSER")
+	}
+	dbPassword := os.Getenv("POSTGRES_PASSWORD")
+	if dbPassword == "" {
+		dbPassword = os.Getenv("PGPASSWORD")
+	}
+	dbName := os.Getenv("POSTGRES_DB")
+	if dbName == "" {
+		dbName = os.Getenv("PGDATABASE")
+	}
 	port := os.Getenv("DB_PORT")
 
 	if dbUser == "" || dbPassword == "" || dbName == "" || port == "" {
-		t.Fatal("Missing env variables: MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE, DB_PORT")
+		t.Fatal("Missing env variables: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, DB_PORT")
 	}
 
 	req := testcontainers.ContainerRequest{

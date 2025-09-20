@@ -10,6 +10,7 @@ const (
 	StatusReady     OrderStatus = "ready"
 	StatusDelivered OrderStatus = "delivered"
 	StatusCancelled OrderStatus = "cancelled"
+	StatusDeleted   OrderStatus = "deleted"
 )
 
 type Order struct {

@@ -31,6 +31,11 @@ func (m *MockOrderRepository) CreateOrderHistory(ctx context.Context, order oMod
 	return args.Error(0)
 }
 
+func (m *MockOrderRepository) GetOrderItemsByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderItems, error) {
+	args := m.Called(ctx, orderID)
+	return args.Get(0).([]oModel.OrderItems), args.Error(1)
+}
+
 func TestUpdateOrderStatus_Success(t *testing.T) {
 	// Arrange
 	mockRepo := new(MockOrderRepository)

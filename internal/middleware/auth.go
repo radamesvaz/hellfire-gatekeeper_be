@@ -56,3 +56,17 @@ func GetUserIDFromContext(ctx context.Context) (uint64, error) {
 
 	return uint64(userIDFloat), nil
 }
+
+func GetUserRoleFromContext(ctx context.Context) (uint64, error) {
+	claims, ok := ctx.Value(UserClaimsKey).(jwt.MapClaims)
+	if !ok {
+		return 0, fmt.Errorf("no claims found in context")
+	}
+
+	roleIDFloat, ok := claims["role_id"].(float64)
+	if !ok {
+		return 0, fmt.Errorf("role_id not found or invalid type in token claims")
+	}
+
+	return uint64(roleIDFloat), nil
+}

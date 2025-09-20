@@ -312,6 +312,33 @@ func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint
 	return nil
 }
 
+// RevertProductStock adds stock back to a product (used when orders are cancelled)
+func (r *ProductRepository) RevertProductStock(ctx context.Context, idProduct uint64, quantityToRevert uint64) error {
+	if quantityToRevert == 0 {
+		return nil // Nothing to revert
+	}
+
+	// Get current product to verify it exists and get current stock
+	product, err := r.GetProductByID(ctx, idProduct)
+	if err != nil {
+		return fmt.Errorf("error getting product for stock revert: %w", err)
+	}
+
+	// Calculate new stock (current + quantity to revert)
+	newStock := product.Stock + quantityToRevert
+
+	// Update the stock
+	err = r.UpdateProductStock(ctx, idProduct, newStock)
+	if err != nil {
+		return fmt.Errorf("error reverting product stock: %w", err)
+	}
+
+	fmt.Printf("Stock reverted successfully. Product %d: %d + %d = %d",
+		idProduct, product.Stock, quantityToRevert, newStock)
+
+	return nil
+}
+
 // UpdateProductImages updates the image URLs for a product
 func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uint64, imageURLs []string) error {
 	fmt.Printf("Updating product images for product id = %d\n", idProduct)

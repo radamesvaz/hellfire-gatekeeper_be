@@ -193,11 +193,21 @@ func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Create status updater service
-	statusUpdater := orderService.NewStatusUpdater(h.Repo)
+	// Get user role from context
+	userRole, err := middleware.GetUserRoleFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Unauthorized: invalid token role", http.StatusUnauthorized)
+		return
+	}
 
-	// Update the order status
-	err = statusUpdater.UpdateOrderStatus(ctx, idOrder, payload.Status, userID)
+	// Check if user is admin for cancellation
+	isAdmin := userRole == 1 // Admin role ID is 1
+
+	// Create status updater service with stock reversion capability
+	statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
+
+	// Update the order status with stock reversion if admin cancels
+	err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, idOrder, payload.Status, userID, isAdmin)
 	if err != nil {
 		if httpErr, ok := err.(*errors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -282,11 +292,21 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Create status updater service
-		statusUpdater := orderService.NewStatusUpdater(h.Repo)
+		// Get user role from context
+		userRole, err := middleware.GetUserRoleFromContext(ctx)
+		if err != nil {
+			http.Error(w, "Unauthorized: invalid token role", http.StatusUnauthorized)
+			return
+		}
 
-		// Update the order status
-		err = statusUpdater.UpdateOrderStatus(ctx, idOrder, *payload.Status, userID)
+		// Check if user is admin for cancellation
+		isAdmin := userRole == 1 // Admin role ID is 1
+
+		// Create status updater service with stock reversion capability
+		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
+
+		// Update the order status with stock reversion if admin cancels
+		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, idOrder, *payload.Status, userID, isAdmin)
 		if err != nil {
 			if httpErr, ok := err.(*errors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)

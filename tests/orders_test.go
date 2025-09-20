@@ -67,7 +67,7 @@ func TestGetAllOrders(t *testing.T) {
         "user_name": "Client",
         "phone": "66-6666",
         "status": "delivered",
-        "total_price": 40,
+        "total_price": 57,
         "note": "make it bright",
         "OrderItems": [
             {
@@ -95,7 +95,7 @@ func TestGetAllOrders(t *testing.T) {
         "user_name": "Client",
         "phone": "66-6666",
         "status": "pending",
-        "total_price": 20,
+        "total_price": 10,
         "note": "deliver at the door",
         "OrderItems": [
             {
@@ -116,7 +116,7 @@ func TestGetAllOrders(t *testing.T) {
         "user_name": "Client",
         "phone": "66-6666",
         "status": "preparing",
-        "total_price": 40,
+        "total_price": 12,
         "note": "not so sweet",
         "OrderItems": [
             {
@@ -187,7 +187,7 @@ func TestGetOrderByID(t *testing.T) {
     "user_name": "Client",
     "phone": "66-6666",
     "status": "delivered",
-    "total_price": 40,
+    "total_price": 57,
     "note": "make it bright",
     "OrderItems": [
         {

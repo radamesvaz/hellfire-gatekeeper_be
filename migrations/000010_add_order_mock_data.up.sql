@@ -3,10 +3,10 @@ DELETE FROM orders WHERE id_order IN (1, 2, 3, 4);
 
 INSERT INTO orders (id_user, status, total_price, note, created_on, delivery_date)
 VALUES
-  (2, 'delivered', 40, 'make it bright', '2025-04-1 10:00:00'::timestamp, '2025-04-5 10:00:00'::timestamp),
-  (2, 'pending', 20, 'deliver at the door', '2025-04-14 10:00:00'::timestamp, '2025-04-20 10:00:00'::timestamp),
-  (2, 'preparing', 40, 'not so sweet', '2025-04-20 10:00:00'::timestamp, '2025-04-25 10:00:00'::timestamp),
-  (2, 'cancelled', 40, 'this one is canceled', '2025-04-20 10:00:00'::timestamp, '2025-04-25 10:00:00'::timestamp);
+  (2, 'delivered', 57, 'make it bright', '2025-04-1 10:00:00'::timestamp, '2025-04-5 10:00:00'::timestamp),
+  (2, 'pending', 10, 'deliver at the door', '2025-04-14 10:00:00'::timestamp, '2025-04-20 10:00:00'::timestamp),
+  (2, 'preparing', 12, 'not so sweet', '2025-04-20 10:00:00'::timestamp, '2025-04-25 10:00:00'::timestamp),
+  (2, 'cancelled', 12, 'this one is canceled', '2025-04-20 10:00:00'::timestamp, '2025-04-25 10:00:00'::timestamp);
 
 
 -- INSERT INTO orders_history (id_orders_history, id_order, id_user, status, total_price, note, modified_on, modified_by, action, delivery_date)

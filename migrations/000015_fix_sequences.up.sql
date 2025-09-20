@@ -7,3 +7,5 @@ SELECT setval('products_history_id_products_history_seq', (SELECT MAX(id_product
 SELECT setval('orders_history_id_order_history_seq', (SELECT MAX(id_order_history) FROM orders_history));
 
 
+
+

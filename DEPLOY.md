@@ -15,9 +15,9 @@ Esta guía te ayudará a hacer deploy de tu API de Hellfire Gatekeeper en Render
 En el dashboard de Render, configura estas variables de entorno:
 
 #### Base de Datos (se configuran automáticamente)
-- `MYSQL_USER` - Se configura automáticamente desde la base de datos
-- `MYSQL_PASSWORD` - Se configura automáticamente desde la base de datos
-- `MYSQL_DATABASE` - Se configura automáticamente desde la base de datos
+- `POSTGRES_USER` - Se configura automáticamente desde la base de datos
+- `POSTGRES_PASSWORD` - Se configura automáticamente desde la base de datos
+- `POSTGRES_DB` - Se configura automáticamente desde la base de datos
 - `DB_HOST` - Se configura automáticamente desde la base de datos
 - `DB_PORT` - Se configura automáticamente desde la base de datos
 
@@ -36,7 +36,7 @@ En el dashboard de Render, configura estas variables de entorno:
 ### 2. Pasos para el Deploy
 
 1. **Conecta tu repositorio de GitHub a Render**
-2. **Crea una base de datos MySQL en Render**
+2. **Crea una base de datos PostgreSQL en Render**
 3. **Crea un servicio web en Render** usando el archivo `render.yaml`
 4. **Configura las variables de entorno de Cloudinary**
 5. **Haz el deploy**
@@ -78,7 +78,7 @@ Para probar localmente con Cloudinary:
 ## 🚨 Troubleshooting
 
 ### Error de Conexión a Base de Datos
-- Verifica que la base de datos MySQL esté creada en Render
+- Verifica que la base de datos PostgreSQL esté creada en Render
 - Revisa que las variables de entorno estén configuradas
 
 ### Error de Migraciones

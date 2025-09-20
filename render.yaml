@@ -5,11 +5,11 @@ services:
     buildCommand: chmod +x start.sh && go build -o migrate ./cmd/migrate && go build -o api ./cmd/api
     startCommand: ./start.sh
     envVars:
-      - key: MYSQL_USER
+      - key: POSTGRES_USER
         sync: false
-      - key: MYSQL_PASSWORD
+      - key: POSTGRES_PASSWORD
         sync: false
-      - key: MYSQL_DATABASE
+      - key: POSTGRES_DB
         sync: false
       - key: DB_HOST
         sync: false

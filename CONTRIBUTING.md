@@ -69,7 +69,7 @@ El objetivo es mantener **consistencia, calidad y mantenibilidad** en el código
 ## 5. Testing
 
 * **Unit tests** para repositorios con `sqlmock`.
-* **Integration tests** con `testcontainers` y MySQL real.
+* **Integration tests** con `testcontainers` y PostgreSQL real.
 * Naming: `Test[Struct]_[Method]_[Scenario]`.
 * Usar `testify/assert` o `testify/require`.
 * Deben cubrir: casos felices, casos edge y errores.

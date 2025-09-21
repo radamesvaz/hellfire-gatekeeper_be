@@ -1,48 +1,55 @@
 
 ---
 
-### 📦 Database Migrations with `golang-migrate`
+# 📦 Database Migrations
 
-This project uses [`golang-migrate`](https://github.com/golang-migrate/migrate) to manage database schema changes in a safe and structured way.
+Este proyecto usa [`golang-migrate`](https://github.com/golang-migrate/migrate) para manejar cambios en el esquema de la base de datos de forma segura y estructurada.
 
-#### ✅ Requirements
+## 🚀 Aplicar Migraciones
 
-Make sure `golang-migrate` is installed on your machine.
+### Opción 1: Scripts Automáticos (Recomendado)
 
 ```bash
-# With Homebrew
-brew install golang-migrate
+./run.sh migrate
 ```
 
-> For other installation methods, refer to the [official docs](https://github.com/golang-migrate/migrate/tree/master/cmd/migrate).
+### Opción 2: Comando Manual
 
----
+```bash
+go run cmd/migrate/main.go up
+```
 
-### 🛠 Creating a New Migration
+### Opción 3: Con Docker
 
-Each migration consists of **two files**:  
-- One for applying the changes (`up`)
-- One for rolling them back (`down`)
+```bash
+docker-compose up migrate
+```
 
-To create a migration (e.g., to add a `roles` table and reference it from `users`):
+## 🛠 Crear Nueva Migración
+
+Cada migración consiste en **dos archivos**:
+- Uno para aplicar los cambios (`up`)
+- Uno para revertirlos (`down`)
+
+Para crear una migración (ejemplo: agregar tabla `roles`):
 
 ```bash
 migrate create -ext sql -dir migrations -seq add_roles_table_and_user_relation
 ```
 
-This will generate:
+Esto generará:
 
 ```
 migrations/
-  ├── 001_add_roles_table_and_user_relation.up.sql
-  └── 001_add_roles_table_and_user_relation.down.sql
+  ├── 000001_add_roles_table_and_user_relation.up.sql
+  └── 000001_add_roles_table_and_user_relation.down.sql
 ```
 
-#### Example: `001_add_roles_table_and_user_relation.up.sql`
+### Ejemplo: `000001_add_roles_table_and_user_relation.up.sql`
 
 ```sql
 CREATE TABLE roles (
-  id_role INT PRIMARY KEY AUTO_INCREMENT,
+  id_role SERIAL PRIMARY KEY,
   name VARCHAR(50) NOT NULL UNIQUE
 );
 
@@ -53,36 +60,41 @@ ADD COLUMN id_role INT NOT NULL DEFAULT 2,
 ADD CONSTRAINT fk_role FOREIGN KEY (id_role) REFERENCES roles(id_role);
 ```
 
-#### Example: `001_add_roles_table_and_user_relation.down.sql`
+### Ejemplo: `000001_add_roles_table_and_user_relation.down.sql`
 
 ```sql
-ALTER TABLE users DROP FOREIGN KEY fk_role;
+ALTER TABLE users DROP CONSTRAINT fk_role;
 ALTER TABLE users DROP COLUMN id_role;
 
 DROP TABLE roles;
 ```
 
----
+## 🔁 Revertir Migraciones
 
-### 🚀 Applying Migrations
-
-Run the following command to apply all pending migrations:
+Para deshacer la última migración aplicada:
 
 ```bash
-migrate -path migrations -database "mysql://USER:PASSWORD@tcp(localhost:3306)/DATABASE_NAME" up
+go run cmd/migrate/main.go down
 ```
 
-Replace `USER`, `PASSWORD`, and `DATABASE_NAME` with your actual database credentials.
+## 📋 Migraciones Disponibles
 
----
-
-### 🔁 Rolling Back Migrations (optional)
-
-To undo the last applied migration:
-
-```bash
-migrate -path migrations -database "mysql://..." down
-```
+1. **000001** - Esquema inicial (usuarios, productos, órdenes)
+2. **000002** - Tabla de roles y relación con usuarios
+3. **000003** - Datos de prueba (seed data)
+4. **000004** - Columna de estado para productos
+5. **000005** - Clave foránea en historial de productos
+6. **000006** - Enum en historial de productos
+7. **000007** - Columna de stock en productos
+8. **000008** - Valores de stock en productos
+9. **000009** - Columna de nota y tiempo en órdenes
+10. **000010** - Datos mock de órdenes
+11. **000011** - Enum de acción 'create' en historial de órdenes
+12. **000012** - URLs de imágenes en productos
+13. **000013** - Columna 'paid' en órdenes
+14. **000014** - Actualizar datos mock con estado 'paid'
+15. **000015** - Corregir secuencias
+16. **000016** - Agregar estado 'deleted' a órdenes
 
 ---
 

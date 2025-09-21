@@ -28,11 +28,11 @@ func main() {
 		fmt.Println("⚠ Could not load .env file")
 	}
 
-	dbUser := os.Getenv("MYSQL_USER")
-	dbPassword := os.Getenv("MYSQL_PASSWORD")
+	dbUser := os.Getenv("POSTGRES_USER")
+	dbPassword := os.Getenv("POSTGRES_PASSWORD")
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")
-	dbName := os.Getenv("MYSQL_DATABASE")
+	dbName := os.Getenv("POSTGRES_DB")
 	secret := os.Getenv("JWT_SECRET")
 	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
 	port := os.Getenv("PORT")

@@ -13,6 +13,9 @@ import (
 )
 
 func TestService_SaveProductImages(t *testing.T) {
+	// Force local mode: disable Cloudinary for tests
+	restore := disableCloudinaryForTests(t)
+	defer restore()
 	// Setup test directory
 	testDir := "test_uploads"
 	err := os.MkdirAll(testDir, 0755)
@@ -84,6 +87,9 @@ func TestService_SaveProductImages(t *testing.T) {
 }
 
 func TestService_DeleteProductImages(t *testing.T) {
+	// Force local mode: disable Cloudinary for tests
+	restore := disableCloudinaryForTests(t)
+	defer restore()
 	// Setup test directory
 	testDir := "test_uploads"
 	err := os.MkdirAll(testDir, 0755)
@@ -288,6 +294,9 @@ func createTestFileHeader(filename, contentType string) *multipart.FileHeader {
 }
 
 func TestService_DeleteImage(t *testing.T) {
+	// Force local mode: disable Cloudinary for tests
+	restore := disableCloudinaryForTests(t)
+	defer restore()
 	// Setup test directory
 	testDir := "test_uploads"
 	err := os.MkdirAll(testDir, 0755)
@@ -348,5 +357,29 @@ func TestService_DeleteImage(t *testing.T) {
 				assert.True(t, os.IsNotExist(err), "File should be deleted")
 			}
 		})
+	}
+}
+
+// disableCloudinaryForTests unsets Cloudinary env vars during a test and returns a restore func
+func disableCloudinaryForTests(t *testing.T) func() {
+	t.Helper()
+	origCloud := os.Getenv("CLOUDINARY_CLOUD_NAME")
+	origKey := os.Getenv("CLOUDINARY_API_KEY")
+	origSecret := os.Getenv("CLOUDINARY_API_SECRET")
+
+	_ = os.Unsetenv("CLOUDINARY_CLOUD_NAME")
+	_ = os.Unsetenv("CLOUDINARY_API_KEY")
+	_ = os.Unsetenv("CLOUDINARY_API_SECRET")
+
+	return func() {
+		if origCloud != "" {
+			_ = os.Setenv("CLOUDINARY_CLOUD_NAME", origCloud)
+		}
+		if origKey != "" {
+			_ = os.Setenv("CLOUDINARY_API_KEY", origKey)
+		}
+		if origSecret != "" {
+			_ = os.Setenv("CLOUDINARY_API_SECRET", origSecret)
+		}
 	}
 }

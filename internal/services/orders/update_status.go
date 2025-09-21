@@ -100,14 +100,23 @@ func (s *StatusUpdater) validateStatusTransition(currentStatus, newStatus oModel
 		oModel.StatusPending: {
 			oModel.StatusPreparing,
 			oModel.StatusCancelled,
+			oModel.StatusDeleted,
 		},
 		oModel.StatusPreparing: {
 			oModel.StatusReady,
 			oModel.StatusCancelled,
+			oModel.StatusDeleted,
 		},
 		oModel.StatusReady: {
 			oModel.StatusDelivered,
 			oModel.StatusCancelled,
+			oModel.StatusDeleted,
+		},
+		oModel.StatusDelivered: {
+			oModel.StatusDeleted,
+		},
+		oModel.StatusCancelled: {
+			oModel.StatusDeleted,
 		},
 	}
 

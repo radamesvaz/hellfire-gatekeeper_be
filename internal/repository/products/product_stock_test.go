@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	pModel "github.com/radamesvaz/bakery-app/model/products"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -14,9 +15,9 @@ type MockProductRepository struct {
 	mock.Mock
 }
 
-func (m *MockProductRepository) GetProductByID(ctx context.Context, idProduct uint64) (Product, error) {
+func (m *MockProductRepository) GetProductByID(ctx context.Context, idProduct uint64) (pModel.Product, error) {
 	args := m.Called(ctx, idProduct)
-	return args.Get(0).(Product), args.Error(1)
+	return args.Get(0).(pModel.Product), args.Error(1)
 }
 
 func (m *MockProductRepository) UpdateProductStock(ctx context.Context, idProduct uint64, newStock uint64) error {
@@ -32,14 +33,8 @@ func (m *MockProductRepository) RevertProductStock(ctx context.Context, idProduc
 func TestRevertProductStock_Success(t *testing.T) {
 	mockRepo := new(MockProductRepository)
 
-	// Setup expectations
-	mockRepo.On("GetProductByID", mock.Anything, uint64(1)).Return(Product{
-		ID:    1,
-		Name:  "Test Product",
-		Stock: 5,
-	}, nil)
-
-	mockRepo.On("UpdateProductStock", mock.Anything, uint64(1), uint64(8)).Return(nil)
+	// Setup expectations for RevertProductStock method
+	mockRepo.On("RevertProductStock", mock.Anything, uint64(1), uint64(3)).Return(nil)
 
 	// Execute
 	err := mockRepo.RevertProductStock(context.Background(), 1, 3)
@@ -53,7 +48,7 @@ func TestRevertProductStock_ProductNotFound(t *testing.T) {
 	mockRepo := new(MockProductRepository)
 
 	// Setup expectations
-	mockRepo.On("GetProductByID", mock.Anything, uint64(999)).Return(Product{}, errors.ErrProductNotFound)
+	mockRepo.On("RevertProductStock", mock.Anything, uint64(999), uint64(3)).Return(errors.ErrProductNotFound)
 
 	// Execute
 	err := mockRepo.RevertProductStock(context.Background(), 999, 3)
@@ -68,13 +63,7 @@ func TestRevertProductStock_UpdateStockFails(t *testing.T) {
 	mockRepo := new(MockProductRepository)
 
 	// Setup expectations
-	mockRepo.On("GetProductByID", mock.Anything, uint64(1)).Return(Product{
-		ID:    1,
-		Name:  "Test Product",
-		Stock: 5,
-	}, nil)
-
-	mockRepo.On("UpdateProductStock", mock.Anything, uint64(1), uint64(8)).Return(errors.ErrDatabaseOperation)
+	mockRepo.On("RevertProductStock", mock.Anything, uint64(1), uint64(3)).Return(errors.ErrDatabaseOperation)
 
 	// Execute
 	err := mockRepo.RevertProductStock(context.Background(), 1, 3)
@@ -88,12 +77,14 @@ func TestRevertProductStock_UpdateStockFails(t *testing.T) {
 func TestRevertProductStock_ZeroQuantity(t *testing.T) {
 	mockRepo := new(MockProductRepository)
 
+	// Setup expectations for zero quantity (should return nil without calling any methods)
+	mockRepo.On("RevertProductStock", mock.Anything, uint64(1), uint64(0)).Return(nil)
+
 	// Execute
 	err := mockRepo.RevertProductStock(context.Background(), 1, 0)
 
 	// Assert
 	assert.NoError(t, err)
-	// Should not call any methods for zero quantity
 	mockRepo.AssertExpectations(t)
 }
 
@@ -101,13 +92,7 @@ func TestRevertProductStock_LargeQuantity(t *testing.T) {
 	mockRepo := new(MockProductRepository)
 
 	// Setup expectations
-	mockRepo.On("GetProductByID", mock.Anything, uint64(1)).Return(Product{
-		ID:    1,
-		Name:  "Test Product",
-		Stock: 5,
-	}, nil)
-
-	mockRepo.On("UpdateProductStock", mock.Anything, uint64(1), uint64(1005)).Return(nil)
+	mockRepo.On("RevertProductStock", mock.Anything, uint64(1), uint64(1000)).Return(nil)
 
 	// Execute
 	err := mockRepo.RevertProductStock(context.Background(), 1, 1000)

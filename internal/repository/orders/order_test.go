@@ -166,25 +166,26 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
 						`SELECT
-						o.id_order,
-						o.id_user,
-						o.total_price,
-						o.status,
-						o.note,
-						o.delivery_date,
-						o.paid,
-						o.created_on,
-						u.name AS user_name,
-						u.phone,
-						oi.id_order_item,
-						oi.id_product,
-						p.name AS product_name,
-						oi.quantity
-					FROM orders o
-					INNER JOIN users u ON o.id_user = u.id_user
-					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product
-					ORDER BY o.id_order`,
+                        o.id_order,
+                        o.id_user,
+                        o.total_price,
+                        o.status,
+                        o.note,
+                        o.delivery_date,
+                        o.paid,
+                        o.created_on,
+                        u.name AS user_name,
+                        u.phone,
+                        oi.id_order_item,
+                        oi.id_product,
+                        p.name AS product_name,
+                        oi.quantity
+                    FROM orders o
+                    INNER JOIN users u ON o.id_user = u.id_user
+                    INNER JOIN order_items oi ON o.id_order = oi.id_order
+                    INNER JOIN products p ON oi.id_product = p.id_product
+                    WHERE o.status != 'deleted'
+                    ORDER BY o.id_order`,
 					),
 				).
 					WillReturnError(sql.ErrNoRows)
@@ -192,25 +193,26 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
 						`SELECT
-						o.id_order,
-						o.id_user,
-						o.total_price,
-						o.status,
-						o.note,
-						o.delivery_date,
-						o.paid,
-						o.created_on,
-						u.name AS user_name,
-						u.phone,
-						oi.id_order_item,
-						oi.id_product,
-						p.name AS product_name,
-						oi.quantity
-					FROM orders o
-					INNER JOIN users u ON o.id_user = u.id_user
-					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product
-					ORDER BY o.id_order`,
+                        o.id_order,
+                        o.id_user,
+                        o.total_price,
+                        o.status,
+                        o.note,
+                        o.delivery_date,
+                        o.paid,
+                        o.created_on,
+                        u.name AS user_name,
+                        u.phone,
+                        oi.id_order_item,
+                        oi.id_product,
+                        p.name AS product_name,
+                        oi.quantity
+                    FROM orders o
+                    INNER JOIN users u ON o.id_user = u.id_user
+                    INNER JOIN order_items oi ON o.id_order = oi.id_order
+                    INNER JOIN products p ON oi.id_product = p.id_product
+                    WHERE o.status != 'deleted'
+                    ORDER BY o.id_order`,
 					),
 				).
 					WillReturnRows(tt.mockRows)

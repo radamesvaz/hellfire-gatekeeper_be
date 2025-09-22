@@ -140,6 +140,7 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 }
 
 // UpdateOrderStatus updates the status of an order
+// DEPRECATED: Use UpdateOrder instead for unified order updates
 func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idOrder, err := strconv.ParseUint(vars["id"], 10, 64)
@@ -224,7 +225,7 @@ func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// UpdateOrder updates an order (status and/or paid status)
+// UpdateOrder updates an order (status and/or paid status) - UNIFIED FUNCTION
 func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idOrder, err := strconv.ParseUint(vars["id"], 10, 64)
@@ -277,6 +278,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			oModel.StatusReady,
 			oModel.StatusDelivered,
 			oModel.StatusCancelled,
+			oModel.StatusDeleted,
 		}
 
 		isValidStatus := false

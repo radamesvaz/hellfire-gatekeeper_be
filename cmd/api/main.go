@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/gorilla/handlers"
 	"github.com/joho/godotenv"
 	h "github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
@@ -92,6 +91,43 @@ func main() {
 
 	r := mux.NewRouter()
 
+	// Manual CORS middleware as backup
+	corsMiddleware := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			allowedOrigins := []string{
+				"http://localhost:5173",
+				"http://localhost:3000",
+				"http://localhost:5000",
+				"https://confettideliadmin.netlify.app",
+				"https://confettideli.netlify.app",
+			}
+
+			// Check if origin is allowed
+			for _, allowedOrigin := range allowedOrigins {
+				if origin == allowedOrigin {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					break
+				}
+			}
+
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Requested-With, Accept, Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+			// Handle preflight requests
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	// Apply CORS middleware to all routes
+	r.Use(corsMiddleware)
+
 	// Serve static files (images)
 	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
 
@@ -124,23 +160,6 @@ func main() {
 	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
-	// CORS setup for local FE development and production
-	allowedOrigins := handlers.AllowedOrigins([]string{
-		"http://localhost:5173",
-		"http://localhost:3000",
-		"http://localhost:5000",
-		"https://confettideliadmin.netlify.app",
-		"https://confettideli.netlify.app",
-	})
-	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
-	allowedHeaders := handlers.AllowedHeaders([]string{
-		"Authorization",
-		"Content-Type",
-		"X-Requested-With",
-		"Accept",
-		"Origin",
-	})
-
 	fmt.Printf("🚀 Servidor corriendo en http://localhost:%s\n", port)
-	http.ListenAndServe(":"+port, handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders)(r))
+	http.ListenAndServe(":"+port, r)
 }

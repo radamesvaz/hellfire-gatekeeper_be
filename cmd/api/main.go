@@ -130,12 +130,16 @@ func main() {
 		"http://localhost:3000",
 		"http://localhost:5000",
 		"https://confettideliadmin.netlify.app",
-		"https://confettideliadmin.netlify.app/",
 		"https://confettideli.netlify.app",
-		"https://confettideli.netlify.app/",
 	})
 	allowedMethods := handlers.AllowedMethods([]string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
-	allowedHeaders := handlers.AllowedHeaders([]string{"Authorization", "Content-Type"})
+	allowedHeaders := handlers.AllowedHeaders([]string{
+		"Authorization",
+		"Content-Type",
+		"X-Requested-With",
+		"Accept",
+		"Origin",
+	})
 
 	fmt.Printf("🚀 Servidor corriendo en http://localhost:%s\n", port)
 	http.ListenAndServe(":"+port, handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders)(r))

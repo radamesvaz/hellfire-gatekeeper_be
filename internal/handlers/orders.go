@@ -139,82 +139,7 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 	return nil
 }
 
-// UpdateOrderStatus updates the status of an order
-func (h *OrderHandler) UpdateOrderStatus(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	idOrder, err := strconv.ParseUint(vars["id"], 10, 64)
-	if err != nil {
-		http.Error(w, "Invalid order ID", http.StatusBadRequest)
-		return
-	}
-
-	// Decode the JSON from the body
-	var payload struct {
-		Status oModel.OrderStatus `json:"status"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	// Validate status
-	if payload.Status == "" {
-		http.Error(w, "Status is required", http.StatusBadRequest)
-		return
-	}
-
-	// Validate status enum values
-	validStatuses := []oModel.OrderStatus{
-		oModel.StatusPreparing,
-		oModel.StatusReady,
-		oModel.StatusDelivered,
-		oModel.StatusCancelled,
-	}
-
-	isValidStatus := false
-	for _, validStatus := range validStatuses {
-		if payload.Status == validStatus {
-			isValidStatus = true
-			break
-		}
-	}
-
-	if !isValidStatus {
-		http.Error(w, "Invalid status value", http.StatusBadRequest)
-		return
-	}
-
-	ctx := r.Context()
-
-	// Get user ID from JWT token
-	userID, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Unauthorized: invalid token", http.StatusUnauthorized)
-		return
-	}
-
-	// Create status updater service
-	statusUpdater := orderService.NewStatusUpdater(h.Repo)
-
-	// Update the order status
-	err = statusUpdater.UpdateOrderStatus(ctx, idOrder, payload.Status, userID)
-	if err != nil {
-		if httpErr, ok := err.(*errors.HTTPError); ok {
-			http.Error(w, httpErr.Error(), httpErr.StatusCode)
-			return
-		}
-		http.Error(w, fmt.Sprintf("Error updating order status: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Order status updated successfully",
-	})
-}
-
-// UpdateOrder updates an order (status and/or paid status)
+// UpdateOrder updates an order (status and/or paid status) - UNIFIED FUNCTION
 func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idOrder, err := strconv.ParseUint(vars["id"], 10, 64)
@@ -267,6 +192,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			oModel.StatusReady,
 			oModel.StatusDelivered,
 			oModel.StatusCancelled,
+			oModel.StatusDeleted,
 		}
 
 		isValidStatus := false
@@ -282,11 +208,21 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Create status updater service
-		statusUpdater := orderService.NewStatusUpdater(h.Repo)
+		// Get user role from context
+		userRole, err := middleware.GetUserRoleFromContext(ctx)
+		if err != nil {
+			http.Error(w, "Unauthorized: invalid token role", http.StatusUnauthorized)
+			return
+		}
 
-		// Update the order status
-		err = statusUpdater.UpdateOrderStatus(ctx, idOrder, *payload.Status, userID)
+		// Check if user is admin for cancellation
+		isAdmin := userRole == 1 // Admin role ID is 1
+
+		// Create status updater service with stock reversion capability
+		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
+
+		// Update the order status with stock reversion if admin cancels
+		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, idOrder, *payload.Status, userID, isAdmin)
 		if err != nil {
 			if httpErr, ok := err.(*errors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)

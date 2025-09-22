@@ -277,6 +277,50 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 	return order, nil
 }
 
+// GetOrderItemsByOrderID gets all items for a specific order
+func (r *OrderRepository) GetOrderItemsByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderItems, error) {
+	query := `
+		SELECT 
+			oi.id_order_item,
+			oi.id_order,
+			oi.id_product,
+			p.name AS product_name,
+			oi.quantity
+		FROM order_items oi
+		INNER JOIN products p ON oi.id_product = p.id_product
+		WHERE oi.id_order = $1
+		ORDER BY oi.id_order_item
+	`
+
+	rows, err := r.DB.QueryContext(ctx, query, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying order items: %w", err)
+	}
+	defer rows.Close()
+
+	var items []oModel.OrderItems
+	for rows.Next() {
+		var item oModel.OrderItems
+		err := rows.Scan(
+			&item.ID,
+			&item.IdOrder,
+			&item.IdProduct,
+			&item.Name,
+			&item.Quantity,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning order item: %w", err)
+		}
+		items = append(items, item)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating over order item rows: %w", err)
+	}
+
+	return items, nil
+}
+
 func (r *OrderRepository) CreateOrder(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (id uint64, err error) {
 	return r.createOrderTx(ctx, tx, order)
 }

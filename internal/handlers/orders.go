@@ -30,7 +30,17 @@ type OrderHandler struct {
 // Get all orders
 func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	orders, err := h.Repo.GetOrders(ctx)
+
+	// Parse query parameters
+	ignoreStatus := r.URL.Query().Get("ignore_status") == "true"
+	statusFilter := r.URL.Query().Get("status")
+
+	var statusFilterPtr *string
+	if statusFilter != "" {
+		statusFilterPtr = &statusFilter
+	}
+
+	orders, err := h.Repo.GetOrdersWithFilters(ctx, ignoreStatus, statusFilterPtr)
 	if err != nil {
 		http.Error(w, "Error getting orders", http.StatusInternalServerError)
 		return

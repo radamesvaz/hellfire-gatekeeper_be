@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
@@ -35,52 +34,8 @@ func NewStatusUpdaterWithStock(orderRepo OrderStatusRepository, productRepo Prod
 }
 
 func (s *StatusUpdaterWithStock) validateStatusTransition(currentStatus, newStatus oModel.OrderStatus) error {
-	// Check if order is already in a final state
-	if currentStatus == oModel.StatusCancelled {
-		return errors.ErrOrderAlreadyCancelled
-	}
-	if currentStatus == oModel.StatusDelivered {
-		return errors.ErrOrderAlreadyDelivered
-	}
-
-	// Define valid transitions based on actual model states
-	validTransitions := map[oModel.OrderStatus][]oModel.OrderStatus{
-		oModel.StatusPending: {
-			oModel.StatusPreparing,
-			oModel.StatusCancelled,
-			oModel.StatusDeleted,
-		},
-		oModel.StatusPreparing: {
-			oModel.StatusReady,
-			oModel.StatusCancelled,
-			oModel.StatusDeleted,
-		},
-		oModel.StatusReady: {
-			oModel.StatusDelivered,
-			oModel.StatusCancelled,
-			oModel.StatusDeleted,
-		},
-		oModel.StatusDelivered: {
-			oModel.StatusDeleted,
-		},
-		oModel.StatusCancelled: {
-			oModel.StatusDeleted,
-		},
-	}
-
-	allowedStatuses, exists := validTransitions[currentStatus]
-	if !exists {
-		// Return a proper HTTP error instead of a generic fmt.Errorf
-		return errors.NewBadRequest(fmt.Errorf("invalid current status: %s", currentStatus))
-	}
-
-	for _, allowed := range allowedStatuses {
-		if allowed == newStatus {
-			return nil
-		}
-	}
-
-	return errors.ErrInvalidStatusTransition
+	// Allow all status transitions - no restrictions
+	return nil
 }
 
 // UpdateOrderStatusWithStockReversion updates order status and reverts stock if admin cancels order

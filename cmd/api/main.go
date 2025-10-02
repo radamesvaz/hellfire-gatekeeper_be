@@ -44,6 +44,9 @@ func main() {
 	secret := os.Getenv("JWT_SECRET")
 	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
 	port := os.Getenv("PORT")
+	// Optional, opt-in toggles to try extra connection candidates
+	tryBothPoolers := isTruthy(os.Getenv("DB_TRY_BOTH_POOLERS"))   // tries 5432 and 6543
+	tryHostVariants := isTruthy(os.Getenv("DB_TRY_HOST_VARIANTS")) // tries aws-0 and aws-1 variants
 	exp, err := strconv.Atoi(expMinutes)
 	if err != nil {
 		fmt.Printf("could not get the expMinutes from env: %v", err)
@@ -87,28 +90,114 @@ func main() {
 	}
 
 	// Build DSN
-	var dsn string
+	var candidateDSNs []string
 	if databaseURL != "" {
-		// Assume DATABASE_URL already contains proper sslmode settings
-		dsn = databaseURL
-		fmt.Printf("🔗 Connecting to DB using DATABASE_URL\n")
-	} else {
+		candidateDSNs = append(candidateDSNs, databaseURL)
+	}
+
+	// Compose DSNs from discrete vars. Optionally add fallbacks controlled by env flags.
+	if dbHost != "" && dbUser != "" && dbPassword != "" && dbName != "" {
 		sslMode := "require"
 		lowerHost := strings.ToLower(dbHost)
 		if lowerHost == "localhost" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
 			sslMode = "disable"
 		}
-		dsn = fmt.Sprintf(
-			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s connect_timeout=30 fallback_application_name=hellfire-gatekeeper",
-			dbHost, dbPort, dbUser, dbPassword, dbName, sslMode,
-		)
-		fmt.Printf("🔗 Connecting to DB: host=%s port=%s user=%s dbname=%s sslmode=%s\n", dbHost, dbPort, dbUser, dbName, sslMode)
+
+		// Build host candidates (no variants unless explicitly enabled)
+		hosts := []string{dbHost}
+		if tryHostVariants {
+			if strings.Contains(dbHost, "aws-1-") {
+				hosts = append(hosts, strings.Replace(dbHost, "aws-1-", "aws-0-", 1))
+			} else if strings.Contains(dbHost, "aws-0-") {
+				hosts = append(hosts, strings.Replace(dbHost, "aws-0-", "aws-1-", 1))
+			}
+		}
+
+		// Build port candidates (no alternates unless explicitly enabled)
+		ports := []string{dbPort}
+		if dbPort == "" {
+			ports = []string{"5432"}
+		}
+		if tryBothPoolers {
+			otherPort := "5432"
+			if len(ports) > 0 && ports[0] == "5432" {
+				otherPort = "6543"
+			} else {
+				otherPort = "5432"
+			}
+			ports = append(ports, otherPort)
+		}
+
+		for _, h := range hosts {
+			for _, p := range ports {
+				dsn := fmt.Sprintf(
+					"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s connect_timeout=30 fallback_application_name=hellfire-gatekeeper",
+					h, p, dbUser, dbPassword, dbName, sslMode,
+				)
+				candidateDSNs = append(candidateDSNs, dsn)
+			}
+		}
 	}
 
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		fmt.Printf("❌ Could not connect to the DB: %v\n", err)
-		panic(err)
+	var db *sql.DB
+	var lastErr error
+	for idx, d := range candidateDSNs {
+		// Log a safe summary of the DSN (without password)
+		if strings.HasPrefix(d, "postgres://") || strings.HasPrefix(d, "postgresql://") {
+			fmt.Printf("🔗 Attempting DB connect via DATABASE_URL (candidate %d/%d)\n", idx+1, len(candidateDSNs))
+		} else {
+			// Parse host/port for logging
+			var host, portStr, dbn string
+			host = dbHost
+			portStr = dbPort
+			dbn = dbName
+			fmt.Printf("🔗 Attempting DB connect (candidate %d/%d): host=%s port=%s user=%s dbname=%s\n", idx+1, len(candidateDSNs), host, portStr, dbUser, dbn)
+		}
+
+		db, err = sql.Open("postgres", d)
+		if err != nil {
+			fmt.Printf("❌ sql.Open failed: %v\n", err)
+			lastErr = err
+			continue
+		}
+
+		// Try ping with backoff for this candidate
+		rand.Seed(time.Now().UnixNano())
+		maxAttempts := 5
+		baseDelay := 1 * time.Second
+		succeeded := false
+		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			if err := db.Ping(); err != nil {
+				fmt.Printf("❌ Could not ping database (candidate %d, attempt %d/%d): %v\n", idx+1, attempt, maxAttempts, err)
+				lastErr = err
+				if attempt == maxAttempts {
+					break
+				}
+				exp := baseDelay * time.Duration(1<<uint(attempt-1))
+				if exp > 5*time.Second {
+					exp = 5 * time.Second
+				}
+				jitter := time.Duration(rand.Int63n(int64(exp / 5)))
+				time.Sleep(exp + jitter)
+				continue
+			}
+			fmt.Println("✅ Database connected successfully")
+			succeeded = true
+			break
+		}
+
+		if succeeded {
+			break
+		}
+
+		// Close and move to next candidate
+		_ = db.Close()
+		db = nil
+	}
+
+	if db == nil {
+		fmt.Printf("❌ Could not connect to the DB after trying %d candidates. Last error: %v\n", len(candidateDSNs), lastErr)
+		panic(lastErr)
 	}
 
 	// Configure connection pool for production stability
@@ -267,4 +356,14 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// isTruthy interprets common truthy strings for feature flags.
+func isTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "t", "true", "y", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

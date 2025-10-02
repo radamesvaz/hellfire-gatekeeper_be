@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -22,6 +23,22 @@ import (
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 )
+
+// resolveIPv4 resolves hostname to IPv4 address
+func resolveIPv4(hostname string) (string, error) {
+	ips, err := net.LookupIP(hostname)
+	if err != nil {
+		return "", err
+	}
+
+	for _, ip := range ips {
+		if ip.To4() != nil {
+			return ip.String(), nil
+		}
+	}
+
+	return "", fmt.Errorf("no IPv4 address found for %s", hostname)
+}
 
 func main() {
 	err := godotenv.Load()
@@ -54,10 +71,25 @@ func main() {
 		panic("Database configuration incomplete")
 	}
 
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
+	// Warn if using default database name
+	if dbName == "postgres" {
+		fmt.Println("⚠️ Warning: Using default 'postgres' database name. Make sure this is correct for your Supabase setup.")
+	}
 
-	fmt.Printf("🔗 Connecting to DB: host=%s port=%s user=%s dbname=%s\n", dbHost, dbPort, dbUser, dbName)
+	// Resolve hostname to IPv4 to avoid IPv6 issues
+	fmt.Printf("🔍 Resolving hostname: %s\n", dbHost)
+	ipv4, err := resolveIPv4(dbHost)
+	if err != nil {
+		fmt.Printf("⚠️ Could not resolve IPv4 for %s, using hostname directly: %v\n", dbHost, err)
+		ipv4 = dbHost
+	} else {
+		fmt.Printf("✅ Resolved to IPv4: %s\n", ipv4)
+	}
+
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require connect_timeout=30",
+		ipv4, dbPort, dbUser, dbPassword, dbName)
+
+	fmt.Printf("🔗 Connecting to DB: host=%s port=%s user=%s dbname=%s\n", ipv4, dbPort, dbUser, dbName)
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {

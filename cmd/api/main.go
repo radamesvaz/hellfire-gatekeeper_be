@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -59,7 +60,23 @@ func main() {
 		fmt.Println("⚠️ Warning: Using default 'postgres' database name. Make sure this is correct for your Supabase setup.")
 	}
 
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require connect_timeout=30",
+	// Debug: Show what IPs are being resolved
+	fmt.Printf("🔍 Resolving hostname: %s\n", dbHost)
+	ips, err := net.LookupIP(dbHost)
+	if err != nil {
+		fmt.Printf("⚠️ DNS lookup failed: %v\n", err)
+	} else {
+		fmt.Printf("📍 Resolved IPs: ")
+		for i, ip := range ips {
+			if i > 0 {
+				fmt.Printf(", ")
+			}
+			fmt.Printf("%s", ip.String())
+		}
+		fmt.Printf("\n")
+	}
+
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require connect_timeout=30 fallback_application_name=hellfire-gatekeeper",
 		dbHost, dbPort, dbUser, dbPassword, dbName)
 
 	fmt.Printf("🔗 Connecting to DB: host=%s port=%s user=%s dbname=%s\n", dbHost, dbPort, dbUser, dbName)

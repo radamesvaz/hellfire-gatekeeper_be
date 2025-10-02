@@ -20,6 +20,7 @@ func main() {
 	_ = godotenv.Load()
 
 	// Get database connection details from environment variables
+	databaseURL := os.Getenv("DATABASE_URL")
 	dbUser := firstNonEmpty(
 		os.Getenv("POSTGRES_USER"),
 		os.Getenv("PGUSER"),
@@ -55,7 +56,7 @@ func main() {
 		os.Getenv("MYSQL_DATABASE"),
 	)
 
-	if dbUser == "" || dbPassword == "" || dbHost == "" || dbPort == "" || dbName == "" {
+	if databaseURL == "" && (dbUser == "" || dbPassword == "" || dbHost == "" || dbPort == "" || dbName == "") {
 		fmt.Printf("dbUser: %s", dbUser)
 		fmt.Println("dbPassword", dbPassword)
 		fmt.Println("dbHost", dbHost)
@@ -65,8 +66,18 @@ func main() {
 	}
 
 	// Create database connection string
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
+	var dsn string
+	if databaseURL != "" {
+		dsn = databaseURL
+	} else {
+		sslMode := "require"
+		lowerHost := strings.ToLower(dbHost)
+		if lowerHost == "localhost" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
+			sslMode = "disable"
+		}
+		dsn = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+			dbHost, dbPort, dbUser, dbPassword, dbName, sslMode)
+	}
 
 	// Open database connection
 	db, err := sql.Open("postgres", dsn)

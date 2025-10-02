@@ -5,6 +5,8 @@ services:
     buildCommand: chmod +x start.sh && go build -o migrate ./cmd/migrate && go build -o api ./cmd/api
     startCommand: ./start.sh
     envVars:
+      - key: DATABASE_URL
+        sync: false
       - key: POSTGRES_USER
         sync: false
       - key: POSTGRES_PASSWORD

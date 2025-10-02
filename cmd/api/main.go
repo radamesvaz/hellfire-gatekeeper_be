@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -30,11 +31,15 @@ func main() {
 		fmt.Println("⚠ Could not load .env file")
 	}
 
-	dbUser := os.Getenv("POSTGRES_USER")
-	dbPassword := os.Getenv("POSTGRES_PASSWORD")
-	dbHost := os.Getenv("DB_HOST")
-	dbPort := os.Getenv("DB_PORT")
-	dbName := os.Getenv("POSTGRES_DB")
+	// Prefer full connection URL if provided (e.g., DATABASE_URL from Supabase/Render)
+	databaseURL := os.Getenv("DATABASE_URL")
+
+	// Fallback to discrete variables with PG* compatibility
+	dbUser := firstNonEmpty(os.Getenv("POSTGRES_USER"), os.Getenv("PGUSER"))
+	dbPassword := firstNonEmpty(os.Getenv("POSTGRES_PASSWORD"), os.Getenv("PGPASSWORD"))
+	dbHost := firstNonEmpty(os.Getenv("DB_HOST"), os.Getenv("POSTGRES_HOST"), os.Getenv("PGHOST"))
+	dbPort := firstNonEmpty(os.Getenv("DB_PORT"), os.Getenv("POSTGRES_PORT"), os.Getenv("PGPORT"), "5432")
+	dbName := firstNonEmpty(os.Getenv("POSTGRES_DB"), os.Getenv("PGDATABASE"))
 	secret := os.Getenv("JWT_SECRET")
 	expMinutes := os.Getenv("JWT_EXPIRATION_MINUTES")
 	port := os.Getenv("PORT")
@@ -50,9 +55,11 @@ func main() {
 	}
 
 	// Validate required database configuration
-	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
-		fmt.Println("❌ Missing required database environment variables")
-		panic("Database configuration incomplete")
+	if databaseURL == "" {
+		if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
+			fmt.Println("❌ Missing required database environment variables")
+			panic("Database configuration incomplete")
+		}
 	}
 
 	// Warn if using default database name
@@ -60,26 +67,42 @@ func main() {
 		fmt.Println("⚠️ Warning: Using default 'postgres' database name. Make sure this is correct for your Supabase setup.")
 	}
 
-	// Debug: Show what IPs are being resolved
-	fmt.Printf("🔍 Resolving hostname: %s\n", dbHost)
-	ips, err := net.LookupIP(dbHost)
-	if err != nil {
-		fmt.Printf("⚠️ DNS lookup failed: %v\n", err)
-	} else {
-		fmt.Printf("📍 Resolved IPs: ")
-		for i, ip := range ips {
-			if i > 0 {
-				fmt.Printf(", ")
+	// Debug: Show what IPs are being resolved (only when host is known)
+	if databaseURL == "" && dbHost != "" {
+		fmt.Printf("🔍 Resolving hostname: %s\n", dbHost)
+		ips, err := net.LookupIP(dbHost)
+		if err != nil {
+			fmt.Printf("⚠️ DNS lookup failed: %v\n", err)
+		} else {
+			fmt.Printf("📍 Resolved IPs: ")
+			for i, ip := range ips {
+				if i > 0 {
+					fmt.Printf(", ")
+				}
+				fmt.Printf("%s", ip.String())
 			}
-			fmt.Printf("%s", ip.String())
+			fmt.Printf("\n")
 		}
-		fmt.Printf("\n")
 	}
 
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=require connect_timeout=30 fallback_application_name=hellfire-gatekeeper",
-		dbHost, dbPort, dbUser, dbPassword, dbName)
-
-	fmt.Printf("🔗 Connecting to DB: host=%s port=%s user=%s dbname=%s\n", dbHost, dbPort, dbUser, dbName)
+	// Build DSN
+	var dsn string
+	if databaseURL != "" {
+		// Assume DATABASE_URL already contains proper sslmode settings
+		dsn = databaseURL
+		fmt.Printf("🔗 Connecting to DB using DATABASE_URL\n")
+	} else {
+		sslMode := "require"
+		lowerHost := strings.ToLower(dbHost)
+		if lowerHost == "localhost" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
+			sslMode = "disable"
+		}
+		dsn = fmt.Sprintf(
+			"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s connect_timeout=30 fallback_application_name=hellfire-gatekeeper",
+			dbHost, dbPort, dbUser, dbPassword, dbName, sslMode,
+		)
+		fmt.Printf("🔗 Connecting to DB: host=%s port=%s user=%s dbname=%s sslmode=%s\n", dbHost, dbPort, dbUser, dbName, sslMode)
+	}
 
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -224,4 +247,14 @@ func main() {
 
 	fmt.Printf("🚀 Servidor corriendo en http://localhost:%s\n", port)
 	http.ListenAndServe(":"+port, corsWrapped)
+}
+
+// firstNonEmpty returns the first non-empty string from the provided list.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

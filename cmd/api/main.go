@@ -200,11 +200,16 @@ func main() {
 		panic(lastErr)
 	}
 
-	// Configure connection pool for production stability
-	db.SetMaxOpenConns(25)                 // Maximum number of open connections
-	db.SetMaxIdleConns(5)                  // Maximum number of idle connections
-	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
-	db.SetConnMaxIdleTime(1 * time.Minute) // Maximum idle time of a connection
+	// Configure connection pool for production stability (overridable via env)
+	maxOpen := parseIntWithDefault(os.Getenv("DB_MAX_OPEN_CONNS"), 10)
+	maxIdle := parseIntWithDefault(os.Getenv("DB_MAX_IDLE_CONNS"), 5)
+	maxLifetimeMin := parseIntWithDefault(os.Getenv("DB_CONN_MAX_LIFETIME_MIN"), 5)
+	maxIdleTimeMin := parseIntWithDefault(os.Getenv("DB_CONN_MAX_IDLE_TIME_MIN"), 1)
+
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(time.Duration(maxLifetimeMin) * time.Minute)
+	db.SetConnMaxIdleTime(time.Duration(maxIdleTimeMin) * time.Minute)
 
 	// Test connection with exponential backoff + jitter (tolerates cold start/pooler warmup)
 	rand.Seed(time.Now().UnixNano())
@@ -366,4 +371,16 @@ func isTruthy(value string) bool {
 	default:
 		return false
 	}
+}
+
+// parseIntWithDefault converts a string to int, returning defaultValue on error/empty
+func parseIntWithDefault(value string, defaultValue int) int {
+	if strings.TrimSpace(value) == "" {
+		return defaultValue
+	}
+	v, err := strconv.Atoi(value)
+	if err != nil {
+		return defaultValue
+	}
+	return v
 }

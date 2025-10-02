@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/gorilla/handlers"
 	"github.com/joho/godotenv"
@@ -47,12 +48,42 @@ func main() {
 		port = "8080"
 	}
 
+	// Validate required database configuration
+	if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
+		fmt.Println("❌ Missing required database environment variables")
+		panic("Database configuration incomplete")
+	}
+
 	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		dbHost, dbPort, dbUser, dbPassword, dbName)
+
+	fmt.Printf("🔗 Connecting to DB: host=%s port=%s user=%s dbname=%s\n", dbHost, dbPort, dbUser, dbName)
+
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		fmt.Printf("Could not connect to the DB")
+		fmt.Printf("❌ Could not connect to the DB: %v\n", err)
 		panic(err)
+	}
+
+	// Configure connection pool for production stability
+	db.SetMaxOpenConns(25)                 // Maximum number of open connections
+	db.SetMaxIdleConns(5)                  // Maximum number of idle connections
+	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
+	db.SetConnMaxIdleTime(1 * time.Minute) // Maximum idle time of a connection
+
+	// Test connection with retry
+	maxRetries := 3
+	for i := 0; i < maxRetries; i++ {
+		if err := db.Ping(); err != nil {
+			fmt.Printf("❌ Could not ping database (attempt %d/%d): %v\n", i+1, maxRetries, err)
+			if i == maxRetries-1 {
+				panic(err)
+			}
+			time.Sleep(time.Duration(i+1) * time.Second)
+		} else {
+			fmt.Println("✅ Database connected successfully")
+			break
+		}
 	}
 	defer db.Close()
 
@@ -115,6 +146,17 @@ func main() {
 	// Serve static files (images)
 	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
 
+	// Health check endpoint
+	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		if err := db.Ping(); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintf(w, "Database connection failed: %v", err)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+	}).Methods("GET")
+
 	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
 	// Auth endpoints
@@ -146,6 +188,17 @@ func main() {
 
 	// Wrap router with CORS
 	corsWrapped := handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders, allowCredentials)(r)
+
+	// Start a goroutine to periodically check database health
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			if err := db.Ping(); err != nil {
+				fmt.Printf("⚠️ Database health check failed: %v\n", err)
+			}
+		}
+	}()
 
 	fmt.Printf("🚀 Servidor corriendo en http://localhost:%s\n", port)
 	http.ListenAndServe(":"+port, corsWrapped)

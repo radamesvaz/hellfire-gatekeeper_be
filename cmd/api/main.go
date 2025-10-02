@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -116,19 +117,28 @@ func main() {
 	db.SetConnMaxLifetime(5 * time.Minute) // Maximum lifetime of a connection
 	db.SetConnMaxIdleTime(1 * time.Minute) // Maximum idle time of a connection
 
-	// Test connection with retry
-	maxRetries := 3
-	for i := 0; i < maxRetries; i++ {
+	// Test connection with exponential backoff + jitter (tolerates cold start/pooler warmup)
+	rand.Seed(time.Now().UnixNano())
+	maxAttempts := 10
+	baseDelay := 1 * time.Second
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if err := db.Ping(); err != nil {
-			fmt.Printf("❌ Could not ping database (attempt %d/%d): %v\n", i+1, maxRetries, err)
-			if i == maxRetries-1 {
+			fmt.Printf("❌ Could not ping database (attempt %d/%d): %v\n", attempt, maxAttempts, err)
+			if attempt == maxAttempts {
 				panic(err)
 			}
-			time.Sleep(time.Duration(i+1) * time.Second)
-		} else {
-			fmt.Println("✅ Database connected successfully")
-			break
+			// Exponential backoff capped at 10s, add +/-20%% jitter
+			exp := baseDelay * time.Duration(1<<uint(attempt-1))
+			if exp > 10*time.Second {
+				exp = 10 * time.Second
+			}
+			jitter := time.Duration(rand.Int63n(int64(exp / 5))) // up to 20%
+			sleepFor := exp + jitter
+			time.Sleep(sleepFor)
+			continue
 		}
+		fmt.Println("✅ Database connected successfully")
+		break
 	}
 	defer db.Close()
 

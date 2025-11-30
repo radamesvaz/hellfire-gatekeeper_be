@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
@@ -98,7 +99,10 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 	product := pModel.Product{ID: productID, ImageURLs: allImageURLs}
 	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
-		fmt.Printf("Error creating the history record for add images: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", productID).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for add images")
 	}
 
 	// Return response
@@ -175,7 +179,10 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 	// Delete image file from filesystem
 	err = h.ImageService.DeleteImage(imageURL)
 	if err != nil {
-		fmt.Printf("Warning: Failed to delete image file %s: %v", imageURL, err)
+		logger.Warn().Err(err).
+			Str("image_url", imageURL).
+			Uint64("product_id", productID).
+			Msg("Failed to delete image file")
 		// Don't fail the request if file deletion fails
 	}
 
@@ -189,7 +196,10 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 	updatedProduct := pModel.Product{ID: productID, ImageURLs: newImageURLs}
 	err = h.UpdateHistoryTable(ctx, &updatedProduct, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
-		fmt.Printf("Error creating the history record for delete image: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", productID).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for delete image")
 	}
 
 	// Return response
@@ -259,7 +269,10 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 	for _, imageURL := range existingProduct.ImageURLs {
 		err = h.ImageService.DeleteImage(imageURL)
 		if err != nil {
-			fmt.Printf("Warning: Failed to delete existing image file %s: %v", imageURL, err)
+			logger.Warn().Err(err).
+				Str("image_url", imageURL).
+				Uint64("product_id", productID).
+				Msg("Failed to delete existing image file")
 		}
 	}
 
@@ -287,7 +300,10 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 	product := pModel.Product{ID: productID, ImageURLs: newImageURLs}
 	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
-		fmt.Printf("Error creating the history record for replace images: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", productID).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for replace images")
 	}
 
 	// Return response

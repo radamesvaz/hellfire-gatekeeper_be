@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
@@ -124,7 +125,9 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 	err = c.OrderRepo.CreateOrderHistory(ctx, orderHistory)
 	if err != nil {
 		// Log the error but don't fail the order creation
-		fmt.Printf("Warning: failed to create order history: %v", err)
+		logger.Warn().Err(err).
+			Uint64("order_id", orderID).
+			Msg("Failed to create order history")
 	}
 
 	// Update product stock after successful order creation
@@ -135,7 +138,11 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 		err := c.ProductRepo.UpdateProductStock(ctx, product.ID, newStock)
 		if err != nil {
 			// Log the error but don't fail the order creation
-			fmt.Printf("Warning: failed to update product stock for product %d: %v", product.ID, err)
+			logger.Warn().Err(err).
+				Uint64("order_id", orderID).
+				Uint64("product_id", product.ID).
+				Uint64("quantity", item.Quantity).
+				Msg("Failed to update product stock")
 		}
 	}
 

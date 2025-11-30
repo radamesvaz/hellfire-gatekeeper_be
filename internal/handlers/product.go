@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gorilla/mux"
 	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
@@ -102,7 +102,10 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	err = h.UpdateHistoryTable(ctx, &product, newProduct.ID, idUser, pModel.ActionCreate)
 	if err != nil {
-		fmt.Printf("Error creating the history record for create product: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", newProduct.ID).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for create product")
 	}
 
 	// Return response
@@ -161,7 +164,10 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 
 	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionUpdate)
 	if err != nil {
-		fmt.Printf("Error creating the history record for update product: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", id).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for update product")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -207,7 +213,10 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 	product := pModel.Product{ID: id, Status: pModel.ProductStatus(req.Status)}
 	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionUpdate)
 	if err != nil {
-		fmt.Printf("Error creating the history record for update product status: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", id).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for update product status")
 	}
 
 	w.Header().Set("Content-Type", "application/json")

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
@@ -76,7 +76,7 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 
 // Create order creates a costumer order
 func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
-	fmt.Print("Creating order")
+	logger.Debug().Msg("Creating order")
 	ctx := r.Context()
 
 	// Decode the JSON from the body
@@ -143,7 +143,9 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 
 	err := h.Repo.CreateOrderHistory(ctx, orderHistory)
 	if err != nil {
-		log.Printf("Warning: failed to store order history: %v", err)
+		logger.Warn().Err(err).
+			Uint64("order_id", idOrder).
+			Msg("Failed to store order history")
 		return err
 	}
 	return nil
@@ -277,7 +279,9 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 	err = h.UpdateOrderHistoryTable(ctx, orderModel, idOrder, userID, oModel.ActionUpdate)
 	if err != nil {
-		log.Printf("Warning: failed to create order history: %v", err)
+		logger.Warn().Err(err).
+			Uint64("order_id", idOrder).
+			Msg("Failed to create order history")
 	}
 
 	w.Header().Set("Content-Type", "application/json")

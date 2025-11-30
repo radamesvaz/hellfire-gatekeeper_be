@@ -12,6 +12,7 @@ import (
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 )
 
 type Service struct {
@@ -34,12 +35,12 @@ func New(uploadDir string) *Service {
 		cld, err = cloudinary.NewFromParams(cloudName, apiKey, apiSecret)
 		if err == nil {
 			useCloudinary = true
-			fmt.Println("✅ Cloudinary initialized successfully")
+			logger.Info().Msg("Cloudinary initialized successfully")
 		} else {
-			fmt.Printf("⚠️ Failed to initialize Cloudinary: %v, falling back to local storage\n", err)
+			logger.Warn().Err(err).Msg("Failed to initialize Cloudinary, falling back to local storage")
 		}
 	} else {
-		fmt.Println("⚠️ Cloudinary credentials not found, using local storage")
+		logger.Info().Msg("Cloudinary credentials not found, using local storage")
 	}
 
 	return &Service{

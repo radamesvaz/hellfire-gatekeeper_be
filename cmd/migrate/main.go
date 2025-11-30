@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -13,11 +12,22 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 )
 
 func main() {
-	// Load .env if present (non-fatal if missing)
-	_ = godotenv.Load()
+	// Load .env first (if it exists)
+	err := godotenv.Load()
+	if err != nil {
+		// .env file is optional, especially in production
+	}
+
+	// Get log level from environment, default to "info" if not set
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	logger.Init(logLevel)
 
 	// Get database connection details from environment variables
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -57,12 +67,13 @@ func main() {
 	)
 
 	if databaseURL == "" && (dbUser == "" || dbPassword == "" || dbHost == "" || dbPort == "" || dbName == "") {
-		fmt.Printf("dbUser: %s", dbUser)
-		fmt.Println("dbPassword", dbPassword)
-		fmt.Println("dbHost", dbHost)
-		fmt.Println("dbPort", dbPort)
-		fmt.Println("dbName", dbName)
-		log.Fatal("Missing required database environment variables")
+		logger.Error().
+			Str("db_user", dbUser).
+			Str("db_host", dbHost).
+			Str("db_port", dbPort).
+			Str("db_name", dbName).
+			Msg("Missing required database environment variables")
+		logger.Fatal("Missing required database environment variables")
 	}
 
 	// Create database connection string
@@ -82,28 +93,28 @@ func main() {
 	// Open database connection
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		log.Fatalf("Could not connect to database: %v", err)
+		logger.Logger.Fatal().Err(err).Msg("Could not connect to database")
 	}
 	defer db.Close()
 
 	// Test the connection
 	if err := db.Ping(); err != nil {
-		log.Fatalf("Could not ping database: %v", err)
+		logger.Logger.Fatal().Err(err).Msg("Could not ping database")
 	}
 
 	// Create migrate instance
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		log.Fatalf("Could not create migrate driver: %v", err)
+		logger.Logger.Fatal().Err(err).Msg("Could not create migrate driver")
 	}
 
 	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
 	if err != nil {
-		log.Fatalf("Could not create migrate instance: %v", err)
+		logger.Logger.Fatal().Err(err).Msg("Could not create migrate instance")
 	}
 
 	// Run migrations
-	fmt.Println("🔄 Running database migrations...")
+	logger.Info().Msg("Running database migrations...")
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		// If database is dirty, force version and try again
 		if strings.Contains(err.Error(), "Dirty database version") {
@@ -112,15 +123,17 @@ func main() {
 			matches := re.FindStringSubmatch(err.Error())
 			if len(matches) > 1 {
 				version := matches[1]
-				fmt.Printf("⚠️  Database is dirty at version %s, cleaning and resetting...\n", version)
+				logger.Warn().
+					Str("version", version).
+					Msg("Database is dirty at version, cleaning and resetting...")
 
 				// Force version to 1 (first migration)
 				if forceErr := m.Force(1); forceErr != nil {
-					log.Fatalf("Could not force version to 1: %v", forceErr)
+					logger.Logger.Fatal().Err(forceErr).Msg("Could not force version to 1")
 				}
 
 				// Drop all tables to start fresh
-				fmt.Println("🗑️  Dropping all tables to start fresh...")
+				logger.Info().Msg("Dropping all tables to start fresh...")
 				dropTables := []string{
 					"DROP TABLE IF EXISTS order_items CASCADE;",
 					"DROP TABLE IF EXISTS orders_history CASCADE;",
@@ -136,22 +149,24 @@ func main() {
 
 				for _, dropSQL := range dropTables {
 					if _, execErr := db.Exec(dropSQL); execErr != nil {
-						fmt.Printf("⚠️  Warning: Could not execute %s: %v\n", dropSQL, execErr)
+						logger.Warn().Err(execErr).
+							Str("sql", dropSQL).
+							Msg("Could not execute drop statement")
 					}
 				}
 
-				fmt.Println("🔄 Running migrations from scratch...")
+				logger.Info().Msg("Running migrations from scratch...")
 				if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
-					log.Fatalf("Could not run migrations after reset: %v", retryErr)
+					logger.Logger.Fatal().Err(retryErr).Msg("Could not run migrations after reset")
 				}
 			} else {
-				log.Fatalf("Could not parse dirty version: %v", err)
+				logger.Logger.Fatal().Err(err).Msg("Could not parse dirty version")
 			}
 		} else if strings.Contains(err.Error(), "no migration found for version 0") {
-			fmt.Println("⚠️  Migration failed due to missing version 0 down migration. Cleaning database and starting fresh...")
+			logger.Warn().Msg("Migration failed due to missing version 0 down migration. Cleaning database and starting fresh...")
 
 			// Drop all tables and custom types first
-			fmt.Println("🗑️  Dropping all tables to start fresh...")
+			logger.Info().Msg("Dropping all tables to start fresh...")
 			dropTables := []string{
 				"DROP TABLE IF EXISTS order_items CASCADE;",
 				"DROP TABLE IF EXISTS orders_history CASCADE;",
@@ -167,25 +182,27 @@ func main() {
 
 			for _, dropSQL := range dropTables {
 				if _, execErr := db.Exec(dropSQL); execErr != nil {
-					fmt.Printf("⚠️  Warning: Could not execute %s: %v\n", dropSQL, execErr)
+					logger.Warn().Err(execErr).
+						Str("sql", dropSQL).
+						Msg("Could not execute drop statement")
 				}
 			}
 
 			// Force version to 0 (no migrations applied)
 			if forceErr := m.Force(0); forceErr != nil {
-				log.Fatalf("Could not force version to 0 after specific error: %v", forceErr)
+				logger.Logger.Fatal().Err(forceErr).Msg("Could not force version to 0 after specific error")
 			}
-			fmt.Println("🔄 Running all migrations from scratch...")
+			logger.Info().Msg("Running all migrations from scratch...")
 			if retryErr := m.Up(); retryErr != nil && retryErr != migrate.ErrNoChange {
-				log.Fatalf("Could not run migrations after force (specific error): %v", retryErr)
+				logger.Logger.Fatal().Err(retryErr).Msg("Could not run migrations after force (specific error)")
 			}
 		} else {
-			log.Fatalf("Could not run migrations: %v", err)
+			logger.Logger.Fatal().Err(err).Msg("Could not run migrations")
 		}
 	}
 
-	fmt.Println("✅ Database migrations completed successfully!")
-	fmt.Println("🎉 All migrations applied correctly!")
+	logger.Info().Msg("Database migrations completed successfully!")
+	logger.Info().Msg("All migrations applied correctly!")
 }
 
 // firstNonEmpty returns the first non-empty string from the provided list.

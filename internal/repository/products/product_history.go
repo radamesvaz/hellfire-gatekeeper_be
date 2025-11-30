@@ -3,9 +3,9 @@ package products
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 )
 
@@ -15,11 +15,17 @@ type ProductHistoryRepository struct {
 
 // Creating a product
 func (r *ProductRepository) CreateProductHistory(_ context.Context, product pModel.ProductHistory) error {
-	fmt.Printf("Creating product history: %v", product.IDProduct)
+	logger.Debug().
+		Uint64("product_id", product.IDProduct).
+		Str("action", string(product.Action)).
+		Msg("Creating product history")
 
 	validStatus := IsValidStatus(product.Status)
 	if !validStatus {
-		fmt.Printf("Invalid status: %v", product.Status)
+		logger.Warn().
+			Uint64("product_id", product.IDProduct).
+			Str("status", string(product.Status)).
+			Msg("Invalid status")
 		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
@@ -57,20 +63,30 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 	)
 
 	if err != nil {
-		fmt.Printf("Error creating the product in the history table: %v", err)
+		logger.Err(err).
+			Uint64("product_id", product.IDProduct).
+			Msg("Error creating the product in the history table")
 		return errors.NewInternalServerError(errors.ErrCreatingProductHistory)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("Could not get the rows affected: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", product.IDProduct).
+			Msg("Could not get the rows affected")
 	}
 
 	if rows == 0 {
+		logger.Debug().
+			Uint64("product_id", product.IDProduct).
+			Msg("No rows affected when creating product history")
 		return errors.NewNotFound(errors.ErrProductNotFound)
 	}
 
-	fmt.Printf("RESULT: %v", rows)
+	logger.Debug().
+		Uint64("product_id", product.IDProduct).
+		Int64("rows_affected", rows).
+		Msg("Product history created successfully")
 
 	return nil
 

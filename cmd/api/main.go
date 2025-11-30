@@ -15,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	h "github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
@@ -27,10 +28,18 @@ import (
 )
 
 func main() {
+	// Load .env first (if it exists)
 	err := godotenv.Load()
 	if err != nil {
 		fmt.Println("⚠ Could not load .env file")
 	}
+
+	// Get log level from environment, default to "info" if not set
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	logger.Init(logLevel)
 
 	// Prefer full connection URL if provided (e.g., DATABASE_URL from Supabase/Render)
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -49,7 +58,7 @@ func main() {
 	tryHostVariants := isTruthy(os.Getenv("DB_TRY_HOST_VARIANTS")) // tries aws-0 and aws-1 variants
 	exp, err := strconv.Atoi(expMinutes)
 	if err != nil {
-		fmt.Printf("could not get the expMinutes from env: %v", err)
+		logger.Err(err).Str("env_var", "JWT_EXPIRATION_MINUTES").Msg("could not get the expMinutes from env")
 		panic(err)
 	}
 
@@ -61,31 +70,28 @@ func main() {
 	// Validate required database configuration
 	if databaseURL == "" {
 		if dbHost == "" || dbUser == "" || dbPassword == "" || dbName == "" {
-			fmt.Println("❌ Missing required database environment variables")
+			logger.Error().Msg("Missing required database environment variables")
 			panic("Database configuration incomplete")
 		}
 	}
 
 	// Warn if using default database name
 	if dbName == "postgres" {
-		fmt.Println("⚠️ Warning: Using default 'postgres' database name. Make sure this is correct for your Supabase setup.")
+		logger.Warn().Msg("Using default 'postgres' database name. Make sure this is correct for your Supabase setup.")
 	}
 
 	// Debug: Show what IPs are being resolved (only when host is known)
 	if databaseURL == "" && dbHost != "" {
-		fmt.Printf("🔍 Resolving hostname: %s\n", dbHost)
+		logger.Debug().Str("hostname", dbHost).Msg("Resolving hostname")
 		ips, err := net.LookupIP(dbHost)
 		if err != nil {
-			fmt.Printf("⚠️ DNS lookup failed: %v\n", err)
+			logger.Warn().Err(err).Str("hostname", dbHost).Msg("DNS lookup failed")
 		} else {
-			fmt.Printf("📍 Resolved IPs: ")
+			ipStrings := make([]string, len(ips))
 			for i, ip := range ips {
-				if i > 0 {
-					fmt.Printf(", ")
-				}
-				fmt.Printf("%s", ip.String())
+				ipStrings[i] = ip.String()
 			}
-			fmt.Printf("\n")
+			logger.Debug().Strs("ips", ipStrings).Str("hostname", dbHost).Msg("Resolved IPs")
 		}
 	}
 
@@ -144,19 +150,32 @@ func main() {
 	for idx, d := range candidateDSNs {
 		// Log a safe summary of the DSN (without password)
 		if strings.HasPrefix(d, "postgres://") || strings.HasPrefix(d, "postgresql://") {
-			fmt.Printf("🔗 Attempting DB connect via DATABASE_URL (candidate %d/%d)\n", idx+1, len(candidateDSNs))
+			logger.Info().
+				Int("candidate", idx+1).
+				Int("total_candidates", len(candidateDSNs)).
+				Str("method", "DATABASE_URL").
+				Msg("Attempting DB connect")
 		} else {
 			// Parse host/port for logging
 			var host, portStr, dbn string
 			host = dbHost
 			portStr = dbPort
 			dbn = dbName
-			fmt.Printf("🔗 Attempting DB connect (candidate %d/%d): host=%s port=%s user=%s dbname=%s\n", idx+1, len(candidateDSNs), host, portStr, dbUser, dbn)
+			logger.Info().
+				Int("candidate", idx+1).
+				Int("total_candidates", len(candidateDSNs)).
+				Str("host", host).
+				Str("port", portStr).
+				Str("user", dbUser).
+				Str("dbname", dbn).
+				Msg("Attempting DB connect")
 		}
 
 		db, err = sql.Open("postgres", d)
 		if err != nil {
-			fmt.Printf("❌ sql.Open failed: %v\n", err)
+			logger.Err(err).
+				Int("candidate", idx+1).
+				Msg("sql.Open failed")
 			lastErr = err
 			continue
 		}
@@ -168,7 +187,11 @@ func main() {
 		succeeded := false
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
 			if err := db.Ping(); err != nil {
-				fmt.Printf("❌ Could not ping database (candidate %d, attempt %d/%d): %v\n", idx+1, attempt, maxAttempts, err)
+				logger.Warn().Err(err).
+					Int("candidate", idx+1).
+					Int("attempt", attempt).
+					Int("max_attempts", maxAttempts).
+					Msg("Could not ping database")
 				lastErr = err
 				if attempt == maxAttempts {
 					break
@@ -181,7 +204,10 @@ func main() {
 				time.Sleep(exp + jitter)
 				continue
 			}
-			fmt.Println("✅ Database connected successfully")
+			logger.Info().
+				Int("candidate", idx+1).
+				Int("attempt", attempt).
+				Msg("Database connected successfully")
 			succeeded = true
 			break
 		}
@@ -196,7 +222,9 @@ func main() {
 	}
 
 	if db == nil {
-		fmt.Printf("❌ Could not connect to the DB after trying %d candidates. Last error: %v\n", len(candidateDSNs), lastErr)
+		logger.Logger.Fatal().Err(lastErr).
+			Int("total_candidates", len(candidateDSNs)).
+			Msg("Could not connect to the DB after trying all candidates")
 		panic(lastErr)
 	}
 
@@ -217,7 +245,10 @@ func main() {
 	baseDelay := 1 * time.Second
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if err := db.Ping(); err != nil {
-			fmt.Printf("❌ Could not ping database (attempt %d/%d): %v\n", attempt, maxAttempts, err)
+			logger.Warn().Err(err).
+				Int("attempt", attempt).
+				Int("max_attempts", maxAttempts).
+				Msg("Could not ping database")
 			if attempt == maxAttempts {
 				panic(err)
 			}
@@ -231,7 +262,7 @@ func main() {
 			time.Sleep(sleepFor)
 			continue
 		}
-		fmt.Println("✅ Database connected successfully")
+		logger.Info().Msg("Database connected successfully")
 		break
 	}
 	defer db.Close()
@@ -344,13 +375,19 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := db.Ping(); err != nil {
-				fmt.Printf("⚠️ Database health check failed: %v\n", err)
+				logger.Warn().Err(err).Msg("Database health check failed")
 			}
 		}
 	}()
 
-	fmt.Printf("🚀 Servidor corriendo en http://localhost:%s\n", port)
-	http.ListenAndServe(":"+port, corsWrapped)
+	logger.Info().
+		Str("port", port).
+		Str("address", fmt.Sprintf("http://localhost:%s", port)).
+		Msg("Server starting")
+
+	if err := http.ListenAndServe(":"+port, corsWrapped); err != nil {
+		logger.Logger.Fatal().Err(err).Msg("Server failed to start")
+	}
 }
 
 // firstNonEmpty returns the first non-empty string from the provided list.

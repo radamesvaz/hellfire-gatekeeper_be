@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
@@ -375,7 +376,12 @@ func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oMo
 }
 
 func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (id uint64, err error) {
-	fmt.Printf("Creating order for user: %v", order.IdUser)
+	logger.Debug().
+		Uint64("user_id", order.IdUser).
+		Float64("total_price", order.Price).
+		Str("status", string(order.Status)).
+		Msg("Creating order for user")
+
 	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order`
 
 	var insertedID uint64
@@ -391,26 +397,44 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 	).Scan(&insertedID)
 
 	if err != nil {
-		fmt.Printf("Error creating the order: %v", err)
+		logger.Err(err).
+			Uint64("user_id", order.IdUser).
+			Msg("Error creating the order")
 		return 0, errors.NewInternalServerError(errors.ErrCreatingOrder)
 	}
 
+	logger.Debug().
+		Uint64("order_id", insertedID).
+		Uint64("user_id", order.IdUser).
+		Msg("Order created successfully")
 	return insertedID, nil
 }
 
 func (r *OrderRepository) createOrderItemTx(ctx context.Context, tx *sql.Tx, items []oModel.OrderItemRequest) error {
-	fmt.Printf("creating items for order: %v", items[0].IdOrder)
+	if len(items) > 0 {
+		logger.Debug().
+			Uint64("order_id", items[0].IdOrder).
+			Int("item_count", len(items)).
+			Msg("Creating items for order")
+	}
 	exec := execerFrom(tx, r.DB)
 	query := `INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)`
 
 	for _, item := range items {
 		_, err := exec.ExecContext(ctx, query, item.IdOrder, item.IdProduct, item.Quantity)
 		if err != nil {
-			fmt.Printf("error inserting item (orderID: %d, productID: %d): %v", item.IdOrder, item.IdProduct, err)
+			logger.Err(err).
+				Uint64("order_id", item.IdOrder).
+				Uint64("product_id", item.IdProduct).
+				Uint64("quantity", item.Quantity).
+				Msg("Error inserting order item")
 			return errors.NewInternalServerError(errors.ErrCreatingOrderItem)
 		}
 	}
 
+	logger.Debug().
+		Int("item_count", len(items)).
+		Msg("Order items created successfully")
 	return nil
 }
 
@@ -425,7 +449,11 @@ func execerFrom(tx *sql.Tx, db *sql.DB) interface {
 
 // CreateOrderHistory creates a new order history record
 func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.OrderHistory) error {
-	fmt.Printf("Creating order history: %v", order.IDOrder)
+	logger.Debug().
+		Uint64("order_id", order.IDOrder).
+		Str("action", string(order.Action)).
+		Str("status", string(order.Status)).
+		Msg("Creating order history")
 
 	result, err := r.DB.Exec(
 		`INSERT INTO orders_history (
@@ -461,20 +489,30 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 	)
 
 	if err != nil {
-		fmt.Printf("Error creating the order in the history table: %v", err)
+		logger.Err(err).
+			Uint64("order_id", order.IDOrder).
+			Msg("Error creating the order in the history table")
 		return errors.NewInternalServerError(errors.ErrCreatingOrderHistory)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("Could not get the rows affected: %v", err)
+		logger.Warn().Err(err).
+			Uint64("order_id", order.IDOrder).
+			Msg("Could not get the rows affected")
 	}
 
 	if rows == 0 {
+		logger.Debug().
+			Uint64("order_id", order.IDOrder).
+			Msg("No rows affected when creating order history")
 		return errors.NewNotFound(errors.ErrOrderNotFound)
 	}
 
-	fmt.Printf("RESULT: %v", rows)
+	logger.Debug().
+		Uint64("order_id", order.IDOrder).
+		Int64("rows_affected", rows).
+		Msg("Order history created successfully")
 
 	return nil
 }

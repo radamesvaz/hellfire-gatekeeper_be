@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
@@ -63,7 +64,9 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 		if err != nil {
 			// If stock reversion fails, we should return the error
 			// This is because the order status has already been updated
-			fmt.Printf("Warning: failed to revert stock for cancelled order %d: %v", orderID, err)
+			logger.Warn().Err(err).
+				Uint64("order_id", orderID).
+				Msg("Failed to revert stock for cancelled order")
 			return fmt.Errorf("error reverting stock for cancelled order: %w", err)
 		}
 	}
@@ -86,7 +89,10 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 	err = s.OrderRepo.CreateOrderHistory(ctx, orderHistory)
 	if err != nil {
 		// Log the error but don't fail the status update
-		fmt.Printf("Warning: failed to create order history: %v", err)
+		logger.Warn().Err(err).
+			Uint64("order_id", orderID).
+			Str("new_status", string(newStatus)).
+			Msg("Failed to create order history")
 	}
 
 	return nil

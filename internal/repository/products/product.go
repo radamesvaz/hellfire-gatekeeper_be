@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/logger"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 )
 
@@ -17,12 +18,10 @@ type ProductRepository struct {
 
 // GetAllProducts gets all the products from the table
 func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product, error) {
-	fmt.Println(
-		"Getting all products",
-	)
+	logger.Debug().Msg("Getting all products")
 	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products")
 	if err != nil {
-		fmt.Printf("Error getting the products: %v", err)
+		logger.Err(err).Msg("Error getting the products")
 		return nil, err
 	}
 	defer rows.Close()
@@ -42,7 +41,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 			&imageURLsJSON,
 			&product.CreatedOn,
 		); err != nil {
-			fmt.Printf("Error mapping the products: %v", err)
+			logger.Err(err).Msg("Error mapping the products")
 			return nil, err
 		}
 
@@ -50,7 +49,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 		if imageURLsJSON.Valid && imageURLsJSON.String != "" {
 			var imageURLs []string
 			if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
-				fmt.Printf("Error parsing image URLs: %v", err)
+				logger.Warn().Err(err).Uint64("product_id", product.ID).Msg("Error parsing image URLs")
 				product.ImageURLs = []string{}
 			} else {
 				product.ImageURLs = imageURLs
@@ -61,15 +60,13 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 
 		products = append(products, product)
 	}
+	logger.Debug().Int("count", len(products)).Msg("Products retrieved successfully")
 	return products, nil
 }
 
 // Getting a product by its ID
 func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) (pModel.Product, error) {
-	fmt.Printf(
-		"Getting product by id = %v",
-		idProduct,
-	)
+	logger.Debug().Uint64("product_id", idProduct).Msg("Getting product by id")
 
 	product := pModel.Product{}
 	var imageURLsJSON sql.NullString
@@ -91,19 +88,19 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			fmt.Println("Product not found")
+			logger.Debug().Uint64("product_id", idProduct).Msg("Product not found")
 			return product, errors.NewNotFound(errors.ErrProductNotFound)
 		}
-		fmt.Printf("Error retrieving the product: %v", err)
+		logger.Err(err).Uint64("product_id", idProduct).Msg("Error retrieving the product")
 		return product, errors.NewNotFound(errors.ErrCouldNotGetTheProduct)
 	}
 
 	// Parse image URLs from JSON
 	if imageURLsJSON.Valid && imageURLsJSON.String != "" {
 		var imageURLs []string
-		if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
-			fmt.Printf("Error parsing image URLs: %v", err)
-			product.ImageURLs = []string{}
+			if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
+				logger.Warn().Err(err).Uint64("product_id", idProduct).Msg("Error parsing image URLs")
+				product.ImageURLs = []string{}
 		} else {
 			product.ImageURLs = imageURLs
 		}
@@ -111,6 +108,7 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 		product.ImageURLs = []string{}
 	}
 
+	logger.Debug().Uint64("product_id", idProduct).Str("name", product.Name).Msg("Product retrieved successfully")
 	return product, nil
 }
 
@@ -153,18 +151,26 @@ func (r *ProductRepository) GetProductsByIDs(ctx context.Context, ids []uint64) 
 
 // Creating a product
 func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Product) (pModel.Product, error) {
-	fmt.Printf("Creating product: %v", product.Name)
+	logger.Debug().
+		Str("name", product.Name).
+		Float64("price", product.Price).
+		Msg("Creating product")
 
 	createdProduct := pModel.Product{}
 
 	if product.Name == "" || product.Description == "" || product.Price == 0 {
+		logger.Warn().
+			Str("name", product.Name).
+			Msg("Invalid product data for creation")
 		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
 	}
 
 	// Convert imageURLs to JSON
 	imageURLsJSON, err := json.Marshal(product.ImageURLs)
 	if err != nil {
-		fmt.Printf("Error marshaling image URLs: %v", err)
+		logger.Err(err).
+			Str("name", product.Name).
+			Msg("Error marshaling image URLs")
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
@@ -176,7 +182,9 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON)).Scan(&insertedID)
 
 	if err != nil {
-		fmt.Printf("Error getting the last insert ID: %v", err)
+		logger.Err(err).
+			Str("name", product.Name).
+			Msg("Error getting the last insert ID")
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
@@ -189,20 +197,26 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 	createdProduct.Status = product.Status
 	createdProduct.ImageURLs = product.ImageURLs
 
+	logger.Info().
+		Uint64("product_id", insertedID).
+		Str("name", product.Name).
+		Msg("Product created successfully")
 	return createdProduct, nil
 }
 
 // Updating a product status
 func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uint64, status pModel.ProductStatus) error {
-	fmt.Printf(
-		"%s product status by id = %v",
-		status,
-		idProduct,
-	)
+	logger.Debug().
+		Uint64("product_id", idProduct).
+		Str("status", string(status)).
+		Msg("Updating product status")
 
 	validStatus := IsValidStatus(status)
 	if !validStatus {
-		fmt.Printf("Invalid status: %v", status)
+		logger.Warn().
+			Uint64("product_id", idProduct).
+			Str("status", string(status)).
+			Msg("Invalid status")
 		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
@@ -213,34 +227,49 @@ func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uin
 	)
 
 	if err != nil {
-		fmt.Printf("Error updating the product status: %v", err)
+		logger.Err(err).
+			Uint64("product_id", idProduct).
+			Str("status", string(status)).
+			Msg("Error updating the product status")
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("Could not get the rows affected: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", idProduct).
+			Msg("Could not get the rows affected")
 	}
 
 	if rows == 0 {
+		logger.Debug().
+			Uint64("product_id", idProduct).
+			Msg("Product not found for status update")
 		return errors.NewNotFound(errors.ErrProductNotFound)
 	}
 
-	fmt.Printf("RESULT: %v", rows)
+	logger.Info().
+		Uint64("product_id", idProduct).
+		Str("status", string(status)).
+		Int64("rows_affected", rows).
+		Msg("Product status updated successfully")
 
 	return nil
 }
 
 // Updating product
 func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Product) error {
-	fmt.Printf(
-		"Updating product status by id = %v",
-		product.ID,
-	)
+	logger.Debug().
+		Uint64("product_id", product.ID).
+		Str("name", product.Name).
+		Msg("Updating product")
 
 	validStatus := IsValidStatus(product.Status)
 	if !validStatus {
-		fmt.Printf("Invalid status: %v", product.Status)
+		logger.Warn().
+			Uint64("product_id", product.ID).
+			Str("status", string(product.Status)).
+			Msg("Invalid status")
 		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
@@ -256,20 +285,30 @@ func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Prod
 	)
 
 	if err != nil {
-		fmt.Printf("Error updating the product: %v", err)
+		logger.Err(err).
+			Uint64("product_id", product.ID).
+			Msg("Error updating the product")
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("Could not get the rows affected: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", product.ID).
+			Msg("Could not get the rows affected")
 	}
 
 	if rows == 0 {
+		logger.Debug().
+			Uint64("product_id", product.ID).
+			Msg("Product not found for update")
 		return errors.NewNotFound(errors.ErrProductNotFound)
 	}
 
-	fmt.Printf("RESULT: %v", rows)
+	logger.Info().
+		Uint64("product_id", product.ID).
+		Int64("rows_affected", rows).
+		Msg("Product updated successfully")
 
 	return nil
 }
@@ -286,7 +325,10 @@ func IsValidStatus(status pModel.ProductStatus) bool {
 
 // UpdateProductStock updates only the stock of a product
 func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint64, newStock uint64) error {
-	fmt.Printf("Updating product stock to %d for product id = %d", newStock, idProduct)
+	logger.Debug().
+		Uint64("product_id", idProduct).
+		Uint64("new_stock", newStock).
+		Msg("Updating product stock")
 
 	result, err := r.DB.Exec(
 		"UPDATE products SET stock = $1 WHERE id_product = $2",
@@ -295,20 +337,32 @@ func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint
 	)
 
 	if err != nil {
-		fmt.Printf("Error updating product stock: %v", err)
+		logger.Err(err).
+			Uint64("product_id", idProduct).
+			Uint64("new_stock", newStock).
+			Msg("Error updating product stock")
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 
 	rows, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("Could not get the rows affected: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", idProduct).
+			Msg("Could not get the rows affected")
 	}
 
 	if rows == 0 {
+		logger.Debug().
+			Uint64("product_id", idProduct).
+			Msg("Product not found for stock update")
 		return errors.NewNotFound(errors.ErrProductNotFound)
 	}
 
-	fmt.Printf("Stock updated successfully. Rows affected: %v", rows)
+	logger.Info().
+		Uint64("product_id", idProduct).
+		Uint64("new_stock", newStock).
+		Int64("rows_affected", rows).
+		Msg("Stock updated successfully")
 	return nil
 }
 
@@ -333,26 +387,37 @@ func (r *ProductRepository) RevertProductStock(ctx context.Context, idProduct ui
 		return fmt.Errorf("error reverting product stock: %w", err)
 	}
 
-	fmt.Printf("Stock reverted successfully. Product %d: %d + %d = %d",
-		idProduct, product.Stock, quantityToRevert, newStock)
+	logger.Info().
+		Uint64("product_id", idProduct).
+		Uint64("previous_stock", product.Stock).
+		Uint64("quantity_reverted", quantityToRevert).
+		Uint64("new_stock", newStock).
+		Msg("Stock reverted successfully")
 
 	return nil
 }
 
 // UpdateProductImages updates the image URLs for a product
 func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uint64, imageURLs []string) error {
-	fmt.Printf("Updating product images for product id = %d\n", idProduct)
+	logger.Debug().
+		Uint64("product_id", idProduct).
+		Int("image_count", len(imageURLs)).
+		Msg("Updating product images")
 
 	// Convert imageURLs to JSON
 	imageURLsJSON, err := json.Marshal(imageURLs)
 	if err != nil {
-		fmt.Printf("Error marshaling image URLs: %v\n", err)
+		logger.Err(err).
+			Uint64("product_id", idProduct).
+			Msg("Error marshaling image URLs")
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 
-	fmt.Printf("DEBUG: Marshaled image URLs JSON: %s\n", string(imageURLsJSON))
+	logger.Debug().
+		Uint64("product_id", idProduct).
+		Str("image_urls_json", string(imageURLsJSON)).
+		Msg("Marshaled image URLs JSON")
 
-	fmt.Printf("DEBUG: About to execute SQL UPDATE for product %d\n", idProduct)
 	result, err := r.DB.Exec(
 		"UPDATE products SET image_urls = $1 WHERE id_product = $2",
 		string(imageURLsJSON),
@@ -360,21 +425,30 @@ func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uin
 	)
 
 	if err != nil {
-		fmt.Printf("Error updating product images: %v\n", err)
+		logger.Err(err).
+			Uint64("product_id", idProduct).
+			Msg("Error updating product images")
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 
-	fmt.Printf("DEBUG: SQL UPDATE executed successfully\n")
-
 	rows, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("Could not get the rows affected: %v", err)
+		logger.Warn().Err(err).
+			Uint64("product_id", idProduct).
+			Msg("Could not get the rows affected")
 	}
 
 	if rows == 0 {
+		logger.Debug().
+			Uint64("product_id", idProduct).
+			Msg("Product not found for image update")
 		return errors.NewNotFound(errors.ErrProductNotFound)
 	}
 
-	fmt.Printf("Product images updated successfully. Rows affected: %v", rows)
+	logger.Info().
+		Uint64("product_id", idProduct).
+		Int("image_count", len(imageURLs)).
+		Int64("rows_affected", rows).
+		Msg("Product images updated successfully")
 	return nil
 }

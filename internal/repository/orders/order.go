@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
@@ -158,8 +159,13 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 	}
 
 	orders := make([]oModel.OrderResponse, 0, len(ordersMap))
-	for _, order := range ordersMap {
-		orders = append(orders, *order)
+	keys := make([]uint64, 0, len(ordersMap))
+	for id := range ordersMap {
+		keys = append(keys, id)
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	for _, id := range keys {
+		orders = append(orders, *ordersMap[id])
 	}
 
 	return orders, nil

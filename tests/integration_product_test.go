@@ -35,6 +35,7 @@ import (
 
 func setupPostgreSQLContainer(t *testing.T) (container testcontainers.Container, db *sql.DB, terminate func(), dsn string) {
 	ctx := context.Background()
+
 	err := godotenv.Load("../.env")
 	if err != nil {
 		fmt.Printf("⚠ Could not load .env file: %v", err)

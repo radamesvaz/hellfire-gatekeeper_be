@@ -81,9 +81,10 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 
 	// Combine existing and new image URLs
 	allImageURLs := append(existingProduct.ImageURLs, newImageURLs...)
+	newThumbnail := selectThumbnail(existingProduct.ThumbnailURL, allImageURLs)
 
 	// Update product with all image URLs (existing + new)
-	err = h.Repo.UpdateProductImages(ctx, productID, allImageURLs)
+	err = h.Repo.UpdateProductImages(ctx, productID, allImageURLs, newThumbnail)
 	if err != nil {
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
@@ -96,7 +97,7 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	product := pModel.Product{ID: productID, ImageURLs: allImageURLs}
+	product := pModel.Product{ID: productID, ImageURLs: allImageURLs, ThumbnailURL: newThumbnail}
 	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
@@ -113,6 +114,7 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		"product_id":  productID,
 		"new_images":  newImageURLs,
 		"all_images":  allImageURLs,
+		"thumbnail":   newThumbnail,
 		"total_count": len(allImageURLs),
 	}
 	json.NewEncoder(w).Encode(response)
@@ -169,8 +171,10 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 	newImageURLs = append(newImageURLs, product.ImageURLs[:imageIndex]...)
 	newImageURLs = append(newImageURLs, product.ImageURLs[imageIndex+1:]...)
 
+	newThumbnail := selectThumbnail(product.ThumbnailURL, newImageURLs)
+
 	// Update product with new image URLs
-	err = h.Repo.UpdateProductImages(ctx, productID, newImageURLs)
+	err = h.Repo.UpdateProductImages(ctx, productID, newImageURLs, newThumbnail)
 	if err != nil {
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
@@ -193,7 +197,7 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	updatedProduct := pModel.Product{ID: productID, ImageURLs: newImageURLs}
+	updatedProduct := pModel.Product{ID: productID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
 	err = h.UpdateHistoryTable(ctx, &updatedProduct, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
@@ -210,6 +214,7 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		"product_id":       productID,
 		"deleted_url":      imageURL,
 		"remaining_images": newImageURLs,
+		"thumbnail_url":    newThumbnail,
 		"total_count":      len(newImageURLs),
 	}
 	json.NewEncoder(w).Encode(response)
@@ -283,8 +288,10 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	newThumbnail := selectThumbnail(existingProduct.ThumbnailURL, newImageURLs)
+
 	// Update product with new image URLs (replace all)
-	err = h.Repo.UpdateProductImages(ctx, productID, newImageURLs)
+	err = h.Repo.UpdateProductImages(ctx, productID, newImageURLs, newThumbnail)
 	if err != nil {
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
@@ -297,7 +304,7 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	product := pModel.Product{ID: productID, ImageURLs: newImageURLs}
+	product := pModel.Product{ID: productID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
 	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
@@ -313,24 +320,41 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		"message":     "Images replaced successfully",
 		"product_id":  productID,
 		"new_images":  newImageURLs,
+		"thumbnail":   newThumbnail,
 		"total_count": len(newImageURLs),
 	}
 	json.NewEncoder(w).Encode(response)
 }
 
+// selectThumbnail returns a valid thumbnail based on current value and available images
+func selectThumbnail(current string, imageURLs []string) string {
+	if len(imageURLs) == 0 {
+		return ""
+	}
+
+	for _, url := range imageURLs {
+		if url == current {
+			return current
+		}
+	}
+
+	return imageURLs[0]
+}
+
 // UpdateHistoryTable - Update the history table (shared with ProductHandler)
 func (h *ImageHandler) UpdateHistoryTable(ctx context.Context, product *pModel.Product, idProduct uint64, idUser uint64, action pModel.ProductAction) error {
 	history := pModel.ProductHistory{
-		IDProduct:   idProduct,
-		Name:        product.Name,
-		Description: product.Description,
-		Price:       product.Price,
-		Available:   product.Available,
-		Stock:       product.Stock,
-		Status:      product.Status,
-		ImageURLs:   product.ImageURLs,
-		ModifiedBy:  idUser,
-		Action:      action,
+		IDProduct:    idProduct,
+		Name:         product.Name,
+		Description:  product.Description,
+		Price:        product.Price,
+		Available:    product.Available,
+		Stock:        product.Stock,
+		Status:       product.Status,
+		ImageURLs:    product.ImageURLs,
+		ThumbnailURL: product.ThumbnailURL,
+		ModifiedBy:   idUser,
+		Action:       action,
 	}
 
 	return h.Repo.CreateProductHistory(ctx, history)

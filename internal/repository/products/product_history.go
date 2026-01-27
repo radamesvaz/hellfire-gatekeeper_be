@@ -3,6 +3,7 @@ package products
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/logger"
@@ -29,6 +30,21 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
+	imageURLsJSON, err := json.Marshal(product.ImageURLs)
+	if err != nil {
+		logger.Err(err).
+			Uint64("product_id", product.IDProduct).
+			Msg("Error marshaling image URLs for product history")
+		return errors.NewInternalServerError(errors.ErrCreatingProductHistory)
+	}
+
+	var thumbnailValue interface{}
+	if product.ThumbnailURL == "" {
+		thumbnailValue = nil
+	} else {
+		thumbnailValue = product.ThumbnailURL
+	}
+
 	result, err := r.DB.Exec(
 		`INSERT INTO products_history (
 		id_product, 
@@ -38,6 +54,8 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 		available, 
 		stock,
 		status, 
+		image_urls,
+		thumbnail_url,
 		modified_by, 
 		action
 		) 
@@ -49,8 +67,10 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 		$5, 
 		$6, 
 		$7, 
-		$8, 
-		$9)`,
+		$8,
+		$9,
+		$10, 
+		$11)`,
 		product.IDProduct,
 		product.Name,
 		product.Description,
@@ -58,6 +78,8 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 		product.Available,
 		product.Stock,
 		product.Status,
+		string(imageURLsJSON),
+		thumbnailValue,
 		product.ModifiedBy,
 		product.Action,
 	)

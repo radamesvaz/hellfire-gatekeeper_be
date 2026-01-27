@@ -139,14 +139,15 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	product := pModel.Product{
-		ID:          id,
-		Name:        req.Name,
-		Description: req.Description,
-		Price:       req.Price,
-		Available:   req.Available,
-		Stock:       req.Stock,
-		Status:      req.Status,
-		ImageURLs:   req.ImageURLs, // Images managed via separate endpoint
+		ID:           id,
+		Name:         req.Name,
+		Description:  req.Description,
+		Price:        req.Price,
+		Available:    req.Available,
+		Stock:        req.Stock,
+		Status:       req.Status,
+		ImageURLs:    req.ImageURLs, // Images managed via separate endpoint
+		ThumbnailURL: req.ThumbnailURL,
 	}
 
 	// Update product basic fields
@@ -174,6 +175,87 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Product updated successfully",
+	})
+}
+
+// UpdateProductThumbnail - Update the thumbnail image for a product
+func (h *ProductHandler) UpdateProductThumbnail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	idStr := mux.Vars(r)["id"]
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		ThumbnailURL string `json:"thumbnail_url"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ThumbnailURL == "" {
+		http.Error(w, "thumbnail_url is required", http.StatusBadRequest)
+		return
+	}
+
+	product, err := h.Repo.GetProductByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, appErrors.ErrProductNotFound) {
+			http.Error(w, "Product not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to get product", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate that the requested thumbnail belongs to the product images
+	found := false
+	for _, url := range product.ImageURLs {
+		if url == req.ThumbnailURL {
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.Error(w, "thumbnail_url must exist in image_urls", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Repo.UpdateProductThumbnail(ctx, id, req.ThumbnailURL); err != nil {
+		if errors.Is(err, appErrors.ErrProductNotFound) {
+			http.Error(w, "Product not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to update product thumbnail", http.StatusInternalServerError)
+		return
+	}
+
+	product.ThumbnailURL = req.ThumbnailURL
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
+		return
+	}
+
+	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionUpdate)
+	if err != nil {
+		logger.Warn().Err(err).
+			Uint64("product_id", id).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for update product thumbnail")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":       "Product thumbnail updated successfully",
+		"product_id":    id,
+		"thumbnail_url": req.ThumbnailURL,
 	})
 }
 
@@ -229,16 +311,17 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 // UpdateHistoryTable - Update the history table
 func (h *ProductHandler) UpdateHistoryTable(ctx context.Context, product *pModel.Product, idProduct uint64, idUser uint64, action pModel.ProductAction) error {
 	history := pModel.ProductHistory{
-		IDProduct:   idProduct,
-		Name:        product.Name,
-		Description: product.Description,
-		Price:       product.Price,
-		Available:   product.Available,
-		Stock:       product.Stock,
-		Status:      product.Status,
-		ImageURLs:   product.ImageURLs,
-		ModifiedBy:  idUser,
-		Action:      action,
+		IDProduct:    idProduct,
+		Name:         product.Name,
+		Description:  product.Description,
+		Price:        product.Price,
+		Available:    product.Available,
+		Stock:        product.Stock,
+		Status:       product.Status,
+		ImageURLs:    product.ImageURLs,
+		ThumbnailURL: product.ThumbnailURL,
+		ModifiedBy:   idUser,
+		Action:       action,
 	}
 
 	return h.Repo.CreateProductHistory(ctx, history)

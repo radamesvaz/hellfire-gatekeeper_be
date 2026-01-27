@@ -19,7 +19,7 @@ type ProductRepository struct {
 // GetAllProducts gets all the products from the table
 func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product, error) {
 	logger.Debug().Msg("Getting all products")
-	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products")
+	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products")
 	if err != nil {
 		logger.Err(err).Msg("Error getting the products")
 		return nil, err
@@ -30,6 +30,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 	for rows.Next() {
 		var product pModel.Product
 		var imageURLsJSON sql.NullString
+		var thumbnailURL sql.NullString
 		if err := rows.Scan(
 			&product.ID,
 			&product.Name,
@@ -39,6 +40,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 			&product.Stock,
 			&product.Status,
 			&imageURLsJSON,
+			&thumbnailURL,
 			&product.CreatedOn,
 		); err != nil {
 			logger.Err(err).Msg("Error mapping the products")
@@ -58,6 +60,10 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 			product.ImageURLs = []string{}
 		}
 
+		if thumbnailURL.Valid {
+			product.ThumbnailURL = thumbnailURL.String
+		}
+
 		products = append(products, product)
 	}
 	logger.Debug().Int("count", len(products)).Msg("Products retrieved successfully")
@@ -70,9 +76,10 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 
 	product := pModel.Product{}
 	var imageURLsJSON sql.NullString
+	var thumbnailURL sql.NullString
 
 	err := r.DB.QueryRow(
-		"SELECT id_product, name, description, price, available, stock, status, image_urls, created_on FROM products WHERE id_product = $1",
+		"SELECT id_product, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE id_product = $1",
 		idProduct,
 	).Scan(
 		&product.ID,
@@ -83,6 +90,7 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 		&product.Stock,
 		&product.Status,
 		&imageURLsJSON,
+		&thumbnailURL,
 		&product.CreatedOn,
 	)
 
@@ -98,14 +106,18 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 	// Parse image URLs from JSON
 	if imageURLsJSON.Valid && imageURLsJSON.String != "" {
 		var imageURLs []string
-			if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
-				logger.Warn().Err(err).Uint64("product_id", idProduct).Msg("Error parsing image URLs")
-				product.ImageURLs = []string{}
+		if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
+			logger.Warn().Err(err).Uint64("product_id", idProduct).Msg("Error parsing image URLs")
+			product.ImageURLs = []string{}
 		} else {
 			product.ImageURLs = imageURLs
 		}
 	} else {
 		product.ImageURLs = []string{}
+	}
+
+	if thumbnailURL.Valid {
+		product.ThumbnailURL = thumbnailURL.String
 	}
 
 	logger.Debug().Uint64("product_id", idProduct).Str("name", product.Name).Msg("Product retrieved successfully")
@@ -174,12 +186,19 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 		return createdProduct, errors.NewInternalServerError(errors.ErrCreatingProduct)
 	}
 
+	var thumbnailValue interface{}
+	if product.ThumbnailURL == "" {
+		thumbnailValue = nil
+	} else {
+		thumbnailValue = product.ThumbnailURL
+	}
+
 	var insertedID uint64
 	err = r.DB.QueryRow(
 		`INSERT INTO products 
-		(name, description, price, available, stock, status, image_urls) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_product`,
-		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON)).Scan(&insertedID)
+		(name, description, price, available, stock, status, image_urls, thumbnail_url) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_product`,
+		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON), thumbnailValue).Scan(&insertedID)
 
 	if err != nil {
 		logger.Err(err).
@@ -196,6 +215,7 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 	createdProduct.Stock = product.Stock
 	createdProduct.Status = product.Status
 	createdProduct.ImageURLs = product.ImageURLs
+	createdProduct.ThumbnailURL = product.ThumbnailURL
 
 	logger.Info().
 		Uint64("product_id", insertedID).
@@ -273,14 +293,22 @@ func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Prod
 		return errors.NewBadRequest(errors.ErrInvalidStatus)
 	}
 
+	var thumbnailValue interface{}
+	if product.ThumbnailURL == "" {
+		thumbnailValue = nil
+	} else {
+		thumbnailValue = product.ThumbnailURL
+	}
+
 	result, err := r.DB.Exec(
-		"UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6 WHERE id_product = $7",
+		"UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6, thumbnail_url = $7 WHERE id_product = $8",
 		product.Name,
 		product.Description,
 		product.Price,
 		product.Available,
 		product.Stock,
 		product.Status,
+		thumbnailValue,
 		product.ID,
 	)
 
@@ -397,8 +425,13 @@ func (r *ProductRepository) RevertProductStock(ctx context.Context, idProduct ui
 	return nil
 }
 
-// UpdateProductImages updates the image URLs for a product
-func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uint64, imageURLs []string) error {
+// UpdateProductImages updates the image URLs and thumbnail for a product
+func (r *ProductRepository) UpdateProductImages(
+		_ context.Context, 
+		idProduct uint64, 
+		imageURLs []string, 
+		thumbnailURL string,
+	) error {
 	logger.Debug().
 		Uint64("product_id", idProduct).
 		Int("image_count", len(imageURLs)).
@@ -413,14 +446,23 @@ func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uin
 		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
 	}
 
+	var thumbnailValue interface{}
+	if thumbnailURL == "" {
+		thumbnailValue = nil
+	} else {
+		thumbnailValue = thumbnailURL
+	}
+
 	logger.Debug().
 		Uint64("product_id", idProduct).
 		Str("image_urls_json", string(imageURLsJSON)).
+		Str("thumbnail_url", thumbnailURL).
 		Msg("Marshaled image URLs JSON")
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET image_urls = $1 WHERE id_product = $2",
+		"UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE id_product = $3",
 		string(imageURLsJSON),
+		thumbnailValue,
 		idProduct,
 	)
 
@@ -450,5 +492,54 @@ func (r *ProductRepository) UpdateProductImages(_ context.Context, idProduct uin
 		Int("image_count", len(imageURLs)).
 		Int64("rows_affected", rows).
 		Msg("Product images updated successfully")
+	return nil
+}
+
+// UpdateProductThumbnail updates only the thumbnail_url column for a product
+func (r *ProductRepository) UpdateProductThumbnail(_ context.Context, idProduct uint64, thumbnailURL string) error {
+	logger.Debug().
+		Uint64("product_id", idProduct).
+		Str("thumbnail_url", thumbnailURL).
+		Msg("Updating product thumbnail")
+
+	var thumbnailValue interface{}
+	if thumbnailURL == "" {
+		thumbnailValue = nil
+	} else {
+		thumbnailValue = thumbnailURL
+	}
+
+	result, err := r.DB.Exec(
+		"UPDATE products SET thumbnail_url = $1 WHERE id_product = $2",
+		thumbnailValue,
+		idProduct,
+	)
+	if err != nil {
+		logger.Err(err).
+			Uint64("product_id", idProduct).
+			Msg("Error updating product thumbnail")
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		logger.Warn().Err(err).
+			Uint64("product_id", idProduct).
+			Msg("Could not get the rows affected for thumbnail update")
+	}
+
+	if rows == 0 {
+		logger.Debug().
+			Uint64("product_id", idProduct).
+			Msg("Product not found for thumbnail update")
+		return errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	logger.Info().
+		Uint64("product_id", idProduct).
+		Str("thumbnail_url", thumbnailURL).
+		Int64("rows_affected", rows).
+		Msg("Product thumbnail updated successfully")
+
 	return nil
 }

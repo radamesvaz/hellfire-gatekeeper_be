@@ -237,8 +237,8 @@ func TestCreateOrder(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
-	today := time.Now()
-	deliveryDate := time.Date(2025, today.Month()+1, 5, 0, 0, 0, 0, time.UTC)
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
 	payload := fmt.Sprintf(`
     {
         "name": "Cliente Prueba integracion",
@@ -315,8 +315,8 @@ func TestCreateOrder_WithOrderHistory(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
-	today := time.Now()
-	deliveryDate := time.Date(2025, today.Month()+1, 5, 0, 0, 0, 0, time.UTC)
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
 	payload := fmt.Sprintf(`
     {
         "name": "Cliente Historial",
@@ -392,8 +392,8 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Create a test order first
-	today := time.Now()
-	deliveryDate := time.Date(2025, today.Month()+1, 5, 0, 0, 0, 0, time.UTC)
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
 	createPayload := fmt.Sprintf(`
     {
         "name": "Cliente Status Update",

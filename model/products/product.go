@@ -26,13 +26,12 @@ type Product struct {
 }
 
 type CreateProductRequest struct {
-	Name         string        `form:"name" json:"name" gorm:"not null;unique"`
-	Description  string        `form:"description" json:"description"`
-	Price        float64       `form:"price" json:"price" gorm:"not null;check:price >= 0"`
-	Available    bool          `form:"available" json:"available"`
-	Stock        uint64        `form:"stock" json:"stock"`
-	Status       ProductStatus `form:"status" json:"status"`
-	ThumbnailURL string        `form:"thumbnail_url" json:"thumbnail_url"`
+	Name        string        `form:"name" json:"name" gorm:"not null;unique"`
+	Description string        `form:"description" json:"description"`
+	Price       float64       `form:"price" json:"price" gorm:"not null;check:price >= 0"`
+	Available   bool          `form:"available" json:"available"`
+	Stock       uint64        `form:"stock" json:"stock"`
+	Status      ProductStatus `form:"status" json:"status"`
 }
 
 type UpdateProductRequest struct {

@@ -4,7 +4,7 @@ Guía para habilitar que un admin seleccione la imagen thumbnail de un producto.
 
 ### Backend
 - **Migración**: agregar columna `thumbnail_url` a `products` y `product_history` (nullable); poblar con la primera `image_urls` existente para productos ya creados. Incluir down.
-- **Modelos**: añadir `ThumbnailURL` a `Product`, `ProductHistory`, `CreateProductRequest`, `UpdateProductRequest` y a las respuestas JSON.
+- **Modelos**: añadir `ThumbnailURL` a `Product`, `ProductHistory`, `UpdateProductRequest` y a las respuestas JSON (no se envía en creación).
 - **Repositorio**:
   - Incluir `thumbnail_url` en los `SELECT/INSERT/UPDATE`.
   - Nuevo método `UpdateProductThumbnail(id, thumbnailURL string)` que valide que `thumbnailURL` pertenece a `image_urls`; error 400 si no pertenece.

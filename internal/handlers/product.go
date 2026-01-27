@@ -75,14 +75,13 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Create product
 	product := pModel.Product{
-		Name:         req.Name,
-		Description:  req.Description,
-		Price:        req.Price,
-		Available:    req.Available,
-		Stock:        req.Stock,
-		Status:       req.Status,
-		ImageURLs:    []string{}, // Empty initially, images added via separate endpoint
-		ThumbnailURL: req.ThumbnailURL,
+		Name:        req.Name,
+		Description: req.Description,
+		Price:       req.Price,
+		Available:   req.Available,
+		Stock:       req.Stock,
+		Status:      req.Status,
+		ImageURLs:   []string{}, // Empty initially, images added via separate endpoint
 	}
 
 	ctx := r.Context()

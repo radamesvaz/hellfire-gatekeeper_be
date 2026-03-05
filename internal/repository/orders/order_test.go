@@ -181,7 +181,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
                         p.name AS product_name,
                         oi.quantity
                     FROM orders o
-                    INNER JOIN users u ON o.id_user = u.id_user
+                    LEFT JOIN users u ON o.id_user = u.id_user
                     INNER JOIN order_items oi ON o.id_order = oi.id_order
                     INNER JOIN products p ON oi.id_product = p.id_product
                     WHERE o.status != 'deleted'
@@ -208,7 +208,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
                         p.name AS product_name,
                         oi.quantity
                     FROM orders o
-                    INNER JOIN users u ON o.id_user = u.id_user
+                    LEFT JOIN users u ON o.id_user = u.id_user
                     INNER JOIN order_items oi ON o.id_order = oi.id_order
                     INNER JOIN products p ON oi.id_product = p.id_product
                     WHERE o.status != 'deleted'
@@ -414,7 +414,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						p.name AS product_name,
 						oi.quantity
 					FROM orders o
-					INNER JOIN users u ON o.id_user = u.id_user
+					LEFT JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
 					INNER JOIN products p ON oi.id_product = p.id_product
 					WHERE o.id_order = $1`,
@@ -441,7 +441,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						p.name AS product_name,
 						oi.quantity
 					FROM orders o
-					INNER JOIN users u ON o.id_user = u.id_user
+					LEFT JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
 					INNER JOIN products p ON oi.id_product = p.id_product
 					WHERE o.id_order = $1`,

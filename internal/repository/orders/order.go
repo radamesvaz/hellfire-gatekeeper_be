@@ -59,7 +59,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
             p.name AS product_name, 
             oi.quantity
         FROM orders o
-        INNER JOIN users u ON o.id_user = u.id_user
+        LEFT JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
         INNER JOIN products p ON oi.id_product = p.id_product
     `
@@ -94,15 +94,15 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 	for rows.Next() {
 		var (
 			idOrder      uint64
-			idUser       uint64
+			idUser       sql.NullInt64
 			totalPrice   float64
 			status       string
 			note         string
 			deliveryDate time.Time
 			paid         bool
 			createdOn    time.Time
-			userName     string
-			phone        string
+			userName     sql.NullString
+			phone        sql.NullString
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
@@ -130,19 +130,26 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 		}
 
 		if _, exists := ordersMap[idOrder]; !exists {
-			ordersMap[idOrder] = &oModel.OrderResponse{
+			resp := &oModel.OrderResponse{
 				ID:           idOrder,
-				IdUser:       idUser,
 				Price:        totalPrice,
 				Status:       oModel.OrderStatus(status),
 				Note:         note,
 				DeliveryDate: deliveryDate,
 				Paid:         paid,
 				CreatedOn:    createdOn,
-				User:         userName,
-				Phone:        phone,
 				OrderItems:   []oModel.OrderItems{},
 			}
+			if idUser.Valid {
+				resp.IdUser = uint64(idUser.Int64)
+			}
+			if userName.Valid {
+				resp.User = userName.String
+			}
+			if phone.Valid {
+				resp.Phone = phone.String
+			}
+			ordersMap[idOrder] = resp
 		}
 
 		ordersMap[idOrder].OrderItems = append(ordersMap[idOrder].OrderItems, oModel.OrderItems{
@@ -189,7 +196,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
             p.name AS product_name, 
             oi.quantity
         FROM orders o
-        INNER JOIN users u ON o.id_user = u.id_user
+        LEFT JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
         INNER JOIN products p ON oi.id_product = p.id_product
         WHERE o.id_order = $1
@@ -214,15 +221,15 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 		hasRows = true
 		var (
 			idOrder      uint64
-			idUser       uint64
+			idUser       sql.NullInt64
 			totalPrice   float64
 			status       string
 			note         string
 			deliveryDate time.Time
 			paid         bool
 			createdOn    time.Time
-			userName     string
-			phone        string
+			userName     sql.NullString
+			phone        sql.NullString
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
@@ -251,15 +258,21 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 		if firstRow {
 			order.ID = idOrder
-			order.IdUser = idUser
+			if idUser.Valid {
+				order.IdUser = uint64(idUser.Int64)
+			}
 			order.Price = totalPrice
 			order.Status = oModel.OrderStatus(status)
 			order.Note = note
 			order.DeliveryDate = deliveryDate
 			order.Paid = paid
 			order.CreatedOn = createdOn
-			order.User = userName
-			order.Phone = phone
+			if userName.Valid {
+				order.User = userName.String
+			}
+			if phone.Valid {
+				order.Phone = phone.String
+			}
 			firstRow = false
 		}
 

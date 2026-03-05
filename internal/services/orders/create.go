@@ -104,10 +104,11 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 		return fmt.Errorf("error creating order: %w", err)
 	}
 
-	// Create order history record
+	// Create order history record (new orders always have a user)
+	idUser := order.IdUser
 	orderHistory := oModel.OrderHistory{
 		IDOrder: orderID,
-		IdUser:  order.IdUser,
+		IdUser:  &idUser,
 		Status:  order.Status,
 		Price:   order.Price,
 		Note:    order.Note,

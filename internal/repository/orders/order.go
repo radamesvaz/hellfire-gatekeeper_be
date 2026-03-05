@@ -474,6 +474,11 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		Str("status", string(order.Status)).
 		Msg("Creating order history")
 
+	var idUserVal sql.NullInt64
+	if order.IdUser != nil {
+		idUserVal = sql.NullInt64{Int64: int64(*order.IdUser), Valid: true}
+	}
+
 	result, err := r.DB.Exec(
 		`INSERT INTO orders_history (
 		id_order, 
@@ -497,7 +502,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		$8, 
 		$9)`,
 		order.IDOrder,
-		order.IdUser,
+		idUserVal,
 		order.Status,
 		order.Price,
 		order.Note,
@@ -554,11 +559,14 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 
 	var histories []oModel.OrderHistory
 	for rows.Next() {
-		var history oModel.OrderHistory
+		var (
+			history oModel.OrderHistory
+			idUser  sql.NullInt64
+		)
 		err := rows.Scan(
 			&history.ID,
 			&history.IDOrder,
-			&history.IdUser,
+			&idUser,
 			&history.Status,
 			&history.Price,
 			&history.Note,
@@ -570,6 +578,10 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 		)
 		if err != nil {
 			return nil, fmt.Errorf("error scanning order history row: %w", err)
+		}
+		if idUser.Valid {
+			u := uint64(idUser.Int64)
+			history.IdUser = &u
 		}
 		histories = append(histories, history)
 	}

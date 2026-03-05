@@ -25,6 +25,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 	repo := &OrderRepository{DB: db}
 
 	deliveryDate := time.Now().AddDate(0, 0, 7)
+	idUserOne := uint64(1)
 
 	tests := []struct {
 		name          string
@@ -36,7 +37,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 			name: "HAPPY PATH: Creating an order history",
 			payload: oModel.OrderHistory{
 				IDOrder:      1,
-				IdUser:       1,
+				IdUser:       &idUserOne,
 				Status:       oModel.StatusPending,
 				Price:        50.0,
 				Note:         "Test order",
@@ -52,7 +53,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 			name: "HAPPY PATH: Updating an order history",
 			payload: oModel.OrderHistory{
 				IDOrder:      1,
-				IdUser:       1,
+				IdUser:       &idUserOne,
 				Status:       oModel.StatusPreparing,
 				Price:        50.0,
 				Note:         "Updated order",
@@ -68,7 +69,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 			name: "HAPPY PATH: Deleting an order history",
 			payload: oModel.OrderHistory{
 				IDOrder:      1,
-				IdUser:       1,
+				IdUser:       &idUserOne,
 				Status:       oModel.StatusCancelled,
 				Price:        50.0,
 				Note:         "Cancelled order",
@@ -84,7 +85,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 			name: "ERROR PATH: Database error",
 			payload: oModel.OrderHistory{
 				IDOrder:      1,
-				IdUser:       1,
+				IdUser:       &idUserOne,
 				Status:       oModel.StatusPending,
 				Price:        50.0,
 				Note:         "Test order",

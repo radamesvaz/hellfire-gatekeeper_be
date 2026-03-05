@@ -126,9 +126,13 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 	idUser uint64,
 	action oModel.OrderAction,
 ) error {
+	var orderHistoryIdUser *uint64
+	if order.IdUser != 0 {
+		orderHistoryIdUser = &order.IdUser
+	}
 	orderHistory := oModel.OrderHistory{
 		IDOrder: idOrder,
-		IdUser:  order.IdUser,
+		IdUser:  orderHistoryIdUser,
 		Status:  order.Status,
 		Price:   order.Price,
 		Note:    order.Note,

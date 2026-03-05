@@ -9,8 +9,6 @@ import (
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/logger"
-	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
-	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
@@ -35,14 +33,14 @@ type Creator struct {
 }
 
 func NewCreator(
-	orderRepo ordersRepository.OrderRepository,
+	orderRepo orderCreatorRepository,
 	userRepo userRepo.Repository,
-	productRepo productRepo.ProductRepository,
+	productRepo productCreatorRepository,
 ) *Creator {
 	return &Creator{
 		UserRepo:    userRepo,
-		ProductRepo: &productRepo,
-		OrderRepo:   &orderRepo,
+		ProductRepo: productRepo,
+		OrderRepo:   orderRepo,
 	}
 }
 

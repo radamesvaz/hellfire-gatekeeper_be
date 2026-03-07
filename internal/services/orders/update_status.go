@@ -12,7 +12,7 @@ import (
 // OrderStatusRepository defines the interface for order status operations
 type OrderStatusRepository interface {
 	GetOrderByID(ctx context.Context, id uint64) (oModel.OrderResponse, error)
-	UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus) error
+	UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error
 	CreateOrderHistory(ctx context.Context, order oModel.OrderHistory) error
 	GetOrderItemsByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderItems, error)
 }
@@ -39,8 +39,9 @@ func (s *StatusUpdaterWithStock) validateStatusTransition(currentStatus, newStat
 	return nil
 }
 
-// UpdateOrderStatusWithStockReversion updates order status and reverts stock if admin cancels order
-func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool) error {
+// UpdateOrderStatusWithStockReversion updates order status and reverts stock if admin cancels order.
+// cancellationReason is optional; only used when newStatus is cancelled (e.g. user-provided reason or nil).
+func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string) error {
 	// Get the current order
 	order, err := s.OrderRepo.GetOrderByID(ctx, orderID)
 	if err != nil {
@@ -52,8 +53,11 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 		return err
 	}
 
-	// Update the order status
-	err = s.OrderRepo.UpdateOrderStatus(ctx, orderID, newStatus)
+	var effectiveCancellationReason *string
+	if newStatus == oModel.StatusCancelled {
+		effectiveCancellationReason = cancellationReason
+	}
+	err = s.OrderRepo.UpdateOrderStatus(ctx, orderID, newStatus, effectiveCancellationReason)
 	if err != nil {
 		return fmt.Errorf("error updating order status: %w", err)
 	}
@@ -86,8 +90,10 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 			Time:  order.DeliveryDate,
 			Valid: !order.DeliveryDate.IsZero(),
 		},
-		ModifiedBy: userID,
-		Action:     oModel.ActionUpdate,
+		Paid:               order.Paid,
+		CancellationReason: effectiveCancellationReason,
+		ModifiedBy:         userID,
+		Action:             oModel.ActionUpdate,
 	}
 
 	err = s.OrderRepo.CreateOrderHistory(ctx, orderHistory)

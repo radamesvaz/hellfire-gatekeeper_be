@@ -166,8 +166,9 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Decode the JSON from the body
 	var payload struct {
-		Status *oModel.OrderStatus `json:"status,omitempty"`
-		Paid   *bool               `json:"paid,omitempty"`
+		Status             *oModel.OrderStatus `json:"status,omitempty"`
+		Paid               *bool               `json:"paid,omitempty"`
+		CancellationReason *string             `json:"cancellation_reason,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -237,8 +238,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		// Create status updater service with stock reversion capability
 		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
 
-		// Update the order status with stock reversion if admin cancels
-		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, idOrder, *payload.Status, userID, isAdmin)
+		// Update the order status with stock reversion if admin cancels; optional cancellation reason when cancelling
+		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason)
 		if err != nil {
 			if httpErr, ok := err.(*errors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)

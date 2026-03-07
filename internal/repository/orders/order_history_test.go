@@ -105,52 +105,56 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO orders_history (
-							id_order, 
-							id_user, 
-							status, 
-							total_price, 
-							note,
-							delivery_date,
-							paid,
-							modified_by, 
-							action
-							) 
-							VALUES (
-							$1,
-							$2, 
-							$3, 
-							$4, 
-							$5,
-							$6,
-							$7,
-							$8, 
-							$9)`,
+						id_order, 
+						id_user, 
+						status, 
+						total_price, 
+						note,
+						delivery_date,
+						paid,
+						cancellation_reason,
+						modified_by, 
+						action
+						) 
+						VALUES (
+						$1,
+						$2, 
+						$3, 
+						$4, 
+						$5,
+						$6,
+						$7,
+						$8,
+						$9, 
+						$10)`,
 					),
 				).WillReturnError(tt.mockError)
 			} else {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO orders_history (
-							id_order, 
-							id_user, 
-							status, 
-							total_price, 
-							note,
-							delivery_date,
-							paid,
-							modified_by, 
-							action
-							) 
-							VALUES (
-							$1,
-							$2, 
-							$3, 
-							$4, 
-							$5,
-							$6,
-							$7,
-							$8, 
-							$9)`,
+						id_order, 
+						id_user, 
+						status, 
+						total_price, 
+						note,
+						delivery_date,
+						paid,
+						cancellation_reason,
+						modified_by, 
+						action
+						) 
+						VALUES (
+						$1,
+						$2, 
+						$3, 
+						$4, 
+						$5,
+						$6,
+						$7,
+						$8,
+						$9, 
+						$10)`,
 					),
 				).WillReturnResult(sqlmock.NewResult(1, 1))
 			}

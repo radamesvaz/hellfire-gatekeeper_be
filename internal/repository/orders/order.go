@@ -466,6 +466,16 @@ func execerFrom(tx *sql.Tx, db *sql.DB) interface {
 	return db
 }
 
+// nullStringFromPtr converts a *string to sql.NullString for use in DB Exec/Query.
+// A nil pointer becomes a NullString with Valid: false (stored as NULL); otherwise
+// the string value is copied and Valid is set to true.
+func nullStringFromPtr(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *s, Valid: true}
+}
+
 // CreateOrderHistory creates a new order history record
 func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.OrderHistory) error {
 	logger.Debug().
@@ -488,6 +498,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		note,
 		delivery_date,
 		paid,
+		cancellation_reason,
 		modified_by, 
 		action
 		) 
@@ -499,8 +510,9 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		$5,
 		$6,
 		$7,
-		$8, 
-		$9)`,
+		$8,
+		$9, 
+		$10)`,
 		order.IDOrder,
 		idUserVal,
 		order.Status,
@@ -508,6 +520,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		order.Note,
 		order.DeliveryDate,
 		order.Paid,
+		nullStringFromPtr(order.CancellationReason),
 		order.ModifiedBy,
 		order.Action,
 	)
@@ -545,7 +558,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderHistory, error) {
 	query := `
 		SELECT id_order_history, id_order, id_user, status, total_price, note, 
-			delivery_date, paid, modified_on, modified_by, action
+			delivery_date, paid, cancellation_reason, modified_on, modified_by, action
 		FROM orders_history 
 		WHERE id_order = $1
 		ORDER BY modified_on DESC
@@ -560,8 +573,9 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 	var histories []oModel.OrderHistory
 	for rows.Next() {
 		var (
-			history oModel.OrderHistory
-			idUser  sql.NullInt64
+			history            oModel.OrderHistory
+			idUser             sql.NullInt64
+			cancellationReason sql.NullString
 		)
 		err := rows.Scan(
 			&history.ID,
@@ -572,6 +586,7 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 			&history.Note,
 			&history.DeliveryDate,
 			&history.Paid,
+			&cancellationReason,
 			&history.ModifiedOn,
 			&history.ModifiedBy,
 			&history.Action,
@@ -583,6 +598,9 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 			u := uint64(idUser.Int64)
 			history.IdUser = &u
 		}
+		if cancellationReason.Valid {
+			history.CancellationReason = &cancellationReason.String
+		}
 		histories = append(histories, history)
 	}
 
@@ -593,11 +611,57 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 	return histories, nil
 }
 
-// UpdateOrderStatus updates the status of an order
-func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus) error {
-	query := `UPDATE orders SET status = $1 WHERE id_order = $2`
+// GetExpiredPendingOrders returns orders that are pending, unpaid, and created before the given expiration time (ghost orders).
+func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, expirationTime time.Time) ([]oModel.Order, error) {
+	query := `
+		SELECT id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+		FROM orders
+		WHERE status = 'pending' AND paid = false AND created_on < $1
+		ORDER BY created_on ASC
+	`
+	rows, err := r.DB.QueryContext(ctx, query, expirationTime)
+	if err != nil {
+		return nil, fmt.Errorf("error querying expired pending orders: %w", err)
+	}
+	defer rows.Close()
 
-	result, err := r.DB.ExecContext(ctx, query, status, orderID)
+	var orders []oModel.Order
+	for rows.Next() {
+		var o oModel.Order
+		var note, cancellationReason sql.NullString
+		err := rows.Scan(
+			&o.ID,
+			&o.IdUser,
+			&o.Price,
+			&o.Status,
+			&note,
+			&o.CreatedOn,
+			&o.DeliveryDate,
+			&o.Paid,
+			&cancellationReason,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning expired order row: %w", err)
+		}
+		if note.Valid {
+			o.Note = note.String
+		}
+		if cancellationReason.Valid {
+			o.CancellationReason = &cancellationReason.String
+		}
+		orders = append(orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating expired orders: %w", err)
+	}
+	return orders, nil
+}
+
+// UpdateOrderStatus updates the status of an order and optionally sets the cancellation reason.
+func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
+	query := `UPDATE orders SET status = $1, cancellation_reason = $2 WHERE id_order = $3`
+
+	result, err := r.DB.ExecContext(ctx, query, status, nullStringFromPtr(cancellationReason), orderID)
 	if err != nil {
 		return fmt.Errorf("error updating order status: %w", err)
 	}

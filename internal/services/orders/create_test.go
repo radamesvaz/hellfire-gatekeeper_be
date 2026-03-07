@@ -112,7 +112,7 @@ func (m *MockOrderRepo2) GetOrders(ctx context.Context) ([]oModel.OrderResponse,
 func (m *MockOrderRepo2) GetOrderByID(ctx context.Context, idOrder uint64) (*oModel.Order, error) {
 	return nil, nil
 }
-func (m *MockOrderRepo2) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus) error {
+func (m *MockOrderRepo2) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
 	return nil
 }
 func (m *MockOrderRepo2) GetOrderHistoryByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderHistory, error) {

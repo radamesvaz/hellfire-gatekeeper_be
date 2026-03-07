@@ -14,28 +14,30 @@ const (
 )
 
 type Order struct {
-	ID           uint64      `json:"id_order" gorm:"primaryKey"`
-	IdUser       uint64      `json:"id_user" gorm:"not null;unique"`
-	Status       OrderStatus `json:"status"`
-	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
-	Note         string      `json:"note"`
-	CreatedOn    time.Time   `json:"created_on"`
-	DeliveryDate time.Time   `json:"delivery_date"`
-	Paid         bool        `json:"paid" gorm:"default:false"`
+	ID                 uint64      `json:"id_order" gorm:"primaryKey"`
+	IdUser             uint64      `json:"id_user" gorm:"not null;unique"`
+	Status             OrderStatus `json:"status"`
+	Price              float64     `json:"total_price" gorm:"not null;check:price >= 0"`
+	Note               string      `json:"note"`
+	CreatedOn          time.Time   `json:"created_on"`
+	DeliveryDate       time.Time   `json:"delivery_date"`
+	Paid               bool        `json:"paid" gorm:"default:false"`
+	CancellationReason *string     `json:"cancellation_reason,omitempty"`
 }
 
 type OrderResponse struct {
-	ID           uint64      `json:"id_order" gorm:"primaryKey"`
-	IdUser       uint64      `json:"id_user" gorm:"not null"`
-	User         string      `json:"user_name" gorm:"not null;unique"`
-	Phone        string      `json:"phone"`
-	Status       OrderStatus `json:"status"`
-	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
-	Note         string      `json:"note"`
-	OrderItems   []OrderItems
-	CreatedOn    time.Time `json:"created_on"`
-	DeliveryDate time.Time `json:"delivery_date"`
-	Paid         bool      `json:"paid"`
+	ID                 uint64      `json:"id_order" gorm:"primaryKey"`
+	IdUser             uint64      `json:"id_user" gorm:"not null"`
+	User               string      `json:"user_name" gorm:"not null;unique"`
+	Phone              string      `json:"phone"`
+	Status             OrderStatus `json:"status"`
+	Price              float64     `json:"total_price" gorm:"not null;check:price >= 0"`
+	Note               string      `json:"note"`
+	OrderItems         []OrderItems
+	CreatedOn          time.Time `json:"created_on"`
+	DeliveryDate       time.Time `json:"delivery_date"`
+	Paid               bool      `json:"paid"`
+	CancellationReason *string   `json:"cancellation_reason,omitempty"`
 }
 
 type CreateOrderPayload struct {

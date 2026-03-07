@@ -104,7 +104,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orderCreator := orderService.NewCreator(*h.Repo, h.UserRepo, *h.ProductRepo)
+	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo)
 	err = orderCreator.CreateOrder(ctx, payload, deliveryDate)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
@@ -126,9 +126,13 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 	idUser uint64,
 	action oModel.OrderAction,
 ) error {
+	var orderHistoryIdUser *uint64
+	if order.IdUser != 0 {
+		orderHistoryIdUser = &order.IdUser
+	}
 	orderHistory := oModel.OrderHistory{
 		IDOrder: idOrder,
-		IdUser:  order.IdUser,
+		IdUser:  orderHistoryIdUser,
 		Status:  order.Status,
 		Price:   order.Price,
 		Note:    order.Note,

@@ -71,10 +71,14 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 		}
 	}
 
-	// Create order history record
+	// Create order history record (IdUser nil when order's user was deleted)
+	var orderHistoryIdUser *uint64
+	if order.IdUser != 0 {
+		orderHistoryIdUser = &order.IdUser
+	}
 	orderHistory := oModel.OrderHistory{
 		IDOrder: orderID,
-		IdUser:  order.IdUser,
+		IdUser:  orderHistoryIdUser,
 		Status:  newStatus,
 		Price:   order.Price,
 		Note:    order.Note,

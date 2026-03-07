@@ -299,6 +299,17 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 // GetOrderItemsByOrderID gets all items for a specific order
 func (r *OrderRepository) GetOrderItemsByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderItems, error) {
+	return r.getOrderItemsByOrderIDQuery(ctx, r.DB, orderID)
+}
+
+// GetOrderItemsByOrderIDTx gets all items for a specific order within a transaction (for use in CancelExpiredOrders).
+func (r *OrderRepository) GetOrderItemsByOrderIDTx(ctx context.Context, tx *sql.Tx, orderID uint64) ([]oModel.OrderItems, error) {
+	return r.getOrderItemsByOrderIDQuery(ctx, tx, orderID)
+}
+
+func (r *OrderRepository) getOrderItemsByOrderIDQuery(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, orderID uint64) ([]oModel.OrderItems, error) {
 	query := `
 		SELECT 
 			oi.id_order_item,
@@ -312,7 +323,7 @@ func (r *OrderRepository) GetOrderItemsByOrderID(ctx context.Context, orderID ui
 		ORDER BY oi.id_order_item
 	`
 
-	rows, err := r.DB.QueryContext(ctx, query, orderID)
+	rows, err := q.QueryContext(ctx, query, orderID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying order items: %w", err)
 	}
@@ -478,6 +489,15 @@ func nullStringFromPtr(s *string) sql.NullString {
 
 // CreateOrderHistory creates a new order history record
 func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.OrderHistory) error {
+	return r.createOrderHistoryExec(nil, r.DB, order)
+}
+
+// CreateOrderHistoryTx creates a new order history record within a transaction (for use in CancelExpiredOrders).
+func (r *OrderRepository) CreateOrderHistoryTx(_ context.Context, tx *sql.Tx, order oModel.OrderHistory) error {
+	return r.createOrderHistoryExec(tx, r.DB, order)
+}
+
+func (r *OrderRepository) createOrderHistoryExec(tx *sql.Tx, fallback *sql.DB, order oModel.OrderHistory) error {
 	logger.Debug().
 		Uint64("order_id", order.IDOrder).
 		Str("action", string(order.Action)).
@@ -489,7 +509,8 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		idUserVal = sql.NullInt64{Int64: int64(*order.IdUser), Valid: true}
 	}
 
-	result, err := r.DB.Exec(
+	exec := execerFrom(tx, fallback)
+	result, err := exec.ExecContext(context.Background(),
 		`INSERT INTO orders_history (
 		id_order, 
 		id_user, 
@@ -659,22 +680,29 @@ func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, expiratio
 
 // UpdateOrderStatus updates the status of an order and optionally sets the cancellation reason.
 func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
-	query := `UPDATE orders SET status = $1, cancellation_reason = $2 WHERE id_order = $3`
+	return r.updateOrderStatusExec(ctx, r.DB, orderID, status, cancellationReason)
+}
 
-	result, err := r.DB.ExecContext(ctx, query, status, nullStringFromPtr(cancellationReason), orderID)
+// UpdateOrderStatusTx updates the order status within a transaction (for use in CancelExpiredOrders).
+func (r *OrderRepository) UpdateOrderStatusTx(ctx context.Context, tx *sql.Tx, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
+	return r.updateOrderStatusExec(ctx, tx, orderID, status, cancellationReason)
+}
+
+func (r *OrderRepository) updateOrderStatusExec(ctx context.Context, exec interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
+	query := `UPDATE orders SET status = $1, cancellation_reason = $2 WHERE id_order = $3`
+	result, err := exec.ExecContext(ctx, query, status, nullStringFromPtr(cancellationReason), orderID)
 	if err != nil {
 		return fmt.Errorf("error updating order status: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("error getting rows affected: %w", err)
 	}
-
 	if rowsAffected == 0 {
 		return errors.NewNotFound(errors.ErrOrderNotFound)
 	}
-
 	return nil
 }
 

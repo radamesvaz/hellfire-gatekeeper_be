@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math/rand"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -21,6 +25,7 @@ import (
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 
 	"github.com/gorilla/mux"
@@ -301,6 +306,17 @@ func main() {
 		ProductRepo: productRepo,
 	}
 
+	// Ghost order worker: cancel expired pending orders on an interval
+	ghostOrderIntervalMin := parseIntWithDefault(os.Getenv("GHOST_ORDER_CRON_INTERVAL_MINUTES"), 5)
+	ghostCanceller := orderService.NewExpiredOrderCanceller(orderRepo, productRepo)
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	var workerWg sync.WaitGroup
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		orderService.RunGhostOrderWorker(workerCtx, ghostCanceller, ghostOrderIntervalMin)
+	}()
+
 	r := mux.NewRouter()
 
 	// CORS configuration (allowlist + credentials)
@@ -381,14 +397,31 @@ func main() {
 		}
 	}()
 
-	logger.Info().
-		Str("port", port).
-		Str("address", fmt.Sprintf("http://localhost:%s", port)).
-		Msg("Server starting")
+	srv := &http.Server{Addr: ":" + port, Handler: corsWrapped}
+	go func() {
+		logger.Info().
+			Str("port", port).
+			Str("address", fmt.Sprintf("http://localhost:%s", port)).
+			Msg("Server starting")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Logger.Fatal().Err(err).Msg("Server failed")
+		}
+	}()
 
-	if err := http.ListenAndServe(":"+port, corsWrapped); err != nil {
-		logger.Logger.Fatal().Err(err).Msg("Server failed to start")
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	logger.Info().Msg("Shutting down: stopping ghost order worker")
+	workerCancel()
+	workerWg.Wait()
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		logger.Warn().Err(err).Msg("Server shutdown had an error")
 	}
+	logger.Info().Msg("Server stopped")
 }
 
 // firstNonEmpty returns the first non-empty string from the provided list.

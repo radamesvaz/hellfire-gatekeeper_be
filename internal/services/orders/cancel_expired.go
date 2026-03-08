@@ -81,6 +81,36 @@ func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancel
 	return cancelled, nil
 }
 
+// RunGhostOrderWorker runs CancelExpiredOrders every intervalMinutes until ctx is cancelled.
+// Logs at the start of each run; CancelExpiredOrders logs found/cancelled at the end.
+func RunGhostOrderWorker(ctx context.Context, c *ExpiredOrderCanceller, intervalMinutes int) {
+	if intervalMinutes <= 0 {
+		intervalMinutes = 5
+	}
+	ticker := time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
+	defer ticker.Stop()
+
+	logger.Info().
+		Int("interval_minutes", intervalMinutes).
+		Msg("Ghost order worker: started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info().Msg("Ghost order worker: stopping")
+			return
+		case <-ticker.C:
+			logger.Info().Msg("Ghost order job: starting run")
+			cancelled, err := c.CancelExpiredOrders(ctx)
+			if err != nil {
+				logger.Err(err).Msg("Ghost order job: run failed")
+			} else {
+				logger.Info().Int("cancelled", cancelled).Msg("Ghost order job: run finished")
+			}
+		}
+	}
+}
+
 func (c *ExpiredOrderCanceller) cancelOneOrder(ctx context.Context, order oModel.Order) error {
 	tx, err := c.OrderRepo.DB.BeginTx(ctx, nil)
 	if err != nil {

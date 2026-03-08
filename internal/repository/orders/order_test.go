@@ -714,6 +714,67 @@ func TestOrderRepository_CreateOrderItems(t *testing.T) {
 	}
 }
 
+func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &OrderRepository{DB: db}
+	ctx := context.Background()
+	expirationTime := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	queryExp := regexp.QuoteMeta(`SELECT id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+		FROM orders
+		WHERE status = 'pending' AND paid = false AND created_on < $1
+		ORDER BY created_on ASC`)
+
+	t.Run("returns_empty_when_no_expired_orders", func(t *testing.T) {
+		mock.ExpectQuery(queryExp).
+			WithArgs(expirationTime).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+			}))
+
+		orders, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		require.NoError(t, err)
+		assert.Len(t, orders, 0)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("returns_expired_orders_with_correct_filters", func(t *testing.T) {
+		createdOn := time.Date(2025, 5, 1, 10, 0, 0, 0, time.UTC)
+		deliveryDate := time.Date(2025, 5, 10, 0, 0, 0, 0, time.UTC)
+
+		mock.ExpectQuery(queryExp).
+			WithArgs(expirationTime).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+			}).
+				AddRow(1, 2, 25.5, "pending", "test note", createdOn, deliveryDate, false, sql.NullString{}))
+
+		orders, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		require.NoError(t, err)
+		require.Len(t, orders, 1)
+		assert.Equal(t, uint64(1), orders[0].ID)
+		assert.Equal(t, uint64(2), orders[0].IdUser)
+		assert.Equal(t, 25.5, orders[0].Price)
+		assert.Equal(t, oModel.StatusPending, orders[0].Status)
+		assert.Equal(t, "test note", orders[0].Note)
+		assert.False(t, orders[0].Paid)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("returns_error_on_query_failure", func(t *testing.T) {
+		mock.ExpectQuery(queryExp).
+			WithArgs(expirationTime).
+			WillReturnError(stdErrors.New("db error"))
+
+		_, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		assert.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 // Validates the error to be of *HTTPError type, have the correct status and message
 func assertHTTPError(t *testing.T, err error, expectedStatus int, expectedMessage string) {
 	httpErr, ok := err.(*errors.HTTPError)

@@ -18,11 +18,14 @@ func TestExpiredOrderCanceller_CancelExpiredOrders_NoExpiredOrders(t *testing.T)
 	require.NoError(t, err)
 	defer db.Close()
 
-	mock.ExpectQuery("SELECT id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason").
-		WithArgs(sqlmock.AnyArg()).
+	// Single transaction: Begin, Claim (UPDATE ... RETURNING returns 0 rows), Commit
+	mock.ExpectBegin()
+	mock.ExpectQuery("UPDATE orders").
+		WithArgs("cancelled", "Cancelación automática: tiempo de espera de pago agotado", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
 		}))
+	mock.ExpectCommit()
 
 	orderRepository := &orderRepo.OrderRepository{DB: db}
 	productRepository := &productRepo.ProductRepository{DB: db}

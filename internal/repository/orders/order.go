@@ -647,6 +647,61 @@ func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, expiratio
 	return orders, nil
 }
 
+// ClaimExpiredPendingOrdersTx atomically updates orders to the given status (e.g. cancelled) and returns
+// the claimed rows. Used by the ghost-order cron so that overlapping runs or multiple workers
+// never process the same order twice. Must be called within an existing transaction; the caller
+// then performs stock reversion and history insert for each claimed order before committing.
+func (r *OrderRepository) ClaimExpiredPendingOrdersTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	expirationTime time.Time,
+	status oModel.OrderStatus,
+	cancellationReason *string,
+) ([]oModel.Order, error) {
+	query := `
+		UPDATE orders
+		SET status = $1, cancellation_reason = $2
+		WHERE status = 'pending' AND paid = false AND created_on < $3
+		RETURNING id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+	`
+	rows, err := tx.QueryContext(ctx, query, status, nullStringFromPtr(cancellationReason), expirationTime)
+	if err != nil {
+		return nil, fmt.Errorf("error claiming expired pending orders: %w", err)
+	}
+	defer rows.Close()
+
+	var orders []oModel.Order
+	for rows.Next() {
+		var o oModel.Order
+		var note, reason sql.NullString
+		err := rows.Scan(
+			&o.ID,
+			&o.IdUser,
+			&o.Price,
+			&o.Status,
+			&note,
+			&o.CreatedOn,
+			&o.DeliveryDate,
+			&o.Paid,
+			&reason,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning claimed order row: %w", err)
+		}
+		if note.Valid {
+			o.Note = note.String
+		}
+		if reason.Valid {
+			o.CancellationReason = &reason.String
+		}
+		orders = append(orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating claimed orders: %w", err)
+	}
+	return orders, nil
+}
+
 // UpdateOrderStatus updates the status of an order and optionally sets the cancellation reason.
 func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
 	return r.updateOrderStatusExec(ctx, r.DB, orderID, status, cancellationReason)

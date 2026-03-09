@@ -47,38 +47,45 @@ func NewExpiredOrderCanceller(orderRepo *orderRepo.OrderRepository, productRepo 
 	}
 }
 
-// CancelExpiredOrders finds orders that are pending, unpaid, and older than the configured timeout,
-// then cancels each one in a transaction (update status, revert stock, insert history).
+// CancelExpiredOrders atomically claims expired pending orders (single UPDATE ... RETURNING), then
+// in the same transaction reverts stock and inserts history for each. Safe for overlapping runs
+// and multiple workers: only one can claim a given order.
 func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancelled int, err error) {
 	expirationTime := time.Now().Add(-time.Duration(c.TimeoutMinutes) * time.Minute)
+	reason := systemCancellationReason
 
-	orders, err := c.OrderRepo.GetExpiredPendingOrders(ctx, expirationTime)
+	tx, err := c.OrderRepo.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("get expired pending orders: %w", err)
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+	if err != nil {
+		return 0, fmt.Errorf("claim expired pending orders: %w", err)
 	}
 
 	logger.Info().
-		Int("count", len(orders)).
+		Int("count", len(claimed)).
 		Time("expiration_before", expirationTime).
 		Int("timeout_minutes", c.TimeoutMinutes).
-		Msg("CancelExpiredOrders: found expired pending orders")
+		Msg("CancelExpiredOrders: claimed expired pending orders")
 
-	for _, order := range orders {
-		if cancelErr := c.cancelOneOrder(ctx, order); cancelErr != nil {
-			logger.Err(cancelErr).
-				Uint64("order_id", order.ID).
-				Msg("CancelExpiredOrders: failed to cancel order")
-			// Continue with other orders; do not return
-			continue
+	for _, order := range claimed {
+		if processErr := c.revertStockAndRecordHistoryTx(ctx, tx, order); processErr != nil {
+			return 0, fmt.Errorf("process claimed order %d: %w", order.ID, processErr)
 		}
-		cancelled++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit tx: %w", err)
 	}
 
 	logger.Info().
-		Int("cancelled", cancelled).
-		Int("found", len(orders)).
+		Int("cancelled", len(claimed)).
+		Int("found", len(claimed)).
 		Msg("CancelExpiredOrders: finished")
-	return cancelled, nil
+	return len(claimed), nil
 }
 
 // RunGhostOrderWorker runs CancelExpiredOrders every intervalMinutes until ctx is cancelled.
@@ -111,18 +118,10 @@ func RunGhostOrderWorker(ctx context.Context, c *ExpiredOrderCanceller, interval
 	}
 }
 
-func (c *ExpiredOrderCanceller) cancelOneOrder(ctx context.Context, order oModel.Order) error {
-	tx, err := c.OrderRepo.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	reason := systemCancellationReason
-	if err := c.OrderRepo.UpdateOrderStatusTx(ctx, tx, order.ID, oModel.StatusCancelled, &reason); err != nil {
-		return fmt.Errorf("update order status: %w", err)
-	}
-
+// revertStockAndRecordHistoryTx reverts product stock for all items of the order and inserts
+// one row into orders_history. The order must already be updated to cancelled (e.g. by ClaimExpiredPendingOrdersTx).
+// Must be called within an existing transaction.
+func (c *ExpiredOrderCanceller) revertStockAndRecordHistoryTx(ctx context.Context, tx *sql.Tx, order oModel.Order) error {
 	items, err := c.OrderRepo.GetOrderItemsByOrderIDTx(ctx, tx, order.ID)
 	if err != nil {
 		return fmt.Errorf("get order items: %w", err)
@@ -133,6 +132,7 @@ func (c *ExpiredOrderCanceller) cancelOneOrder(ctx context.Context, order oModel
 		}
 	}
 
+	reason := systemCancellationReason
 	orderHistory := oModel.OrderHistory{
 		IDOrder:            order.ID,
 		IdUser:             nil,
@@ -151,10 +151,6 @@ func (c *ExpiredOrderCanceller) cancelOneOrder(ctx context.Context, order oModel
 
 	if err := c.OrderRepo.CreateOrderHistoryTx(ctx, tx, orderHistory); err != nil {
 		return fmt.Errorf("create order history: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
 	}
 	return nil
 }

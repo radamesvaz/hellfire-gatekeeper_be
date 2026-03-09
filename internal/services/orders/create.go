@@ -114,10 +114,13 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 
 	orderItems := make([]oModel.OrderItemRequest, len(payload.Items))
 	for i, item := range payload.Items {
+		product := productMap[item.IdProduct]
 		orderItems[i] = oModel.OrderItemRequest{
-			IdOrder:   orderID,
-			IdProduct: item.IdProduct,
-			Quantity:  item.Quantity,
+			IdOrder:             orderID,
+			IdProduct:           item.IdProduct,
+			ProductNameSnapshot: product.Name,
+			UnitPriceSnapshot:   product.Price,
+			Quantity:            item.Quantity,
 		}
 	}
 	if err := c.OrderRepo.CreateOrderItems(ctx, tx, orderItems); err != nil {

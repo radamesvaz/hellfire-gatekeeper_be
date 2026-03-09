@@ -56,12 +56,12 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
             u.phone,
             oi.id_order_item, 
             oi.id_product, 
-            p.name AS product_name, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
             oi.quantity
         FROM orders o
         LEFT JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
-        INNER JOIN products p ON oi.id_product = p.id_product
     `
 
 	// Add WHERE clause based on filters
@@ -106,6 +106,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
+			unitPrice    float64
 			quantity     uint64
 		)
 
@@ -123,6 +124,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			&idOrderItem,
 			&idProduct,
 			&productName,
+			&unitPrice,
 			&quantity,
 		)
 		if err != nil {
@@ -157,6 +159,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			IdOrder:   idOrder,
 			IdProduct: idProduct,
 			Name:      productName,
+			UnitPrice: unitPrice,
 			Quantity:  quantity,
 		})
 	}
@@ -193,12 +196,12 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
             u.phone,
             oi.id_order_item, 
             oi.id_product, 
-            p.name AS product_name, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
             oi.quantity
         FROM orders o
         LEFT JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
-        INNER JOIN products p ON oi.id_product = p.id_product
         WHERE o.id_order = $1
     `
 	order := oModel.OrderResponse{}
@@ -233,6 +236,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
+			unitPrice    float64
 			quantity     uint64
 		)
 
@@ -250,6 +254,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			&idOrderItem,
 			&idProduct,
 			&productName,
+			&unitPrice,
 			&quantity,
 		)
 		if err != nil {
@@ -281,6 +286,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			IdOrder:   idOrder,
 			IdProduct: idProduct,
 			Name:      productName,
+			UnitPrice: unitPrice,
 			Quantity:  quantity,
 		})
 	}
@@ -315,10 +321,10 @@ func (r *OrderRepository) getOrderItemsByOrderIDQuery(ctx context.Context, q int
 			oi.id_order_item,
 			oi.id_order,
 			oi.id_product,
-			p.name AS product_name,
+			COALESCE(oi.product_name_snapshot, ''),
+			COALESCE(oi.unit_price_snapshot, 0),
 			oi.quantity
 		FROM order_items oi
-		INNER JOIN products p ON oi.id_product = p.id_product
 		WHERE oi.id_order = $1
 		ORDER BY oi.id_order_item
 	`
@@ -337,6 +343,7 @@ func (r *OrderRepository) getOrderItemsByOrderIDQuery(ctx context.Context, q int
 			&item.IdOrder,
 			&item.IdProduct,
 			&item.Name,
+			&item.UnitPrice,
 			&item.Quantity,
 		)
 		if err != nil {
@@ -408,14 +415,16 @@ func (r *OrderRepository) createOrderItemTx(ctx context.Context, tx *sql.Tx, ite
 			Msg("Creating items for order")
 	}
 	exec := execerFrom(tx, r.DB)
-	query := `INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)`
+	query := `INSERT INTO order_items (id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity) VALUES ($1, $2, $3, $4, $5)`
 
 	for _, item := range items {
-		_, err := exec.ExecContext(ctx, query, item.IdOrder, item.IdProduct, item.Quantity)
+		_, err := exec.ExecContext(ctx, query, item.IdOrder, item.IdProduct, item.ProductNameSnapshot, item.UnitPriceSnapshot, item.Quantity)
 		if err != nil {
 			logger.Err(err).
 				Uint64("order_id", item.IdOrder).
 				Uint64("product_id", item.IdProduct).
+				Str("product_name_snapshot", item.ProductNameSnapshot).
+				Float64("unit_price_snapshot", item.UnitPriceSnapshot).
 				Uint64("quantity", item.Quantity).
 				Msg("Error inserting order item")
 			return errors.NewInternalServerError(errors.ErrCreatingOrderItem)

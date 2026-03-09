@@ -76,14 +76,16 @@ func TestGetAllOrders(t *testing.T) {
                 "id_order": 1,
                 "id_product": 1,
                 "name": "Brownie Clásico",
-                "quantity": 2
+                "quantity": 2,
+                "unit_price": 3.5
             },
             {
                 "id_order_item": 2,
                 "id_order": 1,
                 "id_product": 2,
                 "name": "Suspiros",
-                "quantity": 10
+                "quantity": 10,
+                "unit_price": 5
             }
         ],
         "created_on": "2025-04-01T10:00:00Z",
@@ -104,7 +106,8 @@ func TestGetAllOrders(t *testing.T) {
                 "id_order": 2,
                 "id_product": 2,
                 "name": "Suspiros",
-                "quantity": 2
+                "quantity": 2,
+                "unit_price": 5
             }
         ],
         "created_on": "2025-04-14T10:00:00Z",
@@ -125,14 +128,16 @@ func TestGetAllOrders(t *testing.T) {
                 "id_order": 3,
                 "id_product": 1,
                 "name": "Brownie Clásico",
-                "quantity": 2
+                "quantity": 2,
+                "unit_price": 3.5
             },
             {
                 "id_order_item": 5,
                 "id_order": 3,
                 "id_product": 2,
                 "name": "Suspiros",
-                "quantity": 1
+                "quantity": 1,
+                "unit_price": 5
             }
         ],
         "created_on": "2025-04-20T10:00:00Z",
@@ -196,14 +201,16 @@ func TestGetOrderByID(t *testing.T) {
             "id_order": 1,
             "id_product": 1,
             "name": "Brownie Clásico",
-            "quantity": 2
+            "quantity": 2,
+            "unit_price": 3.5
         },
         {
             "id_order_item": 2,
             "id_order": 1,
             "id_product": 2,
             "name": "Suspiros",
-            "quantity": 10
+            "quantity": 10,
+            "unit_price": 5
         }
     ],
     "created_on": "2025-04-01T10:00:00Z",

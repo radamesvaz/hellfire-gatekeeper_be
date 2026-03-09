@@ -53,7 +53,8 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"phone",
 				"id_order_item",
 				"id_product",
-				"product_name",
+				"product_name_snapshot",
+				"unit_price_snapshot",
 				"quantity",
 			}).
 				AddRow(
@@ -70,6 +71,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					1,
 					2,
 					"Product A",
+					0.0,
 					2,
 				).
 				AddRow(
@@ -86,6 +88,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					2,
 					1,
 					"Product B",
+					0.0,
 					3,
 				).AddRow(
 				2,
@@ -101,6 +104,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				3,
 				1,
 				"Product B",
+				0.0,
 				1,
 			),
 			expected: []oModel.OrderResponse{
@@ -178,12 +182,12 @@ func TestOrderRepository_GetOrders(t *testing.T) {
                         u.phone,
                         oi.id_order_item,
                         oi.id_product,
-                        p.name AS product_name,
+                        oi.product_name_snapshot,
+                        oi.unit_price_snapshot,
                         oi.quantity
                     FROM orders o
                     LEFT JOIN users u ON o.id_user = u.id_user
                     INNER JOIN order_items oi ON o.id_order = oi.id_order
-                    INNER JOIN products p ON oi.id_product = p.id_product
                     WHERE o.status != 'deleted'
                     ORDER BY o.id_order`,
 					),
@@ -205,12 +209,12 @@ func TestOrderRepository_GetOrders(t *testing.T) {
                         u.phone,
                         oi.id_order_item,
                         oi.id_product,
-                        p.name AS product_name,
+                        oi.product_name_snapshot,
+                        oi.unit_price_snapshot,
                         oi.quantity
                     FROM orders o
                     LEFT JOIN users u ON o.id_user = u.id_user
                     INNER JOIN order_items oi ON o.id_order = oi.id_order
-                    INNER JOIN products p ON oi.id_product = p.id_product
                     WHERE o.status != 'deleted'
                     ORDER BY o.id_order`,
 					),
@@ -269,7 +273,8 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"phone",
 				"id_order_item",
 				"id_product",
-				"product_name",
+				"product_name_snapshot",
+				"unit_price_snapshot",
 				"quantity",
 			}).
 				AddRow(
@@ -286,6 +291,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					1,
 					2,
 					"Product A",
+					0.0,
 					2,
 				).
 				AddRow(
@@ -302,6 +308,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					2,
 					1,
 					"Product B",
+					0.0,
 					3,
 				),
 			expected: oModel.OrderResponse{
@@ -411,12 +418,12 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						u.phone,
 						oi.id_order_item,
 						oi.id_product,
-						p.name AS product_name,
+                        oi.product_name_snapshot,
+                        oi.unit_price_snapshot,
 						oi.quantity
 					FROM orders o
 					LEFT JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product
 					WHERE o.id_order = $1`,
 					),
 				).
@@ -438,12 +445,12 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						u.phone,
 						oi.id_order_item,
 						oi.id_product,
-						p.name AS product_name,
+						oi.product_name_snapshot,
+						oi.unit_price_snapshot,
 						oi.quantity
 					FROM orders o
 					LEFT JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product
 					WHERE o.id_order = $1`,
 					),
 				).
@@ -601,8 +608,8 @@ func TestOrderRepository_CreateOrderItems(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			for i, item := range tt.orderItemsRequest {
 				exec := mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(item.IdOrder, item.IdProduct, item.Quantity)
+					"INSERT INTO order_items (id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity) VALUES ($1, $2, $3, $4, $5)",
+				)).WithArgs(item.IdOrder, item.IdProduct, "", 0.0, item.Quantity)
 
 				if tt.expectedError && i == 1 {
 					exec.WillReturnError(tt.mockError)

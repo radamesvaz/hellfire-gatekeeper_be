@@ -360,49 +360,9 @@ func (r *OrderRepository) CreateOrderItems(ctx context.Context, tx *sql.Tx, item
 	return r.createOrderItemTx(ctx, tx, items)
 }
 
-func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oModel.CreateFullOrder) (uint64, error) {
-	tx, err := r.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("OrderOrchestrator: error starting transaction: %w", err)
-	}
-
-	orderRequest := oModel.CreateOrderRequest{
-		IdUser:       order.IdUser,
-		DeliveryDate: order.DeliveryDate,
-		Note:         order.Note,
-		Price:        order.Price,
-		Status:       order.Status,
-		Paid:         order.Paid,
-	}
-	orderID, err := r.CreateOrder(ctx, tx, orderRequest)
-
-	if err != nil {
-		tx.Rollback()
-		return 0, fmt.Errorf("OrderOrchestrator: Error creating the order: %w", err)
-	}
-
-	orderItems := []oModel.OrderItemRequest{}
-
-	for _, items := range order.OrderItems {
-		item := oModel.OrderItemRequest{
-			IdOrder:   orderID,
-			IdProduct: items.IdProduct,
-			Quantity:  items.Quantity,
-		}
-		orderItems = append(orderItems, item)
-	}
-
-	err = r.CreateOrderItems(ctx, tx, orderItems)
-	if err != nil {
-		tx.Rollback()
-		return 0, fmt.Errorf("OrderOrchestrator: error inserting item: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("OrderOrchestrator: error committing transaction: %w", err)
-	}
-
-	return orderID, nil
+// BeginTx starts a new transaction (for use by services that orchestrate order + product operations).
+func (r *OrderRepository) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	return r.DB.BeginTx(ctx, nil)
 }
 
 func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (id uint64, err error) {

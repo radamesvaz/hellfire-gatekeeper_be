@@ -464,107 +464,18 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 	}
 }
 
-func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
+func TestOrderRepository_BeginTx(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
+	mock.ExpectBegin()
 
 	repo := &OrderRepository{DB: db}
-
-	deliveryDate := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-
-	tests := []struct {
-		name         string
-		order        oModel.CreateFullOrder
-		mockBehavior func()
-		expectError  bool
-	}{
-		{
-			name: "HAPPY PATH: everything succeeds",
-			order: oModel.CreateFullOrder{
-				IdUser:       1,
-				DeliveryDate: deliveryDate,
-				Note:         "Éxito total",
-				Price:        100.0,
-				Status:       oModel.StatusPending,
-				Paid:         false,
-				OrderItems: []oModel.OrderItemRequest{
-					{IdProduct: 2, Quantity: 3},
-					{IdProduct: 5, Quantity: 1},
-				},
-			},
-			mockBehavior: func() {
-				mock.ExpectBegin()
-				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
-				)).WithArgs(1, 100.0, oModel.StatusPending, "Éxito total", deliveryDate, false).
-					WillReturnRows(sqlmock.NewRows([]string{"id_order"}).AddRow(1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 2, 3).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 5, 1).
-					WillReturnResult(sqlmock.NewResult(2, 1))
-
-				mock.ExpectCommit()
-			},
-			expectError: false,
-		},
-		{
-			name: "SAD PATH: item insert fails, triggers rollback",
-			order: oModel.CreateFullOrder{
-				IdUser:       1,
-				DeliveryDate: deliveryDate,
-				Note:         "Este fallo es intencional",
-				Price:        100.0,
-				Status:       oModel.StatusPending,
-				Paid:         false,
-				OrderItems: []oModel.OrderItemRequest{
-					{IdProduct: 2, Quantity: 3},
-					{IdProduct: 99, Quantity: 1},
-				},
-			},
-			mockBehavior: func() {
-				mock.ExpectBegin()
-				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
-				)).WithArgs(1, 100.0, oModel.StatusPending, "Este fallo es intencional", deliveryDate, false).
-					WillReturnRows(sqlmock.NewRows([]string{"id_order"}).AddRow(1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 2, 3).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 99, 1).
-					WillReturnError(stdErrors.New("simulated item failure"))
-
-				mock.ExpectRollback()
-			},
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.mockBehavior()
-
-			_, err := repo.CreateOrderOrchestrator(context.Background(), tt.order)
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
+	tx, err := repo.BeginTx(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, tx)
+	_ = tx.Rollback()
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestOrderRepository_CreateOrder(t *testing.T) {

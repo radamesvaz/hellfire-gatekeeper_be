@@ -51,7 +51,10 @@ func NewExpiredOrderCanceller(orderRepo *orderRepo.OrderRepository, productRepo 
 // in the same transaction reverts stock and inserts history for each. Safe for overlapping runs
 // and multiple workers: only one can claim a given order.
 func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancelled int, err error) {
-	expirationTime := time.Now().Add(-time.Duration(c.TimeoutMinutes) * time.Minute)
+	// NOTE: with expires_at persisted per order, the cron filters by expires_at < now().
+	// The TimeoutMinutes here is still relevant as documentation/telemetry, but the
+	// actual expiration is defined by the stored expires_at snapshot on each order.
+	now := time.Now()
 	reason := systemCancellationReason
 
 	tx, err := c.OrderRepo.DB.BeginTx(ctx, nil)
@@ -60,16 +63,16 @@ func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancel
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, now, oModel.StatusCancelled, &reason)
 	if err != nil {
 		return 0, fmt.Errorf("claim expired pending orders: %w", err)
 	}
 
 	logger.Info().
 		Int("count", len(claimed)).
-		Time("expiration_before", expirationTime).
+		Time("now", now).
 		Int("timeout_minutes", c.TimeoutMinutes).
-		Msg("CancelExpiredOrders: claimed expired pending orders")
+		Msg("CancelExpiredOrders: claimed expired pending orders (using expires_at < now())")
 
 	for _, order := range claimed {
 		if processErr := c.revertStockAndRecordHistoryTx(ctx, tx, order); processErr != nil {

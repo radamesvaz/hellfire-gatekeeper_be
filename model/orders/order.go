@@ -22,6 +22,7 @@ type Order struct {
 	CreatedOn          time.Time   `json:"created_on"`
 	DeliveryDate       time.Time   `json:"delivery_date"`
 	Paid               bool        `json:"paid" gorm:"default:false"`
+	ExpiresAt          time.Time   `json:"expires_at,omitempty"`
 	CancellationReason *string     `json:"cancellation_reason,omitempty"`
 }
 
@@ -37,6 +38,7 @@ type OrderResponse struct {
 	CreatedOn          time.Time `json:"created_on"`
 	DeliveryDate       time.Time `json:"delivery_date"`
 	Paid               bool      `json:"paid"`
+	ExpiresAt          time.Time `json:"expires_at,omitempty"`
 	CancellationReason *string   `json:"cancellation_reason,omitempty"`
 }
 
@@ -56,6 +58,7 @@ type CreateOrderRequest struct {
 	Price        float64     `json:"total_price" gorm:"not null;check:price >= 0"`
 	Status       OrderStatus `json:"status"`
 	Paid         bool        `json:"paid" gorm:"default:false"`
+	ExpiresAt    time.Time   `json:"expires_at"` // TODO multi-tenant: in the future derive from per-tenant timeout, not global env
 }
 
 type CreateFullOrder struct {

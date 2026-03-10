@@ -41,6 +41,11 @@ func TestCancelExpiredOrders_Integration(t *testing.T) {
 	err = db.QueryRowContext(ctx, `SELECT id_order FROM orders WHERE note = 'ghost order'`).Scan(&ghostOrderID)
 	require.NoError(t, err)
 
+	// Set expires_at explicitly for the ghost order so that the cron (which filters by expires_at < now())
+	// will pick it up in this integration test. In production, expires_at is set when creating the order.
+	_, err = db.ExecContext(ctx, `UPDATE orders SET expires_at = $1 WHERE id_order = $2`, time.Now().Add(-time.Minute), ghostOrderID)
+	require.NoError(t, err)
+
 	_, err = db.ExecContext(ctx, `INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, 1, 2), ($1, 2, 1)`, ghostOrderID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `UPDATE products SET stock = stock - 2 WHERE id_product = 1`)

@@ -516,6 +516,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 				Price:        20,
 				Status:       oModel.StatusPending,
 				Paid:         false,
+				ExpiresAt:    time.Date(2025, 4, 30, 10, 30, 0, 0, time.UTC),
 			},
 			expectedError: false,
 			errorStatus:   0,
@@ -531,7 +532,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 
 			if tt.expectedError {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order",
 				)).WithArgs(
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
@@ -539,10 +540,11 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
 					tt.orderRequest.Paid,
+					tt.orderRequest.ExpiresAt,
 				).WillReturnError(tt.mockError)
 			} else {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order",
 				)).WithArgs(
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
@@ -550,6 +552,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
 					tt.orderRequest.Paid,
+					tt.orderRequest.ExpiresAt,
 				).WillReturnRows(sqlmock.NewRows([]string{"id_order"}).AddRow(tt.expected))
 			}
 

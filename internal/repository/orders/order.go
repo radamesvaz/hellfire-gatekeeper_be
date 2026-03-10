@@ -379,7 +379,7 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		Str("status", string(order.Status)).
 		Msg("Creating order for user")
 
-	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order`
+	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order`
 
 	var insertedID uint64
 	err = tx.QueryRowContext(
@@ -391,6 +391,7 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		order.Note,
 		order.DeliveryDate,
 		order.Paid,
+		order.ExpiresAt,
 	).Scan(&insertedID)
 
 	if err != nil {
@@ -654,17 +655,17 @@ func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, expiratio
 func (r *OrderRepository) ClaimExpiredPendingOrdersTx(
 	ctx context.Context,
 	tx *sql.Tx,
-	expirationTime time.Time,
+	currentTime time.Time,
 	status oModel.OrderStatus,
 	cancellationReason *string,
 ) ([]oModel.Order, error) {
 	query := `
 		UPDATE orders
 		SET status = $1, cancellation_reason = $2
-		WHERE status = 'pending' AND paid = false AND created_on < $3
+		WHERE status = 'pending' AND paid = false AND expires_at < $3
 		RETURNING id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
 	`
-	rows, err := tx.QueryContext(ctx, query, status, nullStringFromPtr(cancellationReason), expirationTime)
+	rows, err := tx.QueryContext(ctx, query, status, nullStringFromPtr(cancellationReason), currentTime)
 	if err != nil {
 		return nil, fmt.Errorf("error claiming expired pending orders: %w", err)
 	}

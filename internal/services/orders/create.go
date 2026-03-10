@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	stdErrors "errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
@@ -32,6 +34,19 @@ type Creator struct {
 	OrderRepo   orderCreatorRepository
 	UserRepo    userRepo.Repository
 	ProductRepo productCreatorRepository
+}
+
+// TODO multi-tenant: when tenant-specific config exists, this timeout should come from the
+// tenant configuration instead of a global environment variable. For now we mirror the
+// logic in NewExpiredOrderCanceller so that CreateOrder and the ghost-order cron stay in sync.
+func getGhostOrderTimeoutMinutes() int {
+	const defaultGhostOrderTimeoutMinutes = 30
+	if v := os.Getenv("GHOST_ORDER_TIMEOUT_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultGhostOrderTimeoutMinutes
 }
 
 func NewCreator(
@@ -81,6 +96,12 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 		totalPrice += product.Price * float64(item.Quantity)
 	}
 
+	// Compute per-order expiration snapshot using the current global timeout.
+	// TODO multi-tenant: when tenant-specific timeout is implemented, this should use the
+	// tenant's configuration instead of the global env value.
+	timeoutMinutes := getGhostOrderTimeoutMinutes()
+	expiresAt := time.Now().Add(time.Duration(timeoutMinutes) * time.Minute)
+
 	tx, err := c.OrderRepo.BeginTx(ctx)
 	if err != nil {
 		return fmt.Errorf("error beginning transaction: %w", err)
@@ -105,6 +126,7 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 		Price:        totalPrice,
 		Status:       oModel.StatusPending,
 		Paid:         false,
+		ExpiresAt:    expiresAt,
 	}
 
 	orderID, err := c.OrderRepo.CreateOrder(ctx, tx, orderRequest)

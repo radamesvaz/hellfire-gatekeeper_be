@@ -55,6 +55,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				"password",
 				"phone",
 				"created_on",
+				"deleted_at",
 			}).AddRow(
 				"1",
 				"1",
@@ -63,6 +64,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				hashedPassword,
 				"55-5555",
 				createdOn,
+				nil,
 			).AddRow(
 				"2",
 				"2",
@@ -71,6 +73,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				nil,
 				"55-5555",
 				createdOn,
+				nil,
 			),
 			mockError:     nil,
 			expectedError: false,
@@ -96,6 +99,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				"password",
 				"phone",
 				"created_on",
+				"deleted_at",
 			}).AddRow(
 				"1",
 				"1",
@@ -104,6 +108,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				hashedPassword,
 				"55-5555",
 				createdOn,
+				nil,
 			).AddRow(
 				"2",
 				"2",
@@ -112,6 +117,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				nil,
 				"55-5555",
 				createdOn,
+				nil,
 			),
 			mockError: errors.ErrUserNotFound,
 			expected: userModel.User{
@@ -131,13 +137,13 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = $1"),
+					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL"),
 				).
 					WithArgs(tt.emailForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = $1"),
+					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL"),
 				).
 					WithArgs(tt.emailForLookup).
 					WillReturnRows(tt.mockRows)
@@ -155,6 +161,30 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+// Conceptual test for soft delete: a user with deleted_at set should be treated as "not found"
+// by GetUserByEmail, since the repository filters on deleted_at IS NULL.
+func TestUserRepository_GetUserByEmail_SoftDeletedUser(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("Error setting up the mock: %v", err)
+	}
+	defer db.Close()
+
+	repo := &UserRepository{DB: db}
+	email := "softdeleted@test.com"
+
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL"),
+	).
+		WithArgs(email).
+		WillReturnError(sql.ErrNoRows)
+
+	_, err = repo.GetUserByEmail(email)
+	assert.Error(t, err)
+	assert.Equal(t, errors.ErrUserNotFound, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUserRepository_CreateUser(t *testing.T) {

@@ -56,12 +56,12 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
             u.phone,
             oi.id_order_item, 
             oi.id_product, 
-            p.name AS product_name, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
             oi.quantity
         FROM orders o
         LEFT JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
-        INNER JOIN products p ON oi.id_product = p.id_product
     `
 
 	// Add WHERE clause based on filters
@@ -106,6 +106,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
+			unitPrice    float64
 			quantity     uint64
 		)
 
@@ -123,6 +124,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			&idOrderItem,
 			&idProduct,
 			&productName,
+			&unitPrice,
 			&quantity,
 		)
 		if err != nil {
@@ -157,6 +159,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			IdOrder:   idOrder,
 			IdProduct: idProduct,
 			Name:      productName,
+			UnitPrice: unitPrice,
 			Quantity:  quantity,
 		})
 	}
@@ -193,12 +196,12 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
             u.phone,
             oi.id_order_item, 
             oi.id_product, 
-            p.name AS product_name, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
             oi.quantity
         FROM orders o
         LEFT JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
-        INNER JOIN products p ON oi.id_product = p.id_product
         WHERE o.id_order = $1
     `
 	order := oModel.OrderResponse{}
@@ -233,6 +236,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			idOrderItem  uint64
 			idProduct    uint64
 			productName  string
+			unitPrice    float64
 			quantity     uint64
 		)
 
@@ -250,6 +254,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			&idOrderItem,
 			&idProduct,
 			&productName,
+			&unitPrice,
 			&quantity,
 		)
 		if err != nil {
@@ -281,6 +286,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			IdOrder:   idOrder,
 			IdProduct: idProduct,
 			Name:      productName,
+			UnitPrice: unitPrice,
 			Quantity:  quantity,
 		})
 	}
@@ -299,20 +305,31 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 
 // GetOrderItemsByOrderID gets all items for a specific order
 func (r *OrderRepository) GetOrderItemsByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderItems, error) {
+	return r.getOrderItemsByOrderIDQuery(ctx, r.DB, orderID)
+}
+
+// GetOrderItemsByOrderIDTx gets all items for a specific order within a transaction (for use in CancelExpiredOrders).
+func (r *OrderRepository) GetOrderItemsByOrderIDTx(ctx context.Context, tx *sql.Tx, orderID uint64) ([]oModel.OrderItems, error) {
+	return r.getOrderItemsByOrderIDQuery(ctx, tx, orderID)
+}
+
+func (r *OrderRepository) getOrderItemsByOrderIDQuery(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, orderID uint64) ([]oModel.OrderItems, error) {
 	query := `
 		SELECT 
 			oi.id_order_item,
 			oi.id_order,
 			oi.id_product,
-			p.name AS product_name,
+			COALESCE(oi.product_name_snapshot, ''),
+			COALESCE(oi.unit_price_snapshot, 0),
 			oi.quantity
 		FROM order_items oi
-		INNER JOIN products p ON oi.id_product = p.id_product
 		WHERE oi.id_order = $1
 		ORDER BY oi.id_order_item
 	`
 
-	rows, err := r.DB.QueryContext(ctx, query, orderID)
+	rows, err := q.QueryContext(ctx, query, orderID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying order items: %w", err)
 	}
@@ -326,6 +343,7 @@ func (r *OrderRepository) GetOrderItemsByOrderID(ctx context.Context, orderID ui
 			&item.IdOrder,
 			&item.IdProduct,
 			&item.Name,
+			&item.UnitPrice,
 			&item.Quantity,
 		)
 		if err != nil {
@@ -349,49 +367,9 @@ func (r *OrderRepository) CreateOrderItems(ctx context.Context, tx *sql.Tx, item
 	return r.createOrderItemTx(ctx, tx, items)
 }
 
-func (r *OrderRepository) CreateOrderOrchestrator(ctx context.Context, order oModel.CreateFullOrder) (uint64, error) {
-	tx, err := r.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("OrderOrchestrator: error starting transaction: %w", err)
-	}
-
-	orderRequest := oModel.CreateOrderRequest{
-		IdUser:       order.IdUser,
-		DeliveryDate: order.DeliveryDate,
-		Note:         order.Note,
-		Price:        order.Price,
-		Status:       order.Status,
-		Paid:         order.Paid,
-	}
-	orderID, err := r.CreateOrder(ctx, tx, orderRequest)
-
-	if err != nil {
-		tx.Rollback()
-		return 0, fmt.Errorf("OrderOrchestrator: Error creating the order: %w", err)
-	}
-
-	orderItems := []oModel.OrderItemRequest{}
-
-	for _, items := range order.OrderItems {
-		item := oModel.OrderItemRequest{
-			IdOrder:   orderID,
-			IdProduct: items.IdProduct,
-			Quantity:  items.Quantity,
-		}
-		orderItems = append(orderItems, item)
-	}
-
-	err = r.CreateOrderItems(ctx, tx, orderItems)
-	if err != nil {
-		tx.Rollback()
-		return 0, fmt.Errorf("OrderOrchestrator: error inserting item: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("OrderOrchestrator: error committing transaction: %w", err)
-	}
-
-	return orderID, nil
+// BeginTx starts a new transaction (for use by services that orchestrate order + product operations).
+func (r *OrderRepository) BeginTx(ctx context.Context) (*sql.Tx, error) {
+	return r.DB.BeginTx(ctx, nil)
 }
 
 func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (id uint64, err error) {
@@ -401,7 +379,7 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		Str("status", string(order.Status)).
 		Msg("Creating order for user")
 
-	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order`
+	query := `INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order`
 
 	var insertedID uint64
 	err = tx.QueryRowContext(
@@ -413,6 +391,7 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		order.Note,
 		order.DeliveryDate,
 		order.Paid,
+		order.ExpiresAt,
 	).Scan(&insertedID)
 
 	if err != nil {
@@ -437,14 +416,16 @@ func (r *OrderRepository) createOrderItemTx(ctx context.Context, tx *sql.Tx, ite
 			Msg("Creating items for order")
 	}
 	exec := execerFrom(tx, r.DB)
-	query := `INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)`
+	query := `INSERT INTO order_items (id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity) VALUES ($1, $2, $3, $4, $5)`
 
 	for _, item := range items {
-		_, err := exec.ExecContext(ctx, query, item.IdOrder, item.IdProduct, item.Quantity)
+		_, err := exec.ExecContext(ctx, query, item.IdOrder, item.IdProduct, item.ProductNameSnapshot, item.UnitPriceSnapshot, item.Quantity)
 		if err != nil {
 			logger.Err(err).
 				Uint64("order_id", item.IdOrder).
 				Uint64("product_id", item.IdProduct).
+				Str("product_name_snapshot", item.ProductNameSnapshot).
+				Float64("unit_price_snapshot", item.UnitPriceSnapshot).
 				Uint64("quantity", item.Quantity).
 				Msg("Error inserting order item")
 			return errors.NewInternalServerError(errors.ErrCreatingOrderItem)
@@ -466,8 +447,27 @@ func execerFrom(tx *sql.Tx, db *sql.DB) interface {
 	return db
 }
 
+// nullStringFromPtr converts a *string to sql.NullString for use in DB Exec/Query.
+// A nil pointer becomes a NullString with Valid: false (stored as NULL); otherwise
+// the string value is copied and Valid is set to true.
+func nullStringFromPtr(s *string) sql.NullString {
+	if s == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *s, Valid: true}
+}
+
 // CreateOrderHistory creates a new order history record
 func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.OrderHistory) error {
+	return r.createOrderHistoryExec(nil, r.DB, order)
+}
+
+// CreateOrderHistoryTx creates a new order history record within a transaction (for use in CancelExpiredOrders).
+func (r *OrderRepository) CreateOrderHistoryTx(_ context.Context, tx *sql.Tx, order oModel.OrderHistory) error {
+	return r.createOrderHistoryExec(tx, r.DB, order)
+}
+
+func (r *OrderRepository) createOrderHistoryExec(tx *sql.Tx, fallback *sql.DB, order oModel.OrderHistory) error {
 	logger.Debug().
 		Uint64("order_id", order.IDOrder).
 		Str("action", string(order.Action)).
@@ -479,7 +479,8 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		idUserVal = sql.NullInt64{Int64: int64(*order.IdUser), Valid: true}
 	}
 
-	result, err := r.DB.Exec(
+	exec := execerFrom(tx, fallback)
+	result, err := exec.ExecContext(context.Background(),
 		`INSERT INTO orders_history (
 		id_order, 
 		id_user, 
@@ -488,6 +489,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		note,
 		delivery_date,
 		paid,
+		cancellation_reason,
 		modified_by, 
 		action
 		) 
@@ -499,8 +501,9 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		$5,
 		$6,
 		$7,
-		$8, 
-		$9)`,
+		$8,
+		$9, 
+		$10)`,
 		order.IDOrder,
 		idUserVal,
 		order.Status,
@@ -508,6 +511,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 		order.Note,
 		order.DeliveryDate,
 		order.Paid,
+		nullStringFromPtr(order.CancellationReason),
 		order.ModifiedBy,
 		order.Action,
 	)
@@ -545,7 +549,7 @@ func (r *OrderRepository) CreateOrderHistory(_ context.Context, order oModel.Ord
 func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderHistory, error) {
 	query := `
 		SELECT id_order_history, id_order, id_user, status, total_price, note, 
-			delivery_date, paid, modified_on, modified_by, action
+			delivery_date, paid, cancellation_reason, modified_on, modified_by, action
 		FROM orders_history 
 		WHERE id_order = $1
 		ORDER BY modified_on DESC
@@ -560,8 +564,9 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 	var histories []oModel.OrderHistory
 	for rows.Next() {
 		var (
-			history oModel.OrderHistory
-			idUser  sql.NullInt64
+			history            oModel.OrderHistory
+			idUser             sql.NullInt64
+			cancellationReason sql.NullString
 		)
 		err := rows.Scan(
 			&history.ID,
@@ -572,6 +577,7 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 			&history.Note,
 			&history.DeliveryDate,
 			&history.Paid,
+			&cancellationReason,
 			&history.ModifiedOn,
 			&history.ModifiedBy,
 			&history.Action,
@@ -583,6 +589,9 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 			u := uint64(idUser.Int64)
 			history.IdUser = &u
 		}
+		if cancellationReason.Valid {
+			history.CancellationReason = &cancellationReason.String
+		}
 		histories = append(histories, history)
 	}
 
@@ -593,24 +602,132 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, orderID 
 	return histories, nil
 }
 
-// UpdateOrderStatus updates the status of an order
-func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus) error {
-	query := `UPDATE orders SET status = $1 WHERE id_order = $2`
+// GetExpiredPendingOrders returns orders that are pending, unpaid, and created before the given expiration time (ghost orders).
+func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, expirationTime time.Time) ([]oModel.Order, error) {
+	query := `
+		SELECT id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+		FROM orders
+		WHERE status = 'pending' AND paid = false AND created_on < $1
+		ORDER BY created_on ASC
+	`
+	rows, err := r.DB.QueryContext(ctx, query, expirationTime)
+	if err != nil {
+		return nil, fmt.Errorf("error querying expired pending orders: %w", err)
+	}
+	defer rows.Close()
 
-	result, err := r.DB.ExecContext(ctx, query, status, orderID)
+	var orders []oModel.Order
+	for rows.Next() {
+		var o oModel.Order
+		var note, cancellationReason sql.NullString
+		err := rows.Scan(
+			&o.ID,
+			&o.IdUser,
+			&o.Price,
+			&o.Status,
+			&note,
+			&o.CreatedOn,
+			&o.DeliveryDate,
+			&o.Paid,
+			&cancellationReason,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning expired order row: %w", err)
+		}
+		if note.Valid {
+			o.Note = note.String
+		}
+		if cancellationReason.Valid {
+			o.CancellationReason = &cancellationReason.String
+		}
+		orders = append(orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating expired orders: %w", err)
+	}
+	return orders, nil
+}
+
+// ClaimExpiredPendingOrdersTx atomically updates orders to the given status (e.g. cancelled) and returns
+// the claimed rows. Used by the ghost-order cron so that overlapping runs or multiple workers
+// never process the same order twice. Must be called within an existing transaction; the caller
+// then performs stock reversion and history insert for each claimed order before committing.
+func (r *OrderRepository) ClaimExpiredPendingOrdersTx(
+	ctx context.Context,
+	tx *sql.Tx,
+	currentTime time.Time,
+	status oModel.OrderStatus,
+	cancellationReason *string,
+) ([]oModel.Order, error) {
+	query := `
+		UPDATE orders
+		SET status = $1, cancellation_reason = $2
+		WHERE status = 'pending' AND paid = false AND expires_at < $3
+		RETURNING id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+	`
+	rows, err := tx.QueryContext(ctx, query, status, nullStringFromPtr(cancellationReason), currentTime)
+	if err != nil {
+		return nil, fmt.Errorf("error claiming expired pending orders: %w", err)
+	}
+	defer rows.Close()
+
+	var orders []oModel.Order
+	for rows.Next() {
+		var o oModel.Order
+		var note, reason sql.NullString
+		err := rows.Scan(
+			&o.ID,
+			&o.IdUser,
+			&o.Price,
+			&o.Status,
+			&note,
+			&o.CreatedOn,
+			&o.DeliveryDate,
+			&o.Paid,
+			&reason,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning claimed order row: %w", err)
+		}
+		if note.Valid {
+			o.Note = note.String
+		}
+		if reason.Valid {
+			o.CancellationReason = &reason.String
+		}
+		orders = append(orders, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating claimed orders: %w", err)
+	}
+	return orders, nil
+}
+
+// UpdateOrderStatus updates the status of an order and optionally sets the cancellation reason.
+func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
+	return r.updateOrderStatusExec(ctx, r.DB, orderID, status, cancellationReason)
+}
+
+// UpdateOrderStatusTx updates the order status within a transaction (for use in CancelExpiredOrders).
+func (r *OrderRepository) UpdateOrderStatusTx(ctx context.Context, tx *sql.Tx, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
+	return r.updateOrderStatusExec(ctx, tx, orderID, status, cancellationReason)
+}
+
+func (r *OrderRepository) updateOrderStatusExec(ctx context.Context, exec interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
+	query := `UPDATE orders SET status = $1, cancellation_reason = $2 WHERE id_order = $3`
+	result, err := exec.ExecContext(ctx, query, status, nullStringFromPtr(cancellationReason), orderID)
 	if err != nil {
 		return fmt.Errorf("error updating order status: %w", err)
 	}
-
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("error getting rows affected: %w", err)
 	}
-
 	if rowsAffected == 0 {
 		return errors.NewNotFound(errors.ErrOrderNotFound)
 	}
-
 	return nil
 }
 

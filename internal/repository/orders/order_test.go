@@ -53,7 +53,8 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"phone",
 				"id_order_item",
 				"id_product",
-				"product_name",
+				"product_name_snapshot",
+				"unit_price_snapshot",
 				"quantity",
 			}).
 				AddRow(
@@ -70,6 +71,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					1,
 					2,
 					"Product A",
+					0.0,
 					2,
 				).
 				AddRow(
@@ -86,6 +88,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					2,
 					1,
 					"Product B",
+					0.0,
 					3,
 				).AddRow(
 				2,
@@ -101,6 +104,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				3,
 				1,
 				"Product B",
+				0.0,
 				1,
 			),
 			expected: []oModel.OrderResponse{
@@ -178,12 +182,12 @@ func TestOrderRepository_GetOrders(t *testing.T) {
                         u.phone,
                         oi.id_order_item,
                         oi.id_product,
-                        p.name AS product_name,
+                        oi.product_name_snapshot,
+                        oi.unit_price_snapshot,
                         oi.quantity
                     FROM orders o
                     LEFT JOIN users u ON o.id_user = u.id_user
                     INNER JOIN order_items oi ON o.id_order = oi.id_order
-                    INNER JOIN products p ON oi.id_product = p.id_product
                     WHERE o.status != 'deleted'
                     ORDER BY o.id_order`,
 					),
@@ -205,12 +209,12 @@ func TestOrderRepository_GetOrders(t *testing.T) {
                         u.phone,
                         oi.id_order_item,
                         oi.id_product,
-                        p.name AS product_name,
+                        oi.product_name_snapshot,
+                        oi.unit_price_snapshot,
                         oi.quantity
                     FROM orders o
                     LEFT JOIN users u ON o.id_user = u.id_user
                     INNER JOIN order_items oi ON o.id_order = oi.id_order
-                    INNER JOIN products p ON oi.id_product = p.id_product
                     WHERE o.status != 'deleted'
                     ORDER BY o.id_order`,
 					),
@@ -269,7 +273,8 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"phone",
 				"id_order_item",
 				"id_product",
-				"product_name",
+				"product_name_snapshot",
+				"unit_price_snapshot",
 				"quantity",
 			}).
 				AddRow(
@@ -286,6 +291,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					1,
 					2,
 					"Product A",
+					0.0,
 					2,
 				).
 				AddRow(
@@ -302,6 +308,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					2,
 					1,
 					"Product B",
+					0.0,
 					3,
 				),
 			expected: oModel.OrderResponse{
@@ -411,12 +418,12 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						u.phone,
 						oi.id_order_item,
 						oi.id_product,
-						p.name AS product_name,
+                        oi.product_name_snapshot,
+                        oi.unit_price_snapshot,
 						oi.quantity
 					FROM orders o
 					LEFT JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product
 					WHERE o.id_order = $1`,
 					),
 				).
@@ -438,12 +445,12 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 						u.phone,
 						oi.id_order_item,
 						oi.id_product,
-						p.name AS product_name,
+						oi.product_name_snapshot,
+						oi.unit_price_snapshot,
 						oi.quantity
 					FROM orders o
 					LEFT JOIN users u ON o.id_user = u.id_user
 					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					INNER JOIN products p ON oi.id_product = p.id_product
 					WHERE o.id_order = $1`,
 					),
 				).
@@ -464,107 +471,18 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 	}
 }
 
-func TestOrderRepository_CreateOrderOrchestrator(t *testing.T) {
+func TestOrderRepository_BeginTx(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
+	mock.ExpectBegin()
 
 	repo := &OrderRepository{DB: db}
-
-	deliveryDate := time.Date(2025, 5, 20, 10, 0, 0, 0, time.UTC)
-
-	tests := []struct {
-		name         string
-		order        oModel.CreateFullOrder
-		mockBehavior func()
-		expectError  bool
-	}{
-		{
-			name: "HAPPY PATH: everything succeeds",
-			order: oModel.CreateFullOrder{
-				IdUser:       1,
-				DeliveryDate: deliveryDate,
-				Note:         "Éxito total",
-				Price:        100.0,
-				Status:       oModel.StatusPending,
-				Paid:         false,
-				OrderItems: []oModel.OrderItemRequest{
-					{IdProduct: 2, Quantity: 3},
-					{IdProduct: 5, Quantity: 1},
-				},
-			},
-			mockBehavior: func() {
-				mock.ExpectBegin()
-				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
-				)).WithArgs(1, 100.0, oModel.StatusPending, "Éxito total", deliveryDate, false).
-					WillReturnRows(sqlmock.NewRows([]string{"id_order"}).AddRow(1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 2, 3).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 5, 1).
-					WillReturnResult(sqlmock.NewResult(2, 1))
-
-				mock.ExpectCommit()
-			},
-			expectError: false,
-		},
-		{
-			name: "SAD PATH: item insert fails, triggers rollback",
-			order: oModel.CreateFullOrder{
-				IdUser:       1,
-				DeliveryDate: deliveryDate,
-				Note:         "Este fallo es intencional",
-				Price:        100.0,
-				Status:       oModel.StatusPending,
-				Paid:         false,
-				OrderItems: []oModel.OrderItemRequest{
-					{IdProduct: 2, Quantity: 3},
-					{IdProduct: 99, Quantity: 1},
-				},
-			},
-			mockBehavior: func() {
-				mock.ExpectBegin()
-				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
-				)).WithArgs(1, 100.0, oModel.StatusPending, "Este fallo es intencional", deliveryDate, false).
-					WillReturnRows(sqlmock.NewRows([]string{"id_order"}).AddRow(1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 2, 3).
-					WillReturnResult(sqlmock.NewResult(1, 1))
-
-				mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(1, 99, 1).
-					WillReturnError(stdErrors.New("simulated item failure"))
-
-				mock.ExpectRollback()
-			},
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tt.mockBehavior()
-
-			_, err := repo.CreateOrderOrchestrator(context.Background(), tt.order)
-			if tt.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
-		})
-	}
+	tx, err := repo.BeginTx(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, tx)
+	_ = tx.Rollback()
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestOrderRepository_CreateOrder(t *testing.T) {
@@ -598,6 +516,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 				Price:        20,
 				Status:       oModel.StatusPending,
 				Paid:         false,
+				ExpiresAt:    time.Date(2025, 4, 30, 10, 30, 0, 0, time.UTC),
 			},
 			expectedError: false,
 			errorStatus:   0,
@@ -613,7 +532,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 
 			if tt.expectedError {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order",
 				)).WithArgs(
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
@@ -621,10 +540,11 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
 					tt.orderRequest.Paid,
+					tt.orderRequest.ExpiresAt,
 				).WillReturnError(tt.mockError)
 			} else {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_order",
+					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order",
 				)).WithArgs(
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
@@ -632,6 +552,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
 					tt.orderRequest.Paid,
+					tt.orderRequest.ExpiresAt,
 				).WillReturnRows(sqlmock.NewRows([]string{"id_order"}).AddRow(tt.expected))
 			}
 
@@ -690,8 +611,8 @@ func TestOrderRepository_CreateOrderItems(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			for i, item := range tt.orderItemsRequest {
 				exec := mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, $2, $3)",
-				)).WithArgs(item.IdOrder, item.IdProduct, item.Quantity)
+					"INSERT INTO order_items (id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity) VALUES ($1, $2, $3, $4, $5)",
+				)).WithArgs(item.IdOrder, item.IdProduct, "", 0.0, item.Quantity)
 
 				if tt.expectedError && i == 1 {
 					exec.WillReturnError(tt.mockError)
@@ -712,6 +633,133 @@ func TestOrderRepository_CreateOrderItems(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &OrderRepository{DB: db}
+	ctx := context.Background()
+	expirationTime := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	queryExp := regexp.QuoteMeta(`SELECT id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+		FROM orders
+		WHERE status = 'pending' AND paid = false AND created_on < $1
+		ORDER BY created_on ASC`)
+
+	t.Run("returns_empty_when_no_expired_orders", func(t *testing.T) {
+		mock.ExpectQuery(queryExp).
+			WithArgs(expirationTime).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+			}))
+
+		orders, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		require.NoError(t, err)
+		assert.Len(t, orders, 0)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("returns_expired_orders_with_correct_filters", func(t *testing.T) {
+		createdOn := time.Date(2025, 5, 1, 10, 0, 0, 0, time.UTC)
+		deliveryDate := time.Date(2025, 5, 10, 0, 0, 0, 0, time.UTC)
+
+		mock.ExpectQuery(queryExp).
+			WithArgs(expirationTime).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+			}).
+				AddRow(1, 2, 25.5, "pending", "test note", createdOn, deliveryDate, false, sql.NullString{}))
+
+		orders, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		require.NoError(t, err)
+		require.Len(t, orders, 1)
+		assert.Equal(t, uint64(1), orders[0].ID)
+		assert.Equal(t, uint64(2), orders[0].IdUser)
+		assert.Equal(t, 25.5, orders[0].Price)
+		assert.Equal(t, oModel.StatusPending, orders[0].Status)
+		assert.Equal(t, "test note", orders[0].Note)
+		assert.False(t, orders[0].Paid)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("returns_error_on_query_failure", func(t *testing.T) {
+		mock.ExpectQuery(queryExp).
+			WithArgs(expirationTime).
+			WillReturnError(stdErrors.New("db error"))
+
+		_, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		assert.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+func TestOrderRepository_ClaimExpiredPendingOrdersTx(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &OrderRepository{DB: db}
+	ctx := context.Background()
+	expirationTime := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+	reason := "Cancelación automática: tiempo de espera de pago agotado"
+
+	t.Run("returns_empty_when_no_orders_claimed", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery("UPDATE orders").
+			WithArgs("cancelled", reason, expirationTime).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+			}))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		orders, err := repo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+		require.NoError(t, err)
+		assert.Len(t, orders, 0)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("returns_claimed_orders_with_correct_data", func(t *testing.T) {
+		createdOn := time.Date(2025, 5, 1, 10, 0, 0, 0, time.UTC)
+		deliveryDate := time.Date(2025, 5, 10, 0, 0, 0, 0, time.UTC)
+
+		mock.ExpectBegin()
+		mock.ExpectQuery("UPDATE orders").
+			WithArgs("cancelled", reason, expirationTime).
+			WillReturnRows(sqlmock.NewRows([]string{
+				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+			}).
+				AddRow(1, 2, 25.5, "cancelled", "test note", createdOn, deliveryDate, false, reason))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		orders, err := repo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+		require.NoError(t, err)
+		require.Len(t, orders, 1)
+		assert.Equal(t, uint64(1), orders[0].ID)
+		assert.Equal(t, uint64(2), orders[0].IdUser)
+		assert.Equal(t, 25.5, orders[0].Price)
+		assert.Equal(t, oModel.OrderStatus("cancelled"), orders[0].Status)
+		assert.Equal(t, "test note", orders[0].Note)
+		assert.Equal(t, reason, *orders[0].CancellationReason)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("returns_error_on_query_failure", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery("UPDATE orders").
+			WithArgs("cancelled", reason, expirationTime).
+			WillReturnError(stdErrors.New("db error"))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		_, err = repo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+		assert.Error(t, err)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 }
 
 // Validates the error to be of *HTTPError type, have the correct status and message

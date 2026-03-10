@@ -1,0 +1,3 @@
+ALTER TABLE orders
+    DROP COLUMN IF EXISTS expires_at;
+

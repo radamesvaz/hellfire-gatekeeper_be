@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	stdErrors "errors"
 	"fmt"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
@@ -17,19 +19,34 @@ import (
 
 // Interfaces for dependencies (to enable testing without DB)
 type orderCreatorRepository interface {
-	CreateOrderOrchestrator(ctx context.Context, order oModel.CreateFullOrder) (uint64, error)
-	CreateOrderHistory(ctx context.Context, order oModel.OrderHistory) error
+	BeginTx(ctx context.Context) (*sql.Tx, error)
+	CreateOrder(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (uint64, error)
+	CreateOrderItems(ctx context.Context, tx *sql.Tx, items []oModel.OrderItemRequest) error
+	CreateOrderHistoryTx(ctx context.Context, tx *sql.Tx, order oModel.OrderHistory) error
 }
 
 type productCreatorRepository interface {
 	GetProductsByIDs(ctx context.Context, ids []uint64) ([]pModel.Product, error)
-	UpdateProductStock(ctx context.Context, idProduct uint64, newStock uint64) error
+	DecrementProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantity uint64) (int64, error)
 }
 
 type Creator struct {
 	OrderRepo   orderCreatorRepository
 	UserRepo    userRepo.Repository
 	ProductRepo productCreatorRepository
+}
+
+// TODO multi-tenant: when tenant-specific config exists, this timeout should come from the
+// tenant configuration instead of a global environment variable. For now we mirror the
+// logic in NewExpiredOrderCanceller so that CreateOrder and the ghost-order cron stay in sync.
+func getGhostOrderTimeoutMinutes() int {
+	const defaultGhostOrderTimeoutMinutes = 30
+	if v := os.Getenv("GHOST_ORDER_TIMEOUT_MINUTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultGhostOrderTimeoutMinutes
 }
 
 func NewCreator(
@@ -67,84 +84,94 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 		return errors.ErrProductNotFound
 	}
 
-	// Validate the stock of said products
 	productMap := make(map[uint64]pModel.Product)
 	for _, p := range products {
 		productMap[p.ID] = p
 	}
 
-	for _, item := range payload.Items {
-		p := productMap[item.IdProduct]
-		if p.Stock < item.Quantity {
-			return fmt.Errorf("not enough product stock")
-		}
-	}
-
-	// Calculate the total price
+	// Calculate the total price (stock is validated atomically in the tx below)
 	var totalPrice float64
-
 	for _, item := range payload.Items {
 		product := productMap[item.IdProduct]
 		totalPrice += product.Price * float64(item.Quantity)
 	}
 
-	// Create the order for the orchestrator
-	order := oModel.CreateFullOrder{
+	// Compute per-order expiration snapshot using the current global timeout.
+	// TODO multi-tenant: when tenant-specific timeout is implemented, this should use the
+	// tenant's configuration instead of the global env value.
+	timeoutMinutes := getGhostOrderTimeoutMinutes()
+	expiresAt := time.Now().Add(time.Duration(timeoutMinutes) * time.Minute)
+
+	tx, err := c.OrderRepo.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("error beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Atomic stock decrement: only proceeds if stock >= quantity for each item
+	for _, item := range payload.Items {
+		rows, err := c.ProductRepo.DecrementProductStockTx(ctx, tx, item.IdProduct, item.Quantity)
+		if err != nil {
+			return fmt.Errorf("error reserving stock: %w", err)
+		}
+		if rows == 0 {
+			return fmt.Errorf("not enough product stock")
+		}
+	}
+
+	orderRequest := oModel.CreateOrderRequest{
 		IdUser:       user.ID,
 		DeliveryDate: deliveryDate,
 		Note:         payload.Note,
 		Price:        totalPrice,
 		Status:       oModel.StatusPending,
-		Paid:         false, // Default to false when creating an order
-		OrderItems:   mapItemsToInternalModel(payload.Items),
+		Paid:         false,
+		ExpiresAt:    expiresAt,
 	}
 
-	orderID, err := c.OrderRepo.CreateOrderOrchestrator(ctx, order)
+	orderID, err := c.OrderRepo.CreateOrder(ctx, tx, orderRequest)
 	if err != nil {
 		return fmt.Errorf("error creating order: %w", err)
 	}
 
-	// Create order history record (new orders always have a user)
-	idUser := order.IdUser
+	orderItems := make([]oModel.OrderItemRequest, len(payload.Items))
+	for i, item := range payload.Items {
+		product := productMap[item.IdProduct]
+		orderItems[i] = oModel.OrderItemRequest{
+			IdOrder:             orderID,
+			IdProduct:           item.IdProduct,
+			ProductNameSnapshot: product.Name,
+			UnitPriceSnapshot:   product.Price,
+			Quantity:            item.Quantity,
+		}
+	}
+	if err := c.OrderRepo.CreateOrderItems(ctx, tx, orderItems); err != nil {
+		return fmt.Errorf("error creating order items: %w", err)
+	}
+
+	idUser := user.ID
 	orderHistory := oModel.OrderHistory{
 		IDOrder: orderID,
 		IdUser:  &idUser,
-		Status:  order.Status,
-		Price:   order.Price,
-		Note:    order.Note,
+		Status:  orderRequest.Status,
+		Price:   orderRequest.Price,
+		Note:    orderRequest.Note,
 		DeliveryDate: sql.NullTime{
-			Time:  order.DeliveryDate,
-			Valid: !order.DeliveryDate.IsZero(),
+			Time:  deliveryDate,
+			Valid: !deliveryDate.IsZero(),
 		},
-		Paid:       order.Paid,
-		ModifiedBy: order.IdUser, // The user who created the order
+		Paid:       orderRequest.Paid,
+		ModifiedBy: user.ID,
 		Action:     oModel.ActionCreate,
 	}
-
-	err = c.OrderRepo.CreateOrderHistory(ctx, orderHistory)
-	if err != nil {
-		// Log the error but don't fail the order creation
-		logger.Warn().Err(err).
-			Uint64("order_id", orderID).
-			Msg("Failed to create order history")
+	if err := c.OrderRepo.CreateOrderHistoryTx(ctx, tx, orderHistory); err != nil {
+		logger.Warn().Err(err).Uint64("order_id", orderID).Msg("Failed to create order history")
+		// Continue and commit order+items; history is best-effort for new orders
 	}
 
-	// Update product stock after successful order creation
-	for _, item := range payload.Items {
-		product := productMap[item.IdProduct]
-		newStock := product.Stock - item.Quantity
-
-		err := c.ProductRepo.UpdateProductStock(ctx, product.ID, newStock)
-		if err != nil {
-			// Log the error but don't fail the order creation
-			logger.Warn().Err(err).
-				Uint64("order_id", orderID).
-				Uint64("product_id", product.ID).
-				Uint64("quantity", item.Quantity).
-				Msg("Failed to update product stock")
-		}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %w", err)
 	}
-
 	return nil
 }
 

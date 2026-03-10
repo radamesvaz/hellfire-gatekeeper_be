@@ -738,6 +738,56 @@ func TestProductRepo_GetProductsByIDs(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestProductRepository_DecrementProductStockTx(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	ctx := context.Background()
+
+	t.Run("success_decrements_stock", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE id_product = $2 AND stock >= $1")).
+			WithArgs(3, 1).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		rows, err := repo.DecrementProductStockTx(ctx, tx, 1, 3)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), rows)
+		_ = tx.Rollback()
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("zero_rows_when_insufficient_stock", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE id_product = $2 AND stock >= $1")).
+			WithArgs(10, 1).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		rows, err := repo.DecrementProductStockTx(ctx, tx, 1, 10)
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), rows)
+		_ = tx.Rollback()
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("zero_quantity_returns_success", func(t *testing.T) {
+		mock.ExpectBegin()
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		rows, err := repo.DecrementProductStockTx(ctx, tx, 1, 0)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), rows)
+		_ = tx.Rollback()
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
 // Validates the error to be of *HTTPError type, have the correct status and message
 func assertHTTPError(t *testing.T, err error, expectedStatus int, expectedMessage string) {
 	httpErr, ok := err.(*errors.HTTPError)

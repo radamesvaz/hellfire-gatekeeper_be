@@ -425,6 +425,45 @@ func (r *ProductRepository) RevertProductStock(ctx context.Context, idProduct ui
 	return nil
 }
 
+// RevertProductStockTx adds stock back to a product within a transaction (atomic increment; for use in CancelExpiredOrders).
+func (r *ProductRepository) RevertProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantityToRevert uint64) error {
+	if quantityToRevert == 0 {
+		return nil
+	}
+	result, err := tx.ExecContext(ctx, "UPDATE products SET stock = stock + $1 WHERE id_product = $2", quantityToRevert, idProduct)
+	if err != nil {
+		return fmt.Errorf("error reverting product stock in tx: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("product %d not found for stock revert", idProduct)
+	}
+	return nil
+}
+
+// DecrementProductStockTx atomically decrements product stock within a transaction.
+// It updates only if stock >= quantity (prevents overselling). Returns rows affected (1 = success, 0 = insufficient stock).
+func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantity uint64) (int64, error) {
+	if quantity == 0 {
+		return 1, nil
+	}
+	result, err := tx.ExecContext(ctx,
+		"UPDATE products SET stock = stock - $1 WHERE id_product = $2 AND stock >= $1",
+		quantity, idProduct,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("error decrementing product stock in tx: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("error getting rows affected: %w", err)
+	}
+	return rows, nil
+}
+
 // UpdateProductImages updates the image URLs and thumbnail for a product
 func (r *ProductRepository) UpdateProductImages(
 		_ context.Context, 

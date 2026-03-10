@@ -10,6 +10,7 @@ const (
 	StatusReady     OrderStatus = "ready"
 	StatusDelivered OrderStatus = "delivered"
 	StatusCancelled OrderStatus = "cancelled"
+	StatusExpired   OrderStatus = "expired"
 	StatusDeleted   OrderStatus = "deleted"
 )
 

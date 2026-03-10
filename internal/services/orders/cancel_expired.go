@@ -63,7 +63,7 @@ func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancel
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, now, oModel.StatusCancelled, &reason)
+	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, now, oModel.StatusExpired, &reason)
 	if err != nil {
 		return 0, fmt.Errorf("claim expired pending orders: %w", err)
 	}
@@ -85,9 +85,9 @@ func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancel
 	}
 
 	logger.Info().
-		Int("cancelled", len(claimed)).
+		Int("expired", len(claimed)).
 		Int("found", len(claimed)).
-		Msg("CancelExpiredOrders: finished")
+		Msg("CancelExpiredOrders: finished (marked as expired)")
 	return len(claimed), nil
 }
 
@@ -139,7 +139,7 @@ func (c *ExpiredOrderCanceller) revertStockAndRecordHistoryTx(ctx context.Contex
 	orderHistory := oModel.OrderHistory{
 		IDOrder:            order.ID,
 		IdUser:             nil,
-		Status:             oModel.StatusCancelled,
+		Status:             oModel.StatusExpired,
 		Price:              order.Price,
 		Note:               order.Note,
 		Paid:               order.Paid,

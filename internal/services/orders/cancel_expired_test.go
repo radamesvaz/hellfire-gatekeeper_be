@@ -21,7 +21,7 @@ func TestExpiredOrderCanceller_CancelExpiredOrders_NoExpiredOrders(t *testing.T)
 	// Single transaction: Begin, Claim (UPDATE ... RETURNING returns 0 rows), Commit
 	mock.ExpectBegin()
 	mock.ExpectQuery("UPDATE orders").
-		WithArgs("cancelled", "Cancelación automática: tiempo de espera de pago agotado", sqlmock.AnyArg()).
+		WithArgs("expired", "Cancelación automática: tiempo de espera de pago agotado", sqlmock.AnyArg()).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
 		}))

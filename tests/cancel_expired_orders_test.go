@@ -80,7 +80,7 @@ func TestCancelExpiredOrders_Integration(t *testing.T) {
 	var ghostStatus, ghostReason string
 	err = db.QueryRowContext(ctx, `SELECT status, COALESCE(cancellation_reason, '') FROM orders WHERE id_order = $1`, ghostOrderID).Scan(&ghostStatus, &ghostReason)
 	require.NoError(t, err)
-	assert.Equal(t, "cancelled", ghostStatus)
+	assert.Equal(t, "expired", ghostStatus)
 	assert.Contains(t, ghostReason, "Cancelación automática", "cancellation_reason should contain system message")
 
 	var recentStatus string

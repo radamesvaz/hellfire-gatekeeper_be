@@ -359,9 +359,10 @@ func main() {
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/register", authHandler.Register).Methods("POST")
 
-	// Test middleware endpoint
+	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()
 	auth.Use(middleware.AuthMiddleware(authService))
+	auth.Use(middleware.TenantMiddleware())
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")

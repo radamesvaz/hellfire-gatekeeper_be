@@ -113,7 +113,7 @@ func TestGetAllOrders(t *testing.T) {
         ],
         "created_on": "2025-04-14T10:00:00Z",
         "delivery_date": "2025-04-20T00:00:00Z",
-        "expires_at": "0001-01-01T00:00:00Z",
+        "expires_at": "2025-04-14T10:30:00Z",
         "paid": false
     },
     {

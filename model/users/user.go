@@ -19,6 +19,7 @@ type User struct {
 	Phone     string       `json:"phone"`
 	Password  string       `json:"password_hash"`
 	CreatedOn sql.NullTime `json:"created_on"`
+	DeletedAt sql.NullTime `json:"deleted_at,omitempty"`
 }
 
 type CreateUserRequest struct {

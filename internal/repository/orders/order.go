@@ -51,7 +51,9 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
             o.note, 
             o.delivery_date, 
             o.paid,
-            o.created_on, 
+            o.created_on,
+            o.expires_at,
+            o.cancellation_reason,
             u.name AS user_name, 
             u.phone,
             oi.id_order_item, 
@@ -93,21 +95,23 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 
 	for rows.Next() {
 		var (
-			idOrder      uint64
-			idUser       sql.NullInt64
-			totalPrice   float64
-			status       string
-			note         string
-			deliveryDate time.Time
-			paid         bool
-			createdOn    time.Time
-			userName     sql.NullString
-			phone        sql.NullString
-			idOrderItem  uint64
-			idProduct    uint64
-			productName  string
-			unitPrice    float64
-			quantity     uint64
+			idOrder           uint64
+			idUser            sql.NullInt64
+			totalPrice        float64
+			status            string
+			note              string
+			deliveryDate      time.Time
+			paid              bool
+			createdOn         time.Time
+			expiresAt         sql.NullTime
+			cancellationReason sql.NullString
+			userName          sql.NullString
+			phone             sql.NullString
+			idOrderItem       uint64
+			idProduct         uint64
+			productName       string
+			unitPrice         float64
+			quantity          uint64
 		)
 
 		err := rows.Scan(
@@ -119,6 +123,8 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			&deliveryDate,
 			&paid,
 			&createdOn,
+			&expiresAt,
+			&cancellationReason,
 			&userName,
 			&phone,
 			&idOrderItem,
@@ -144,6 +150,12 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, ignoreStatus
 			}
 			if idUser.Valid {
 				resp.IdUser = uint64(idUser.Int64)
+			}
+			if expiresAt.Valid {
+				resp.ExpiresAt = expiresAt.Time
+			}
+			if cancellationReason.Valid {
+				resp.CancellationReason = &cancellationReason.String
 			}
 			if userName.Valid {
 				resp.User = userName.String
@@ -191,7 +203,9 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
             o.note, 
             o.delivery_date, 
             o.paid,
-            o.created_on, 
+            o.created_on,
+            o.expires_at,
+            o.cancellation_reason,
             u.name AS user_name, 
             u.phone,
             oi.id_order_item, 
@@ -223,21 +237,23 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 	for rows.Next() {
 		hasRows = true
 		var (
-			idOrder      uint64
-			idUser       sql.NullInt64
-			totalPrice   float64
-			status       string
-			note         string
-			deliveryDate time.Time
-			paid         bool
-			createdOn    time.Time
-			userName     sql.NullString
-			phone        sql.NullString
-			idOrderItem  uint64
-			idProduct    uint64
-			productName  string
-			unitPrice    float64
-			quantity     uint64
+			idOrder            uint64
+			idUser             sql.NullInt64
+			totalPrice         float64
+			status             string
+			note               string
+			deliveryDate       time.Time
+			paid               bool
+			createdOn          time.Time
+			expiresAt          sql.NullTime
+			cancellationReason sql.NullString
+			userName           sql.NullString
+			phone              sql.NullString
+			idOrderItem        uint64
+			idProduct          uint64
+			productName        string
+			unitPrice          float64
+			quantity           uint64
 		)
 
 		err := rows.Scan(
@@ -249,6 +265,8 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			&deliveryDate,
 			&paid,
 			&createdOn,
+			&expiresAt,
+			&cancellationReason,
 			&userName,
 			&phone,
 			&idOrderItem,
@@ -272,6 +290,12 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id uint64) (oModel.O
 			order.DeliveryDate = deliveryDate
 			order.Paid = paid
 			order.CreatedOn = createdOn
+			if expiresAt.Valid {
+				order.ExpiresAt = expiresAt.Time
+			}
+			if cancellationReason.Valid {
+				order.CancellationReason = &cancellationReason.String
+			}
 			if userName.Valid {
 				order.User = userName.String
 			}

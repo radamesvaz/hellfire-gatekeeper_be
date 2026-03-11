@@ -23,7 +23,7 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 	user := uModel.User{}
 
 	err := r.DB.QueryRow(
-		"SELECT id_user, id_role, name, email, password_hash, phone, created_on FROM users WHERE email = $1",
+		"SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL",
 		email,
 	).Scan(
 		&user.ID,
@@ -33,6 +33,7 @@ func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
 		&user.Password,
 		&user.Phone,
 		&user.CreatedOn,
+		&user.DeletedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -88,7 +89,7 @@ func (r *UserRepository) EmailExists(email string) (bool, error) {
 
 	var count int
 	err := r.DB.QueryRow(
-		"SELECT COUNT(*) FROM users WHERE email = $1",
+		"SELECT COUNT(*) FROM users WHERE email = $1 AND deleted_at IS NULL",
 		email,
 	).Scan(&count)
 

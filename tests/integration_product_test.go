@@ -499,11 +499,9 @@ func TestUpdateProduct(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	expected := fmt.Sprint(
-		`{
+	expected := `{
 			"message": "Product updated successfully"
-		}`,
-	)
+		}`
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())

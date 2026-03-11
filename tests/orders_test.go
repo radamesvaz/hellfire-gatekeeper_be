@@ -60,8 +60,7 @@ func TestGetAllOrders(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	expected := fmt.Sprint(
-		`[
+	expected := `[
     		{
         "id_order": 1,
         "id_user": 2,
@@ -147,8 +146,7 @@ func TestGetAllOrders(t *testing.T) {
         "expires_at": "0001-01-01T00:00:00Z",
         "paid": false
     }
-]`,
-	)
+]`
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
@@ -189,8 +187,7 @@ func TestGetOrderByID(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	expected := fmt.Sprint(
-		`{
+	expected := `{
     "id_order": 1,
     "id_user": 2,
     "user_name": "Client",
@@ -220,8 +217,7 @@ func TestGetOrderByID(t *testing.T) {
     "delivery_date": "2025-04-05T00:00:00Z",
     "expires_at": "0001-01-01T00:00:00Z",
     "paid": false
-}`,
-	)
+}`
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
@@ -272,11 +268,9 @@ func TestCreateOrder(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	expected := fmt.Sprint(
-		`{
+	expected := `{
 			"message": "Order created successfully"
-		}`,
-	)
+		}`
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())

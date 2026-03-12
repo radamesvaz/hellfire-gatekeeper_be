@@ -68,6 +68,7 @@ func TestGetAllOrders(t *testing.T) {
         "user_name": "Client",
         "phone": "66-6666",
         "status": "delivered",
+        "tenant_id": 1,
         "total_price": 57,
         "note": "make it bright",
         "OrderItems": [
@@ -99,6 +100,7 @@ func TestGetAllOrders(t *testing.T) {
         "user_name": "Client",
         "phone": "66-6666",
         "status": "pending",
+        "tenant_id": 1,
         "total_price": 10,
         "note": "deliver at the door",
         "OrderItems": [
@@ -122,6 +124,7 @@ func TestGetAllOrders(t *testing.T) {
         "user_name": "Client",
         "phone": "66-6666",
         "status": "preparing",
+        "tenant_id": 1,
         "total_price": 12,
         "note": "not so sweet",
         "OrderItems": [
@@ -195,6 +198,7 @@ func TestGetOrderByID(t *testing.T) {
     "user_name": "Client",
     "phone": "66-6666",
     "status": "delivered",
+    "tenant_id": 1,
     "total_price": 57,
     "note": "make it bright",
     "OrderItems": [
@@ -288,8 +292,8 @@ func TestOrderHistoryMigration(t *testing.T) {
 	// Test that the orders_history table accepts 'create' action
 	ctx := context.Background()
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO orders_history (id_order, id_user, status, total_price, note, modified_by, action) 
-		VALUES (1, 1, 'pending', 20.0, 'test', 1, 'create')
+		INSERT INTO orders_history (id_order, tenant_id, id_user, status, total_price, note, modified_by, action) 
+		VALUES (1, 1, 1, 'pending', 20.0, 'test', 1, 'create')
 	`)
 
 	if err != nil {
@@ -357,7 +361,8 @@ func TestCreateOrder_WithOrderHistory(t *testing.T) {
 	assert.NoError(t, err, "Should be able to get latest order ID")
 
 	// Verify that order history was created
-	histories, err := orderRepo.GetOrderHistoryByOrderID(ctx, latestOrderID)
+	const tenantID = uint64(1)
+	histories, err := orderRepo.GetOrderHistoryByOrderID(ctx, tenantID, latestOrderID)
 	assert.NoError(t, err, "Should be able to get order history")
 	assert.Len(t, histories, 1, "Should have exactly one history record")
 
@@ -457,7 +462,8 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	assert.Equal(t, "preparing", actualStatus, "Order status should be updated to 'preparing'")
 
 	// Verify that order history was created
-	histories, err := orderRepo.GetOrderHistoryByOrderID(ctx, orderID)
+	const tenantID2 = uint64(1)
+	histories, err := orderRepo.GetOrderHistoryByOrderID(ctx, tenantID2, orderID)
 	assert.NoError(t, err, "Should be able to get order history")
 
 	// Check if we have at least one history record (create)

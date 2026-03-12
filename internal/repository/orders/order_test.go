@@ -42,6 +42,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 			name: "HAPPY PATH: getting all orders",
 			mockRows: sqlmock.NewRows([]string{
 				"id_order",
+				"tenant_id",
 				"id_user",
 				"total_price",
 				"status",
@@ -60,6 +61,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"quantity",
 			}).
 				AddRow(
+					1,
 					1,
 					2,
 					50.0,
@@ -80,6 +82,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				).
 				AddRow(
 					1,
+					1,
 					2,
 					50.0,
 					"pending",
@@ -98,6 +101,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					3,
 				).AddRow(
 				2,
+				1,
 				2,
 				25,
 				"delivered",
@@ -118,6 +122,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 			expected: []oModel.OrderResponse{
 				{
 					ID:           1,
+					TenantID:     1,
 					IdUser:       2,
 					Price:        50.0,
 					Status:       oModel.StatusPending,
@@ -146,6 +151,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				},
 				{
 					ID:           2,
+					TenantID:     1,
 					IdUser:       2,
 					Price:        25,
 					Status:       oModel.StatusDelivered,
@@ -177,64 +183,67 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
-						`SELECT
-                        o.id_order,
-                        o.id_user,
-                        o.total_price,
-                        o.status,
-                        o.note,
-                        o.delivery_date,
-                        o.paid,
-                        o.created_on,
-                        o.expires_at,
-                        o.cancellation_reason,
-                        u.name AS user_name,
-                        u.phone,
-                        oi.id_order_item,
-                        oi.id_product,
-                        oi.product_name_snapshot,
-                        oi.unit_price_snapshot,
-                        oi.quantity
-                    FROM orders o
-                    LEFT JOIN users u ON o.id_user = u.id_user
-                    INNER JOIN order_items oi ON o.id_order = oi.id_order
-                    WHERE o.status != 'deleted'
-                    ORDER BY o.id_order`,
+						`SELECT 
+            o.id_order, 
+            o.tenant_id,
+            o.id_user,
+            o.total_price, 
+            o.status, 
+            o.note, 
+            o.delivery_date, 
+            o.paid,
+            o.created_on,
+            o.expires_at,
+            o.cancellation_reason,
+            u.name AS user_name, 
+            u.phone,
+            oi.id_order_item, 
+            oi.id_product, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
+            oi.quantity
+        FROM orders o
+        LEFT JOIN users u ON o.id_user = u.id_user
+        INNER JOIN order_items oi ON o.id_order = oi.id_order
+        WHERE o.tenant_id = $1 AND o.status != 'deleted'
+        ORDER BY o.id_order`,
 					),
 				).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
-						`SELECT
-                        o.id_order,
-                        o.id_user,
-                        o.total_price,
-                        o.status,
-                        o.note,
-                        o.delivery_date,
-                        o.paid,
-                        o.created_on,
-                        o.expires_at,
-                        o.cancellation_reason,
-                        u.name AS user_name,
-                        u.phone,
-                        oi.id_order_item,
-                        oi.id_product,
-                        oi.product_name_snapshot,
-                        oi.unit_price_snapshot,
-                        oi.quantity
-                    FROM orders o
-                    LEFT JOIN users u ON o.id_user = u.id_user
-                    INNER JOIN order_items oi ON o.id_order = oi.id_order
-                    WHERE o.status != 'deleted'
-                    ORDER BY o.id_order`,
+						`SELECT 
+            o.id_order, 
+            o.tenant_id,
+            o.id_user,
+            o.total_price, 
+            o.status, 
+            o.note, 
+            o.delivery_date, 
+            o.paid,
+            o.created_on,
+            o.expires_at,
+            o.cancellation_reason,
+            u.name AS user_name, 
+            u.phone,
+            oi.id_order_item, 
+            oi.id_product, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
+            oi.quantity
+        FROM orders o
+        LEFT JOIN users u ON o.id_user = u.id_user
+        INNER JOIN order_items oi ON o.id_order = oi.id_order
+        WHERE o.tenant_id = $1 AND o.status != 'deleted'
+        ORDER BY o.id_order`,
 					),
 				).
 					WillReturnRows(tt.mockRows)
 			}
 
-			order, err := repo.GetOrders(context.Background())
+			const tenantID = uint64(1)
+			order, err := repo.GetOrders(context.Background(), tenantID)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -274,6 +283,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 			name: "HAPPY PATH: getting an order with multiple products",
 			mockRows: sqlmock.NewRows([]string{
 				"id_order",
+				"tenant_id",
 				"id_user",
 				"total_price",
 				"status",
@@ -292,6 +302,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"quantity",
 			}).
 				AddRow(
+					1,
 					1,
 					2,
 					50.0,
@@ -312,6 +323,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				).
 				AddRow(
 					1,
+					1,
 					2,
 					50.0,
 					"pending",
@@ -331,6 +343,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				),
 			expected: oModel.OrderResponse{
 				ID:           1,
+				TenantID:     1,
 				IdUser:       2,
 				Price:        50.0,
 				Status:       oModel.StatusPending,
@@ -366,6 +379,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 			name: "SAD PATH: Order not found",
 			mockRows: sqlmock.NewRows([]string{
 				"id_order",
+				"tenant_id",
 				"id_user",
 				"total_price",
 				"status", "note",
@@ -382,9 +396,9 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"unit_price_snapshot",
 				"quantity",
 			}).
-				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, nil, nil, "Client Example", "66-6666",
+				AddRow(1, 1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, nil, nil, "Client Example", "66-6666",
 					1, 2, "Product A", 0.0, 2).
-				AddRow(1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, nil, nil, "Client Example", "66-6666",
+				AddRow(1, 1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, nil, nil, "Client Example", "66-6666",
 					2, 1, "Product B", 0.0, 3),
 			expected: oModel.OrderResponse{
 				ID:           1,
@@ -426,64 +440,67 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
-						`SELECT
-						o.id_order,
-						o.id_user,
-						o.total_price,
-						o.status,
-						o.note,
-						o.delivery_date,
-						o.paid,
-						o.created_on,
-						o.expires_at,
-						o.cancellation_reason,
-						u.name AS user_name,
-						u.phone,
-						oi.id_order_item,
-						oi.id_product,
-                        oi.product_name_snapshot,
-                        oi.unit_price_snapshot,
-						oi.quantity
-					FROM orders o
-					LEFT JOIN users u ON o.id_user = u.id_user
-					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					WHERE o.id_order = $1`,
+						`SELECT 
+            o.id_order, 
+            o.tenant_id,
+            o.id_user,
+            o.total_price, 
+            o.status, 
+            o.note, 
+            o.delivery_date, 
+            o.paid,
+            o.created_on,
+            o.expires_at,
+            o.cancellation_reason,
+            u.name AS user_name, 
+            u.phone,
+            oi.id_order_item, 
+            oi.id_product, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
+            oi.quantity
+        FROM orders o
+        LEFT JOIN users u ON o.id_user = u.id_user
+        INNER JOIN order_items oi ON o.id_order = oi.id_order
+        WHERE o.id_order = $1 AND o.tenant_id = $2`,
 					),
 				).
-					WithArgs(tt.idOrderForLookup).
+					WithArgs(tt.idOrderForLookup, uint64(1)).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
-						`SELECT
-						o.id_order,
-						o.id_user,
-						o.total_price,
-						o.status,
-						o.note,
-						o.delivery_date,
-						o.paid,
-						o.created_on,
-						o.expires_at,
-						o.cancellation_reason,
-						u.name AS user_name,
-						u.phone,
-						oi.id_order_item,
-						oi.id_product,
-						oi.product_name_snapshot,
-						oi.unit_price_snapshot,
-						oi.quantity
-					FROM orders o
-					LEFT JOIN users u ON o.id_user = u.id_user
-					INNER JOIN order_items oi ON o.id_order = oi.id_order
-					WHERE o.id_order = $1`,
+						`SELECT 
+            o.id_order, 
+            o.tenant_id,
+            o.id_user,
+            o.total_price, 
+            o.status, 
+            o.note, 
+            o.delivery_date, 
+            o.paid,
+            o.created_on,
+            o.expires_at,
+            o.cancellation_reason,
+            u.name AS user_name, 
+            u.phone,
+            oi.id_order_item, 
+            oi.id_product, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
+            oi.quantity
+        FROM orders o
+        LEFT JOIN users u ON o.id_user = u.id_user
+        INNER JOIN order_items oi ON o.id_order = oi.id_order
+        WHERE o.id_order = $1 AND o.tenant_id = $2`,
 					),
 				).
-					WithArgs(tt.idOrderForLookup).
+					WithArgs(tt.idOrderForLookup, uint64(1)).
 					WillReturnRows(tt.mockRows)
 			}
 
-			order, err := repo.GetOrderByID(context.Background(), tt.idOrderForLookup)
+			const tenantID = uint64(1)
+			order, err := repo.GetOrderByID(context.Background(), tenantID, tt.idOrderForLookup)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -535,6 +552,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 			name:     "HAPPY PATH: creating an order",
 			expected: 666,
 			orderRequest: oModel.CreateOrderRequest{
+				TenantID:     1,
 				IdUser:       2,
 				DeliveryDate: deliveryDate,
 				Note:         "entregar a la tarde",
@@ -557,8 +575,9 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 
 			if tt.expectedError {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order",
+					"INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_order",
 				)).WithArgs(
+					tt.orderRequest.TenantID,
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
 					tt.orderRequest.Status,
@@ -569,8 +588,9 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 				).WillReturnError(tt.mockError)
 			} else {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id_order",
+					"INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_order",
 				)).WithArgs(
+					tt.orderRequest.TenantID,
 					tt.orderRequest.IdUser,
 					tt.orderRequest.Price,
 					oModel.StatusPending,
@@ -634,10 +654,11 @@ func TestOrderRepository_CreateOrderItems(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			const tenantID = uint64(1)
 			for i, item := range tt.orderItemsRequest {
 				exec := mock.ExpectExec(regexp.QuoteMeta(
-					"INSERT INTO order_items (id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity) VALUES ($1, $2, $3, $4, $5)",
-				)).WithArgs(item.IdOrder, item.IdProduct, "", 0.0, item.Quantity)
+					"INSERT INTO order_items (tenant_id, id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity) VALUES ($1, $2, $3, $4, $5, $6)",
+				)).WithArgs(tenantID, item.IdOrder, item.IdProduct, "", 0.0, item.Quantity)
 
 				if tt.expectedError && i == 1 {
 					exec.WillReturnError(tt.mockError)
@@ -647,7 +668,7 @@ func TestOrderRepository_CreateOrderItems(t *testing.T) {
 				}
 			}
 
-			err := repo.CreateOrderItems(context.Background(), nil, tt.orderItemsRequest)
+			err := repo.CreateOrderItems(context.Background(), nil, tenantID, tt.orderItemsRequest)
 
 			if tt.expectedError {
 				assert.Error(t, err)
@@ -668,20 +689,21 @@ func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
 	repo := &OrderRepository{DB: db}
 	ctx := context.Background()
 	expirationTime := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
+	const tenantID = uint64(1)
 
-	queryExp := regexp.QuoteMeta(`SELECT id_order, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+	queryExp := regexp.QuoteMeta(`SELECT id_order, tenant_id, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
 		FROM orders
-		WHERE status = 'pending' AND paid = false AND created_on < $1
+		WHERE tenant_id = $1 AND status = 'pending' AND paid = false AND created_on < $2
 		ORDER BY created_on ASC`)
 
 	t.Run("returns_empty_when_no_expired_orders", func(t *testing.T) {
 		mock.ExpectQuery(queryExp).
-			WithArgs(expirationTime).
+			WithArgs(tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
 			}))
 
-		orders, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		orders, err := repo.GetExpiredPendingOrders(ctx, tenantID, expirationTime)
 		require.NoError(t, err)
 		assert.Len(t, orders, 0)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -692,13 +714,13 @@ func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
 		deliveryDate := time.Date(2025, 5, 10, 0, 0, 0, 0, time.UTC)
 
 		mock.ExpectQuery(queryExp).
-			WithArgs(expirationTime).
+			WithArgs(tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
 			}).
-				AddRow(1, 2, 25.5, "pending", "test note", createdOn, deliveryDate, false, sql.NullString{}))
+				AddRow(1, tenantID, 2, 25.5, "pending", "test note", createdOn, deliveryDate, false, sql.NullString{}))
 
-		orders, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		orders, err := repo.GetExpiredPendingOrders(ctx, tenantID, expirationTime)
 		require.NoError(t, err)
 		require.Len(t, orders, 1)
 		assert.Equal(t, uint64(1), orders[0].ID)
@@ -712,10 +734,10 @@ func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
 
 	t.Run("returns_error_on_query_failure", func(t *testing.T) {
 		mock.ExpectQuery(queryExp).
-			WithArgs(expirationTime).
+			WithArgs(tenantID, expirationTime).
 			WillReturnError(stdErrors.New("db error"))
 
-		_, err := repo.GetExpiredPendingOrders(ctx, expirationTime)
+		_, err := repo.GetExpiredPendingOrders(ctx, tenantID, expirationTime)
 		assert.Error(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -730,18 +752,19 @@ func TestOrderRepository_ClaimExpiredPendingOrdersTx(t *testing.T) {
 	ctx := context.Background()
 	expirationTime := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
 	reason := "Cancelación automática: tiempo de espera de pago agotado"
+	const tenantID = uint64(1)
 
 	t.Run("returns_empty_when_no_orders_claimed", func(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectQuery("UPDATE orders").
-			WithArgs("cancelled", reason, expirationTime).
+			WithArgs("cancelled", reason, tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
 			}))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		orders, err := repo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+		orders, err := repo.ClaimExpiredPendingOrdersTx(ctx, tx, tenantID, expirationTime, oModel.StatusCancelled, &reason)
 		require.NoError(t, err)
 		assert.Len(t, orders, 0)
 		require.NoError(t, mock.ExpectationsWereMet())
@@ -753,15 +776,15 @@ func TestOrderRepository_ClaimExpiredPendingOrdersTx(t *testing.T) {
 
 		mock.ExpectBegin()
 		mock.ExpectQuery("UPDATE orders").
-			WithArgs("cancelled", reason, expirationTime).
+			WithArgs("cancelled", reason, tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
 			}).
-				AddRow(1, 2, 25.5, "cancelled", "test note", createdOn, deliveryDate, false, reason))
+				AddRow(1, tenantID, 2, 25.5, "cancelled", "test note", createdOn, deliveryDate, false, reason))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		orders, err := repo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+		orders, err := repo.ClaimExpiredPendingOrdersTx(ctx, tx, tenantID, expirationTime, oModel.StatusCancelled, &reason)
 		require.NoError(t, err)
 		require.Len(t, orders, 1)
 		assert.Equal(t, uint64(1), orders[0].ID)
@@ -776,12 +799,12 @@ func TestOrderRepository_ClaimExpiredPendingOrdersTx(t *testing.T) {
 	t.Run("returns_error_on_query_failure", func(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectQuery("UPDATE orders").
-			WithArgs("cancelled", reason, expirationTime).
+			WithArgs("cancelled", reason, tenantID, expirationTime).
 			WillReturnError(stdErrors.New("db error"))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		_, err = repo.ClaimExpiredPendingOrdersTx(ctx, tx, expirationTime, oModel.StatusCancelled, &reason)
+		_, err = repo.ClaimExpiredPendingOrdersTx(ctx, tx, tenantID, expirationTime, oModel.StatusCancelled, &reason)
 		assert.Error(t, err)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})

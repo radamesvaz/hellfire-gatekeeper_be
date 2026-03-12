@@ -14,6 +14,7 @@ const (
 
 type ProductHistory struct {
 	ID           uint64        `json:"id_product_history" gorm:"primaryKey"`
+	TenantID     uint64        `json:"tenant_id"`
 	IDProduct    uint64        `json:"id_product" gorm:"primaryKey"`
 	Name         string        `json:"name" gorm:"not null;unique"`
 	Description  string        `json:"description"`

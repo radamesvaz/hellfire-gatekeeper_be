@@ -14,8 +14,8 @@ type ProductHistoryRepository struct {
 	DB *sql.DB
 }
 
-// Creating a product
-func (r *ProductRepository) CreateProductHistory(_ context.Context, product pModel.ProductHistory) error {
+// Creating a product history row for a tenant
+func (r *ProductRepository) CreateProductHistory(_ context.Context, tenantID uint64, product pModel.ProductHistory) error {
 	logger.Debug().
 		Uint64("product_id", product.IDProduct).
 		Str("action", string(product.Action)).
@@ -47,6 +47,7 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 
 	result, err := r.DB.Exec(
 		`INSERT INTO products_history (
+		tenant_id,
 		id_product, 
 		name, 
 		description, 
@@ -61,7 +62,7 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 		) 
 		VALUES (
 		$1,
-		$2, 
+		$2,
 		$3, 
 		$4, 
 		$5, 
@@ -70,7 +71,9 @@ func (r *ProductRepository) CreateProductHistory(_ context.Context, product pMod
 		$8,
 		$9,
 		$10, 
-		$11)`,
+		$11,
+		$12)`,
+		tenantID,
 		product.IDProduct,
 		product.Name,
 		product.Description,

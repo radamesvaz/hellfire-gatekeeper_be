@@ -63,7 +63,10 @@ func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancel
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, now, oModel.StatusExpired, &reason)
+	// NOTE: for now we use tenant_id = 1; once orders are fully multi-tenant,
+	// this cron must iterate over all active tenants and call ClaimExpiredPendingOrdersTx per tenant.
+	const defaultTenantID = 1
+	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, defaultTenantID, now, oModel.StatusExpired, &reason)
 	if err != nil {
 		return 0, fmt.Errorf("claim expired pending orders: %w", err)
 	}
@@ -125,18 +128,19 @@ func RunGhostOrderWorker(ctx context.Context, c *ExpiredOrderCanceller, interval
 // one row into orders_history. The order must already be updated to cancelled (e.g. by ClaimExpiredPendingOrdersTx).
 // Must be called within an existing transaction.
 func (c *ExpiredOrderCanceller) revertStockAndRecordHistoryTx(ctx context.Context, tx *sql.Tx, order oModel.Order) error {
-	items, err := c.OrderRepo.GetOrderItemsByOrderIDTx(ctx, tx, order.ID)
+	items, err := c.OrderRepo.GetOrderItemsByOrderIDTx(ctx, tx, order.TenantID, order.ID)
 	if err != nil {
 		return fmt.Errorf("get order items: %w", err)
 	}
 	for _, item := range items {
-		if err := c.ProductRepo.RevertProductStockTx(ctx, tx, item.IdProduct, item.Quantity); err != nil {
+		if err := c.ProductRepo.RevertProductStockTx(ctx, tx, order.TenantID, item.IdProduct, item.Quantity); err != nil {
 			return fmt.Errorf("revert stock product %d: %w", item.IdProduct, err)
 		}
 	}
 
 	reason := systemCancellationReason
 	orderHistory := oModel.OrderHistory{
+		TenantID:           order.TenantID,
 		IDOrder:            order.ID,
 		IdUser:             nil,
 		Status:             oModel.StatusExpired,

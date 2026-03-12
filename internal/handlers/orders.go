@@ -33,6 +33,11 @@ type OrderHandler struct {
 func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+
 	// Parse query parameters
 	ignoreStatus := r.URL.Query().Get("ignore_status") == "true"
 	statusFilter := r.URL.Query().Get("status")
@@ -42,7 +47,7 @@ func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 		statusFilterPtr = &statusFilter
 	}
 
-	orders, err := h.Repo.GetOrdersWithFilters(ctx, ignoreStatus, statusFilterPtr)
+	orders, err := h.Repo.GetOrdersWithFilters(ctx, tenantID, ignoreStatus, statusFilterPtr)
 	if err != nil {
 		http.Error(w, "Error getting orders", http.StatusInternalServerError)
 		return
@@ -62,7 +67,11 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	order, err := h.Repo.GetOrderByID(ctx, idOrder)
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+	order, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
 		if httpErr, ok := err.(*errors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -142,11 +151,12 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 		orderHistoryIdUser = &order.IdUser
 	}
 	orderHistory := oModel.OrderHistory{
-		IDOrder: idOrder,
-		IdUser:  orderHistoryIdUser,
-		Status:  order.Status,
-		Price:   order.Price,
-		Note:    order.Note,
+		TenantID: order.TenantID,
+		IDOrder:  idOrder,
+		IdUser:   orderHistoryIdUser,
+		Status:   order.Status,
+		Price:    order.Price,
+		Note:     order.Note,
 		DeliveryDate: sql.NullTime{
 			Time:  order.DeliveryDate,
 			Valid: !order.DeliveryDate.IsZero(),
@@ -194,6 +204,11 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+
 	// Get user ID from JWT token
 	userID, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
@@ -202,7 +217,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get the current order to track changes
-	currentOrder, err := h.Repo.GetOrderByID(ctx, idOrder)
+	currentOrder, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
 		if httpErr, ok := err.(*errors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -250,7 +265,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
 
 		// Update the order status with stock reversion if admin cancels; optional cancellation reason when cancelling
-		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason)
+		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason)
 		if err != nil {
 			if httpErr, ok := err.(*errors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -263,7 +278,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Update paid status if provided
 	if payload.Paid != nil {
-		err = h.Repo.UpdateOrderPaidStatus(ctx, idOrder, *payload.Paid)
+		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
 		if err != nil {
 			if httpErr, ok := err.(*errors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)

@@ -90,9 +90,12 @@ func TenantMiddleware() func(http.Handler) http.Handler {
 				tenantSlug = "default"
 			}
 
-			// For now, we always assume tenant_id=1 (default). In a later step,
-			// this will be resolved from the tenants table using tenantSlug.
+			// Prefer tenant_id from token claims when present; otherwise fall back
+			// to the default tenant (1) for backwards compatibility.
 			var tenantID uint64 = 1
+			if tenantIDFloat, ok := claims["tenant_id"].(float64); ok && tenantIDFloat > 0 {
+				tenantID = uint64(tenantIDFloat)
+			}
 
 			ctx = context.WithValue(ctx, TenantSlugKey, tenantSlug)
 			ctx = context.WithValue(ctx, TenantIDKey, tenantID)

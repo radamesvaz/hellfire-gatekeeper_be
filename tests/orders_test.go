@@ -49,7 +49,8 @@ func TestGetAllOrders(t *testing.T) {
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -176,7 +177,8 @@ func TestGetOrderByID(t *testing.T) {
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -433,7 +435,8 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	assert.NoError(t, err, "Should be able to get created order ID")
 
 	// Generate JWT for authentication
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	assert.NoError(t, err, "Should be able to generate JWT")
 
 	// Update order status from 'pending' to 'preparing'
@@ -508,7 +511,8 @@ func TestUpdateOrderStatus_OrderNotFound(t *testing.T) {
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Generate JWT for authentication
-	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	assert.NoError(t, jwtErr, "Should be able to generate JWT")
 
 	// Try to update non-existent order
@@ -549,7 +553,8 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Generate JWT for authentication
-	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	assert.NoError(t, jwtErr, "Should be able to generate JWT")
 
 	// Test updating only paid status
@@ -629,7 +634,8 @@ func TestUpdateOrder_InvalidPayload(t *testing.T) {
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Generate JWT for authentication
-	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	assert.NoError(t, jwtErr, "Should be able to generate JWT")
 
 	// Test with empty payload
@@ -689,7 +695,8 @@ func TestGetAllOrdersWithIgnoreStatus(t *testing.T) {
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -753,7 +760,8 @@ func TestGetAllOrdersWithStatusFilter(t *testing.T) {
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -846,7 +854,8 @@ func TestGetAllOrdersWithCombinedFilters(t *testing.T) {
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}

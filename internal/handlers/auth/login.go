@@ -66,8 +66,8 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idRole := uModel.UserRole(user.IDRole)
-
-	token, err := lh.AuthService.GenerateJWT(user.ID, idRole, user.Email)
+	tenantID := user.TenantID
+	token, err := lh.AuthService.GenerateJWT(user.ID, idRole, user.Email, &tenantID)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return
@@ -160,7 +160,8 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate token for the new user
-	token, err := lh.AuthService.GenerateJWT(userID, uModel.UserRoleAdmin, req.Email)
+	tenantIDPtr := func(v uint64) *uint64 { return &v }(defaultTenantID)
+	token, err := lh.AuthService.GenerateJWT(userID, uModel.UserRoleAdmin, req.Email, tenantIDPtr)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return

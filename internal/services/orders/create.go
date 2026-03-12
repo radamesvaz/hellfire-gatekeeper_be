@@ -32,7 +32,7 @@ type productCreatorRepository interface {
 
 // tenantConfigRepository exposes just the configuration needed by the order
 // creation flow. It is implemented by the tenant repository.
-type tenantConfigRepository interface {
+type TenantConfigRepository interface {
 	GetGhostOrderTimeoutMinutes(ctx context.Context, tenantID uint64) (int, error)
 }
 
@@ -40,7 +40,7 @@ type Creator struct {
 	OrderRepo   orderCreatorRepository
 	UserRepo    userRepo.Repository
 	ProductRepo productCreatorRepository
-	TenantRepo  tenantConfigRepository
+	TenantRepo  TenantConfigRepository
 }
 
 // TODO multi-tenant: when tenant-specific config exists, this timeout should come from the
@@ -60,7 +60,7 @@ func NewCreator(
 	orderRepo orderCreatorRepository,
 	userRepo userRepo.Repository,
 	productRepo productCreatorRepository,
-	tenantRepo tenantConfigRepository,
+	tenantRepo TenantConfigRepository,
 ) *Creator {
 	return &Creator{
 		UserRepo:    userRepo,

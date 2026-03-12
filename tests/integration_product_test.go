@@ -256,7 +256,8 @@ func TestCreateProduct(t *testing.T) {
 
 	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -338,7 +339,8 @@ func TestCreateProductWithImages(t *testing.T) {
 	authRouter.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
 	authRouter.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -478,7 +480,8 @@ func TestUpdateProduct(t *testing.T) {
 
 	authRouter.HandleFunc("/products/{id}", handler.UpdateProduct).Methods("PUT")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -534,7 +537,8 @@ func TestDeleteProduct(t *testing.T) {
 
 	authRouter.HandleFunc("/products/{id}", handler.UpdateProductStatus).Methods("PATCH")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -604,7 +608,8 @@ func TestUpdateProductWithImages(t *testing.T) {
 	authRouter.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
 	authRouter.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}
@@ -764,7 +769,8 @@ func TestDeleteProductImage(t *testing.T) {
 	authRouter.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
 	authRouter.HandleFunc("/products/{id}/images", imageHandler.DeleteProductImage).Methods("DELETE")
 
-	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com")
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
 	if err != nil {
 		t.Fatalf("Error creating a JWT for integration testing: %v", err)
 	}

@@ -36,12 +36,17 @@ func (s *AuthService) ComparePasswords(hashedPwd string, plainPwd string) error 
 }
 
 // Generate a new JWT
-func (s *AuthService) GenerateJWT(userID uint64, roleID uModel.UserRole, email string) (string, error) {
+// tenantID is optional: nil means "no tenant" (e.g. superadmin/global user).
+func (s *AuthService) GenerateJWT(userID uint64, roleID uModel.UserRole, email string, tenantID *uint64) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"role_id": roleID,
 		"email":   email,
 		"exp":     time.Now().Add(time.Minute * time.Duration(s.expiration)).Unix(),
+	}
+
+	if tenantID != nil {
+		claims["tenant_id"] = *tenantID
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

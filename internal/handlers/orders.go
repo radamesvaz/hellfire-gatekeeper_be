@@ -111,7 +111,11 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		tenantID = 1
 	}
-	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo, h.TenantRepo)
+	var tenantCfgRepo orderService.TenantConfigRepository = nil
+	if h.TenantRepo != nil {
+		tenantCfgRepo = h.TenantRepo
+	}
+	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo, tenantCfgRepo)
 	err = orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)

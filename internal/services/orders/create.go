@@ -30,10 +30,17 @@ type productCreatorRepository interface {
 	DecrementProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantity uint64) (int64, error)
 }
 
+// tenantConfigRepository exposes just the configuration needed by the order
+// creation flow. It is implemented by the tenant repository.
+type tenantConfigRepository interface {
+	GetGhostOrderTimeoutMinutes(ctx context.Context, tenantID uint64) (int, error)
+}
+
 type Creator struct {
 	OrderRepo   orderCreatorRepository
 	UserRepo    userRepo.Repository
 	ProductRepo productCreatorRepository
+	TenantRepo  tenantConfigRepository
 }
 
 // TODO multi-tenant: when tenant-specific config exists, this timeout should come from the
@@ -53,11 +60,13 @@ func NewCreator(
 	orderRepo orderCreatorRepository,
 	userRepo userRepo.Repository,
 	productRepo productCreatorRepository,
+	tenantRepo tenantConfigRepository,
 ) *Creator {
 	return &Creator{
 		UserRepo:    userRepo,
 		ProductRepo: productRepo,
 		OrderRepo:   orderRepo,
+		TenantRepo:  tenantRepo,
 	}
 }
 
@@ -96,10 +105,20 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 		totalPrice += product.Price * float64(item.Quantity)
 	}
 
-	// Compute per-order expiration snapshot using the current global timeout.
-	// TODO multi-tenant: when tenant-specific timeout is implemented, this should use the
-	// tenant's configuration instead of the global env value.
+	// Compute per-order expiration snapshot using the current timeout.
+	// Prefer the tenant-specific configuration from the tenants table when available;
+	// fall back to the global env-based timeout otherwise.
 	timeoutMinutes := getGhostOrderTimeoutMinutes()
+	if c.TenantRepo != nil {
+		if perTenantMinutes, err := c.TenantRepo.GetGhostOrderTimeoutMinutes(ctx, tenantID); err != nil {
+			logger.Warn().
+				Err(err).
+				Uint64("tenant_id", tenantID).
+				Msg("Failed to read tenant-specific ghost order timeout, falling back to global env value")
+		} else if perTenantMinutes > 0 {
+			timeoutMinutes = perTenantMinutes
+		}
+	}
 	expiresAt := time.Now().Add(time.Duration(timeoutMinutes) * time.Minute)
 
 	tx, err := c.OrderRepo.BeginTx(ctx)

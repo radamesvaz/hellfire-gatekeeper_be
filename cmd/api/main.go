@@ -308,6 +308,7 @@ func main() {
 		Repo:        orderRepo,
 		UserRepo:    &userRepo,
 		ProductRepo: productRepo,
+		TenantRepo:  tenantRepo,
 	}
 
 	// Ghost order worker: cancel expired pending orders on an interval

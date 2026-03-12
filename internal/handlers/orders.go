@@ -16,6 +16,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
@@ -25,6 +26,7 @@ type OrderHandler struct {
 	Repo        *ordersRepository.OrderRepository
 	UserRepo    userRepo.Repository
 	ProductRepo *productRepo.ProductRepository
+	TenantRepo  *tenantRepository.Repository
 }
 
 // Get all orders
@@ -109,7 +111,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		tenantID = 1
 	}
-	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo)
+	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo, h.TenantRepo)
 	err = orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)

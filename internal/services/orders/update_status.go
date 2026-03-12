@@ -19,7 +19,7 @@ type OrderStatusRepository interface {
 
 // ProductStockRepository defines the interface for product stock operations
 type ProductStockRepository interface {
-	RevertProductStock(ctx context.Context, idProduct uint64, quantityToRevert uint64) error
+	RevertProductStock(ctx context.Context, tenantID, idProduct uint64, quantityToRevert uint64) error
 }
 
 type StatusUpdaterWithStock struct {
@@ -118,7 +118,7 @@ func (s *StatusUpdaterWithStock) revertOrderStock(ctx context.Context, tenantID,
 
 	// Revert stock for each item
 	for _, item := range items {
-		err = s.ProductRepo.RevertProductStock(ctx, item.IdProduct, item.Quantity)
+		err = s.ProductRepo.RevertProductStock(ctx, tenantID, item.IdProduct, item.Quantity)
 		if err != nil {
 			return fmt.Errorf("error reverting stock for product %d: %w", item.IdProduct, err)
 		}

@@ -16,10 +16,10 @@ type ProductRepository struct {
 	DB *sql.DB
 }
 
-// GetAllProducts gets all the products from the table
-func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product, error) {
-	logger.Debug().Msg("Getting all products")
-	rows, err := r.DB.Query("SELECT id_product, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products")
+// GetAllProducts gets all the products from the table for a tenant
+func (r *ProductRepository) GetAllProducts(_ context.Context, tenantID uint64) ([]pModel.Product, error) {
+	logger.Debug().Uint64("tenant_id", tenantID).Msg("Getting all products for tenant")
+	rows, err := r.DB.Query("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1", tenantID)
 	if err != nil {
 		logger.Err(err).Msg("Error getting the products")
 		return nil, err
@@ -33,6 +33,7 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 		var thumbnailURL sql.NullString
 		if err := rows.Scan(
 			&product.ID,
+			&product.TenantID,
 			&product.Name,
 			&product.Description,
 			&product.Price,
@@ -70,19 +71,21 @@ func (r *ProductRepository) GetAllProducts(_ context.Context) ([]pModel.Product,
 	return products, nil
 }
 
-// Getting a product by its ID
-func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) (pModel.Product, error) {
-	logger.Debug().Uint64("product_id", idProduct).Msg("Getting product by id")
+// Getting a product by its ID for a tenant
+func (r *ProductRepository) GetProductByID(_ context.Context, tenantID, idProduct uint64) (pModel.Product, error) {
+	logger.Debug().Uint64("tenant_id", tenantID).Uint64("product_id", idProduct).Msg("Getting product by id")
 
 	product := pModel.Product{}
 	var imageURLsJSON sql.NullString
 	var thumbnailURL sql.NullString
 
 	err := r.DB.QueryRow(
-		"SELECT id_product, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE id_product = $1",
+		"SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2",
+		tenantID,
 		idProduct,
 	).Scan(
 		&product.ID,
+		&product.TenantID,
 		&product.Name,
 		&product.Description,
 		&product.Price,
@@ -124,24 +127,25 @@ func (r *ProductRepository) GetProductByID(_ context.Context, idProduct uint64) 
 	return product, nil
 }
 
-// Getting multiple products product by their IDs
-func (r *ProductRepository) GetProductsByIDs(ctx context.Context, ids []uint64) ([]pModel.Product, error) {
+// Getting multiple products by their IDs for a tenant
+func (r *ProductRepository) GetProductsByIDs(ctx context.Context, tenantID uint64, ids []uint64) ([]pModel.Product, error) {
 	if len(ids) == 0 {
 		return nil, nil
 	}
 
 	// Generate placeholders
 	placeholders := make([]string, len(ids))
-	args := make([]interface{}, len(ids))
+	args := make([]interface{}, 0, len(ids)+1)
+	args = append(args, tenantID)
 	for i, id := range ids {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
-		args[i] = id
+		placeholders[i] = fmt.Sprintf("$%d", i+2)
+		args = append(args, id)
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id_product, name, price, stock 
+		SELECT id_product, tenant_id, name, price, stock 
 		FROM products 
-		WHERE id_product IN (%s)`, strings.Join(placeholders, ","))
+		WHERE tenant_id = $1 AND id_product IN (%s)`, strings.Join(placeholders, ","))
 
 	rows, err := r.DB.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -152,7 +156,7 @@ func (r *ProductRepository) GetProductsByIDs(ctx context.Context, ids []uint64) 
 	products := []pModel.Product{}
 	for rows.Next() {
 		var p pModel.Product
-		if err := rows.Scan(&p.ID, &p.Name, &p.Price, &p.Stock); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.Price, &p.Stock); err != nil {
 			return nil, fmt.Errorf("error scanning product: %w", err)
 		}
 		products = append(products, p)
@@ -161,8 +165,8 @@ func (r *ProductRepository) GetProductsByIDs(ctx context.Context, ids []uint64) 
 	return products, nil
 }
 
-// Creating a product
-func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Product) (pModel.Product, error) {
+// Creating a product for a tenant
+func (r *ProductRepository) CreateProduct(_ context.Context, tenantID uint64, product pModel.Product) (pModel.Product, error) {
 	logger.Debug().
 		Str("name", product.Name).
 		Float64("price", product.Price).
@@ -196,8 +200,9 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 	var insertedID uint64
 	err = r.DB.QueryRow(
 		`INSERT INTO products 
-		(name, description, price, available, stock, status, image_urls, thumbnail_url) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_product`,
+		(tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_product`,
+		tenantID,
 		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON), thumbnailValue).Scan(&insertedID)
 
 	if err != nil {
@@ -208,6 +213,7 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 	}
 
 	createdProduct.ID = insertedID
+	createdProduct.TenantID = tenantID
 	createdProduct.Name = product.Name
 	createdProduct.Description = product.Description
 	createdProduct.Price = product.Price
@@ -224,8 +230,8 @@ func (r *ProductRepository) CreateProduct(_ context.Context, product pModel.Prod
 	return createdProduct, nil
 }
 
-// Updating a product status
-func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uint64, status pModel.ProductStatus) error {
+// Updating a product status for a tenant
+func (r *ProductRepository) UpdateProductStatus(_ context.Context, tenantID, idProduct uint64, status pModel.ProductStatus) error {
 	logger.Debug().
 		Uint64("product_id", idProduct).
 		Str("status", string(status)).
@@ -241,8 +247,9 @@ func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uin
 	}
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET status = $1 WHERE id_product = $2",
+		"UPDATE products SET status = $1 WHERE tenant_id = $2 AND id_product = $3",
 		status,
+		tenantID,
 		idProduct,
 	)
 
@@ -277,8 +284,8 @@ func (r *ProductRepository) UpdateProductStatus(_ context.Context, idProduct uin
 	return nil
 }
 
-// Updating product
-func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Product) error {
+// Updating product for a tenant
+func (r *ProductRepository) UpdateProduct(_ context.Context, tenantID uint64, product pModel.Product) error {
 	logger.Debug().
 		Uint64("product_id", product.ID).
 		Str("name", product.Name).
@@ -301,7 +308,7 @@ func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Prod
 	}
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6, thumbnail_url = $7 WHERE id_product = $8",
+		"UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6, thumbnail_url = $7 WHERE tenant_id = $8 AND id_product = $9",
 		product.Name,
 		product.Description,
 		product.Price,
@@ -309,6 +316,7 @@ func (r *ProductRepository) UpdateProduct(_ context.Context, product pModel.Prod
 		product.Stock,
 		product.Status,
 		thumbnailValue,
+		tenantID,
 		product.ID,
 	)
 
@@ -351,16 +359,17 @@ func IsValidStatus(status pModel.ProductStatus) bool {
 	}
 }
 
-// UpdateProductStock updates only the stock of a product
-func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint64, newStock uint64) error {
+// UpdateProductStock updates only the stock of a product for a tenant
+func (r *ProductRepository) UpdateProductStock(_ context.Context, tenantID, idProduct uint64, newStock uint64) error {
 	logger.Debug().
 		Uint64("product_id", idProduct).
 		Uint64("new_stock", newStock).
 		Msg("Updating product stock")
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET stock = $1 WHERE id_product = $2",
+		"UPDATE products SET stock = $1 WHERE tenant_id = $2 AND id_product = $3",
 		newStock,
+		tenantID,
 		idProduct,
 	)
 
@@ -395,13 +404,13 @@ func (r *ProductRepository) UpdateProductStock(_ context.Context, idProduct uint
 }
 
 // RevertProductStock adds stock back to a product (used when orders are cancelled)
-func (r *ProductRepository) RevertProductStock(ctx context.Context, idProduct uint64, quantityToRevert uint64) error {
+func (r *ProductRepository) RevertProductStock(ctx context.Context, tenantID, idProduct uint64, quantityToRevert uint64) error {
 	if quantityToRevert == 0 {
 		return nil // Nothing to revert
 	}
 
 	// Get current product to verify it exists and get current stock
-	product, err := r.GetProductByID(ctx, idProduct)
+	product, err := r.GetProductByID(ctx, tenantID, idProduct)
 	if err != nil {
 		return fmt.Errorf("error getting product for stock revert: %w", err)
 	}
@@ -410,7 +419,7 @@ func (r *ProductRepository) RevertProductStock(ctx context.Context, idProduct ui
 	newStock := product.Stock + quantityToRevert
 
 	// Update the stock
-	err = r.UpdateProductStock(ctx, idProduct, newStock)
+	err = r.UpdateProductStock(ctx, tenantID, idProduct, newStock)
 	if err != nil {
 		return fmt.Errorf("error reverting product stock: %w", err)
 	}
@@ -426,11 +435,11 @@ func (r *ProductRepository) RevertProductStock(ctx context.Context, idProduct ui
 }
 
 // RevertProductStockTx adds stock back to a product within a transaction (atomic increment; for use in CancelExpiredOrders).
-func (r *ProductRepository) RevertProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantityToRevert uint64) error {
+func (r *ProductRepository) RevertProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantityToRevert uint64) error {
 	if quantityToRevert == 0 {
 		return nil
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE products SET stock = stock + $1 WHERE id_product = $2", quantityToRevert, idProduct)
+	result, err := tx.ExecContext(ctx, "UPDATE products SET stock = stock + $1 WHERE tenant_id = $2 AND id_product = $3", quantityToRevert, tenantID, idProduct)
 	if err != nil {
 		return fmt.Errorf("error reverting product stock in tx: %w", err)
 	}
@@ -444,15 +453,15 @@ func (r *ProductRepository) RevertProductStockTx(ctx context.Context, tx *sql.Tx
 	return nil
 }
 
-// DecrementProductStockTx atomically decrements product stock within a transaction.
+// DecrementProductStockTx atomically decrements product stock within a transaction for a tenant.
 // It updates only if stock >= quantity (prevents overselling). Returns rows affected (1 = success, 0 = insufficient stock).
-func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantity uint64) (int64, error) {
+func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error) {
 	if quantity == 0 {
 		return 1, nil
 	}
 	result, err := tx.ExecContext(ctx,
-		"UPDATE products SET stock = stock - $1 WHERE id_product = $2 AND stock >= $1",
-		quantity, idProduct,
+		"UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1",
+		quantity, tenantID, idProduct,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("error decrementing product stock in tx: %w", err)
@@ -466,9 +475,9 @@ func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql
 
 // UpdateProductImages updates the image URLs and thumbnail for a product
 func (r *ProductRepository) UpdateProductImages(
-		_ context.Context, 
-		idProduct uint64, 
-		imageURLs []string, 
+		_ context.Context,
+		tenantID, idProduct uint64,
+		imageURLs []string,
 		thumbnailURL string,
 	) error {
 	logger.Debug().
@@ -499,9 +508,10 @@ func (r *ProductRepository) UpdateProductImages(
 		Msg("Marshaled image URLs JSON")
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE id_product = $3",
+		"UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4",
 		string(imageURLsJSON),
 		thumbnailValue,
+		tenantID,
 		idProduct,
 	)
 
@@ -535,7 +545,7 @@ func (r *ProductRepository) UpdateProductImages(
 }
 
 // UpdateProductThumbnail updates only the thumbnail_url column for a product
-func (r *ProductRepository) UpdateProductThumbnail(_ context.Context, idProduct uint64, thumbnailURL string) error {
+func (r *ProductRepository) UpdateProductThumbnail(_ context.Context, tenantID, idProduct uint64, thumbnailURL string) error {
 	logger.Debug().
 		Uint64("product_id", idProduct).
 		Str("thumbnail_url", thumbnailURL).
@@ -549,8 +559,9 @@ func (r *ProductRepository) UpdateProductThumbnail(_ context.Context, idProduct 
 	}
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET thumbnail_url = $1 WHERE id_product = $2",
+		"UPDATE products SET thumbnail_url = $1 WHERE tenant_id = $2 AND id_product = $3",
 		thumbnailValue,
+		tenantID,
 		idProduct,
 	)
 	if err != nil {

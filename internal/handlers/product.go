@@ -22,7 +22,11 @@ type ProductHandler struct {
 // GetAllProducts - Get all products
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	products, err := h.Repo.GetAllProducts(ctx)
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+	products, err := h.Repo.GetAllProducts(ctx, tenantID)
 	if err != nil {
 		http.Error(w, "Failed to get products", http.StatusInternalServerError)
 		return
@@ -43,7 +47,11 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 	}
 
 	ctx := r.Context()
-	product, err := h.Repo.GetProductByID(ctx, id)
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+	product, err := h.Repo.GetProductByID(ctx, tenantID, id)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -75,6 +83,7 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 
 	// Create product
 	product := pModel.Product{
+		TenantID:    0, // will be overridden from context
 		Name:        req.Name,
 		Description: req.Description,
 		Price:       req.Price,
@@ -85,9 +94,14 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+	product.TenantID = tenantID
 
 	// Create product
-	newProduct, err := h.Repo.CreateProduct(ctx, product)
+	newProduct, err := h.Repo.CreateProduct(ctx, tenantID, product)
 	if err != nil {
 		http.Error(w, "Failed to create product", http.StatusInternalServerError)
 		return
@@ -138,8 +152,13 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
 	product := pModel.Product{
 		ID:           id,
+		TenantID:     tenantID,
 		Name:         req.Name,
 		Description:  req.Description,
 		Price:        req.Price,
@@ -151,7 +170,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update product basic fields
-	if err := h.Repo.UpdateProduct(ctx, product); err != nil {
+	if err := h.Repo.UpdateProduct(ctx, tenantID, product); err != nil {
 		http.Error(w, "Failed to update product", http.StatusInternalServerError)
 		return
 	}
@@ -203,7 +222,11 @@ func (h *ProductHandler) UpdateProductThumbnail(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	product, err := h.Repo.GetProductByID(ctx, id)
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+	product, err := h.Repo.GetProductByID(ctx, tenantID, id)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -226,7 +249,7 @@ func (h *ProductHandler) UpdateProductThumbnail(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := h.Repo.UpdateProductThumbnail(ctx, id, req.ThumbnailURL); err != nil {
+	if err := h.Repo.UpdateProductThumbnail(ctx, tenantID, id, req.ThumbnailURL); err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
 			return
@@ -277,7 +300,11 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 	}
 
 	ctx := r.Context()
-	if err := h.Repo.UpdateProductStatus(ctx, id, pModel.ProductStatus(req.Status)); err != nil {
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+	if err := h.Repo.UpdateProductStatus(ctx, tenantID, id, pModel.ProductStatus(req.Status)); err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
 			return
@@ -311,6 +338,7 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 // UpdateHistoryTable - Update the history table
 func (h *ProductHandler) UpdateHistoryTable(ctx context.Context, product *pModel.Product, idProduct uint64, idUser uint64, action pModel.ProductAction) error {
 	history := pModel.ProductHistory{
+		TenantID:     product.TenantID,
 		IDProduct:    idProduct,
 		Name:         product.Name,
 		Description:  product.Description,
@@ -324,5 +352,5 @@ func (h *ProductHandler) UpdateHistoryTable(ctx context.Context, product *pModel
 		Action:       action,
 	}
 
-	return h.Repo.CreateProductHistory(ctx, history)
+	return h.Repo.CreateProductHistory(ctx, history.TenantID, history)
 }

@@ -26,8 +26,8 @@ type orderCreatorRepository interface {
 }
 
 type productCreatorRepository interface {
-	GetProductsByIDs(ctx context.Context, ids []uint64) ([]pModel.Product, error)
-	DecrementProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantity uint64) (int64, error)
+	GetProductsByIDs(ctx context.Context, tenantID uint64, ids []uint64) ([]pModel.Product, error)
+	DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error)
 }
 
 // tenantConfigRepository exposes just the configuration needed by the order
@@ -84,7 +84,7 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 		productIDs[i] = item.IdProduct
 	}
 
-	products, err := c.ProductRepo.GetProductsByIDs(ctx, productIDs)
+	products, err := c.ProductRepo.GetProductsByIDs(ctx, tenantID, productIDs)
 	if err != nil {
 		return fmt.Errorf("error getting products: %w", err)
 	}
@@ -129,7 +129,7 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 
 	// Atomic stock decrement: only proceeds if stock >= quantity for each item
 	for _, item := range payload.Items {
-		rows, err := c.ProductRepo.DecrementProductStockTx(ctx, tx, item.IdProduct, item.Quantity)
+		rows, err := c.ProductRepo.DecrementProductStockTx(ctx, tx, tenantID, item.IdProduct, item.Quantity)
 		if err != nil {
 			return fmt.Errorf("error reserving stock: %w", err)
 		}

@@ -14,6 +14,7 @@ const (
 
 type Product struct {
 	ID           uint64        `json:"id_product" gorm:"primaryKey"`
+	TenantID     uint64        `json:"tenant_id"`
 	Name         string        `json:"name" gorm:"not null;unique"`
 	Description  string        `json:"description"`
 	Price        float64       `json:"price" gorm:"not null;check:price >= 0"`

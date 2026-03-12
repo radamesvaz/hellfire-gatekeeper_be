@@ -694,7 +694,7 @@ func TestUpdateProductWithImages(t *testing.T) {
 
 	// Verify the product was updated in the database
 	ctx := context.Background()
-	updatedProduct, err := repository.GetProductByID(ctx, 1)
+	updatedProduct, err := repository.GetProductByID(ctx, 1, 1)
 	require.NoError(t, err)
 
 	// Verify images were saved to Cloudinary
@@ -921,7 +921,7 @@ func TestDeleteProductImage(t *testing.T) {
 
 	// Step 5: Verify the image was removed from the database
 	ctx := context.Background()
-	updatedProduct, err := repository.GetProductByID(ctx, 1)
+	updatedProduct, err := repository.GetProductByID(ctx, 1, 1)
 	require.NoError(t, err)
 
 	assert.Len(t, updatedProduct.ImageURLs, 2) // Should have 2 images left

@@ -85,37 +85,41 @@ func TestProductRepository_CreateProductHistory(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			const tenantID = uint64(1)
 			if tt.expectedError {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products_history (
-							id_product, 
-							name, 
-							description, 
-							price, 
-							available, 
-							stock,
-							status, 
-							image_urls,
-							thumbnail_url,
-							modified_by, 
-							action
-							) 
-							VALUES (
-							$1,
-							$2, 
-							$3, 
-							$4, 
-							$5, 
-							$6, 
-							$7, 
-							$8,
-							$9,
-							$10, 
-							$11)`,
+		tenant_id,
+		id_product, 
+		name, 
+		description, 
+		price, 
+		available, 
+		stock,
+		status, 
+		image_urls,
+		thumbnail_url,
+		modified_by, 
+		action
+		) 
+		VALUES (
+		$1,
+		$2,
+		$3, 
+		$4, 
+		$5, 
+		$6, 
+		$7, 
+		$8,
+		$9,
+		$10, 
+		$11,
+		$12)`,
 					),
 				).
 					WithArgs(
+						tenantID,
 						tt.payload.IDProduct,
 						tt.payload.Name,
 						tt.payload.Description,
@@ -133,33 +137,36 @@ func TestProductRepository_CreateProductHistory(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO products_history (
-							id_product, 
-							name, 
-							description, 
-							price, 
-							available, 
-							stock,
-							status, 
-							image_urls,
-							thumbnail_url,
-							modified_by, 
-							action
-							) 
-							VALUES (
-							$1,
-							$2, 
-							$3, 
-							$4, 
-							$5, 
-							$6, 
-							$7, 
-							$8,
-							$9,
-							$10, 
-							$11)`,
+		tenant_id,
+		id_product, 
+		name, 
+		description, 
+		price, 
+		available, 
+		stock,
+		status, 
+		image_urls,
+		thumbnail_url,
+		modified_by, 
+		action
+		) 
+		VALUES (
+		$1,
+		$2,
+		$3, 
+		$4, 
+		$5, 
+		$6, 
+		$7, 
+		$8,
+		$9,
+		$10, 
+		$11,
+		$12)`,
 					),
 				).
 					WithArgs(
+						tenantID,
 						tt.payload.IDProduct,
 						tt.payload.Name,
 						tt.payload.Description,
@@ -175,7 +182,7 @@ func TestProductRepository_CreateProductHistory(t *testing.T) {
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
-			err := repo.CreateProductHistory(context.Background(), tt.payload)
+			err := repo.CreateProductHistory(context.Background(), tenantID, tt.payload)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {

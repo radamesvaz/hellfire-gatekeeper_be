@@ -40,8 +40,8 @@ type MockProductRepositoryWithStock struct {
 	mock.Mock
 }
 
-func (m *MockProductRepositoryWithStock) RevertProductStock(ctx context.Context, idProduct uint64, quantityToRevert uint64) error {
-	args := m.Called(ctx, idProduct, quantityToRevert)
+func (m *MockProductRepositoryWithStock) RevertProductStock(ctx context.Context, tenantID, idProduct uint64, quantityToRevert uint64) error {
+	args := m.Called(ctx, tenantID, idProduct, quantityToRevert)
 	return args.Error(0)
 }
 
@@ -75,8 +75,8 @@ func TestUpdateOrderStatus_AdminCancelsOrder_RevertsStock(t *testing.T) {
 	mockOrderRepo.On("GetOrderItemsByOrderID", mock.Anything, tenantID, uint64(1)).Return(orderItems, nil)
 
 	// Expect stock reversion for both products
-	mockProductRepo.On("RevertProductStock", mock.Anything, uint64(1), uint64(3)).Return(nil)
-	mockProductRepo.On("RevertProductStock", mock.Anything, uint64(2), uint64(2)).Return(nil)
+	mockProductRepo.On("RevertProductStock", mock.Anything, tenantID, uint64(1), uint64(3)).Return(nil)
+	mockProductRepo.On("RevertProductStock", mock.Anything, tenantID, uint64(2), uint64(2)).Return(nil)
 
 	// Create status updater with product repo
 	statusUpdater := &StatusUpdaterWithStock{
@@ -194,7 +194,7 @@ func TestUpdateOrderStatus_StockRevertFails_ReturnsError(t *testing.T) {
 	// Don't expect CreateOrderHistory to be called when stock reversion fails
 
 	// Stock reversion fails
-	mockProductRepo.On("RevertProductStock", mock.Anything, uint64(1), uint64(3)).Return(errors.ErrDatabaseOperation)
+	mockProductRepo.On("RevertProductStock", mock.Anything, tenantID, uint64(1), uint64(3)).Return(errors.ErrDatabaseOperation)
 
 	// Create status updater with product repo
 	statusUpdater := &StatusUpdaterWithStock{

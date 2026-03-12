@@ -34,8 +34,14 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+
 	// Get existing product (validates existence and gets current data)
-	existingProduct, err := h.Repo.GetProductByID(ctx, productID)
+	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -84,7 +90,7 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 	newThumbnail := selectThumbnail(existingProduct.ThumbnailURL, allImageURLs)
 
 	// Update product with all image URLs (existing + new)
-	err = h.Repo.UpdateProductImages(ctx, productID, allImageURLs, newThumbnail)
+	err = h.Repo.UpdateProductImages(ctx, tenantID, productID, allImageURLs, newThumbnail)
 	if err != nil {
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
@@ -97,7 +103,7 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	product := pModel.Product{ID: productID, ImageURLs: allImageURLs, ThumbnailURL: newThumbnail}
+	product := pModel.Product{ID: productID, TenantID: tenantID, ImageURLs: allImageURLs, ThumbnailURL: newThumbnail}
 	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
@@ -141,8 +147,14 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+
 	// Check if product exists
-	product, err := h.Repo.GetProductByID(ctx, productID)
+	product, err := h.Repo.GetProductByID(ctx, tenantID, productID)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -174,7 +186,7 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 	newThumbnail := selectThumbnail(product.ThumbnailURL, newImageURLs)
 
 	// Update product with new image URLs
-	err = h.Repo.UpdateProductImages(ctx, productID, newImageURLs, newThumbnail)
+	err = h.Repo.UpdateProductImages(ctx, tenantID, productID, newImageURLs, newThumbnail)
 	if err != nil {
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
@@ -197,7 +209,7 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	updatedProduct := pModel.Product{ID: productID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
+	updatedProduct := pModel.Product{ID: productID, TenantID: tenantID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
 	err = h.UpdateHistoryTable(ctx, &updatedProduct, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
@@ -232,8 +244,14 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Get tenant ID from context
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+
 	// Check if product exists
-	existingProduct, err := h.Repo.GetProductByID(ctx, productID)
+	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -291,7 +309,7 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 	newThumbnail := selectThumbnail(existingProduct.ThumbnailURL, newImageURLs)
 
 	// Update product with new image URLs (replace all)
-	err = h.Repo.UpdateProductImages(ctx, productID, newImageURLs, newThumbnail)
+	err = h.Repo.UpdateProductImages(ctx, tenantID, productID, newImageURLs, newThumbnail)
 	if err != nil {
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
@@ -304,7 +322,7 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	product := pModel.Product{ID: productID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
+	product := pModel.Product{ID: productID, TenantID: tenantID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
 	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
@@ -344,6 +362,7 @@ func selectThumbnail(current string, imageURLs []string) string {
 // UpdateHistoryTable - Update the history table (shared with ProductHandler)
 func (h *ImageHandler) UpdateHistoryTable(ctx context.Context, product *pModel.Product, idProduct uint64, idUser uint64, action pModel.ProductAction) error {
 	history := pModel.ProductHistory{
+		TenantID:     product.TenantID,
 		IDProduct:    idProduct,
 		Name:         product.Name,
 		Description:  product.Description,
@@ -357,5 +376,5 @@ func (h *ImageHandler) UpdateHistoryTable(ctx context.Context, product *pModel.P
 		Action:       action,
 	}
 
-	return h.Repo.CreateProductHistory(ctx, history)
+	return h.Repo.CreateProductHistory(ctx, history.TenantID, history)
 }

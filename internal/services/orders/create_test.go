@@ -49,7 +49,7 @@ type MockProductRepo2 struct {
 	stockSnapshot  map[uint64]uint64 // mutable copy used by DecrementProductStockTx
 }
 
-func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, ids []uint64) ([]pModel.Product, error) {
+func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, tenantID uint64, ids []uint64) ([]pModel.Product, error) {
 	var products []pModel.Product
 	for _, id := range ids {
 		if product, exists := m.Products[id]; exists {
@@ -59,7 +59,7 @@ func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, ids []uint64) (
 	return products, nil
 }
 
-func (m *MockProductRepo2) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, idProduct uint64, quantity uint64) (int64, error) {
+func (m *MockProductRepo2) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error) {
 	if m.stockSnapshot == nil {
 		m.stockSnapshot = make(map[uint64]uint64)
 		for id, p := range m.Products {

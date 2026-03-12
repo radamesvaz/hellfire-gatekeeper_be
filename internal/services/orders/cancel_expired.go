@@ -133,7 +133,7 @@ func (c *ExpiredOrderCanceller) revertStockAndRecordHistoryTx(ctx context.Contex
 		return fmt.Errorf("get order items: %w", err)
 	}
 	for _, item := range items {
-		if err := c.ProductRepo.RevertProductStockTx(ctx, tx, item.IdProduct, item.Quantity); err != nil {
+		if err := c.ProductRepo.RevertProductStockTx(ctx, tx, order.TenantID, item.IdProduct, item.Quantity); err != nil {
 			return fmt.Errorf("revert stock product %d: %w", item.IdProduct, err)
 		}
 	}

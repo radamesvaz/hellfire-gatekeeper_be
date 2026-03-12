@@ -49,16 +49,18 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 			name: "HAPPY PATH: finding an user by its email",
 			mockRows: sqlmock.NewRows([]string{
 				"id_user",
+				"tenant_id",
 				"id_role",
 				"name",
 				"email",
-				"password",
+				"password_hash",
 				"phone",
 				"created_on",
 				"deleted_at",
 			}).AddRow(
-				"1",
-				"1",
+				1,
+				1,
+				1,
 				"Admin",
 				"admin@test.com",
 				hashedPassword,
@@ -66,8 +68,9 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				createdOn,
 				nil,
 			).AddRow(
-				"2",
-				"2",
+				2,
+				1,
+				2,
 				"client",
 				"client@test.com",
 				nil,
@@ -79,6 +82,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 			expectedError: false,
 			expected: userModel.User{
 				ID:        1,
+				TenantID:  1,
 				IDRole:    1,
 				Name:      "Admin",
 				Email:     "admin@test.com",
@@ -93,16 +97,18 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 			expectedError: true,
 			mockRows: sqlmock.NewRows([]string{
 				"id_user",
+				"tenant_id",
 				"id_role",
 				"name",
 				"email",
-				"password",
+				"password_hash",
 				"phone",
 				"created_on",
 				"deleted_at",
 			}).AddRow(
-				"1",
-				"1",
+				1,
+				1,
+				1,
 				"Admin",
 				"admin@test.com",
 				hashedPassword,
@@ -110,8 +116,9 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 				createdOn,
 				nil,
 			).AddRow(
-				"2",
-				"2",
+				2,
+				1,
+				2,
 				"client",
 				"client@test.com",
 				nil,
@@ -122,6 +129,7 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 			mockError: errors.ErrUserNotFound,
 			expected: userModel.User{
 				ID:        1,
+				TenantID:  1,
 				IDRole:    1,
 				Name:      "Admin",
 				Email:     "admin@test.com",
@@ -133,23 +141,24 @@ func TestUserRepository_GetUserByEmail(t *testing.T) {
 			errorStatus:    404,
 		},
 	}
+	const tenantID = 1
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL"),
+					regexp.QuoteMeta("SELECT id_user, tenant_id, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL"),
 				).
-					WithArgs(tt.emailForLookup).
+					WithArgs(tenantID, tt.emailForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL"),
+					regexp.QuoteMeta("SELECT id_user, tenant_id, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL"),
 				).
-					WithArgs(tt.emailForLookup).
+					WithArgs(tenantID, tt.emailForLookup).
 					WillReturnRows(tt.mockRows)
 			}
 
-			user, err := repo.GetUserByEmail(tt.emailForLookup)
+			user, err := repo.GetUserByEmail(tenantID, tt.emailForLookup)
 			if tt.expectedError {
 				assert.Error(t, err)
 				assert.Equal(t, err, tt.mockError)
@@ -175,13 +184,14 @@ func TestUserRepository_GetUserByEmail_SoftDeletedUser(t *testing.T) {
 	repo := &UserRepository{DB: db}
 	email := "softdeleted@test.com"
 
+	const tenantID = 1
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL"),
+		regexp.QuoteMeta("SELECT id_user, tenant_id, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL"),
 	).
-		WithArgs(email).
+		WithArgs(tenantID, email).
 		WillReturnError(sql.ErrNoRows)
 
-	_, err = repo.GetUserByEmail(email)
+	_, err = repo.GetUserByEmail(tenantID, email)
 	assert.Error(t, err)
 	assert.Equal(t, errors.ErrUserNotFound, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -215,6 +225,7 @@ func TestUserRepository_CreateUser(t *testing.T) {
 		{
 			name: "HAPPY PATH: Create a user of ADMIN role",
 			payload: userModel.CreateUserRequest{
+				TenantID: 1,
 				IDRole:   userModel.UserRoleAdmin,
 				Name:     "Test admin 1",
 				Email:    "adminemail@email.com",
@@ -228,10 +239,11 @@ func TestUserRepository_CreateUser(t *testing.T) {
 		{
 			name: "HAPPY PATH: Create a user of CLIENT role",
 			payload: userModel.CreateUserRequest{
-				IDRole: userModel.UserRoleClient,
-				Name:   "Test client 1",
-				Email:  "client@email.com",
-				Phone:  "55-88888",
+				TenantID: 1,
+				IDRole:   userModel.UserRoleClient,
+				Name:     "Test client 1",
+				Email:    "client@email.com",
+				Phone:    "55-88888",
 			},
 			mockError:     nil,
 			expectedError: false,
@@ -242,15 +254,15 @@ func TestUserRepository_CreateUser(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id_user"),
+					regexp.QuoteMeta("INSERT INTO users (tenant_id, id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_user"),
 				).
-					WithArgs(tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
+					WithArgs(tt.payload.TenantID, tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
 					WillReturnRows(sqlmock.NewRows([]string{"id_user"}).AddRow(tt.expected))
 			} else {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("INSERT INTO users (id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id_user"),
+					regexp.QuoteMeta("INSERT INTO users (tenant_id, id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_user"),
 				).
-					WithArgs(tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
+					WithArgs(tt.payload.TenantID, tt.payload.IDRole, tt.payload.Name, tt.payload.Email, tt.payload.Password, tt.payload.Phone).
 					WillReturnRows(sqlmock.NewRows([]string{"id_user"}).AddRow(tt.expected))
 			}
 

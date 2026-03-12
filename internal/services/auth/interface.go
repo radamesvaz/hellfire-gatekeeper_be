@@ -8,6 +8,6 @@ import (
 type Service interface {
 	HashPassword(plainPwd string) (string, error)
 	ComparePasswords(hashPwd string, plainPwd string) error
-	GenerateJWT(userID uint64, roleID uModel.UserRole, email string) (string, error)
+	GenerateJWT(userID uint64, roleID uModel.UserRole, email string, tenantID *uint64) (string, error)
 	ValidateToken(token string) (*jwt.Token, error)
 }

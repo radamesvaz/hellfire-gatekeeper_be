@@ -17,16 +17,18 @@ func NewUserRepository(db *sql.DB) Repository {
 	return &UserRepository{DB: db}
 }
 
-func (r *UserRepository) GetUserByEmail(email string) (uModel.User, error) {
-	logger.Debug().Str("email", email).Msg("Getting user by email")
+func (r *UserRepository) GetUserByEmail(tenantID uint64, email string) (uModel.User, error) {
+	logger.Debug().Uint64("tenant_id", tenantID).Str("email", email).Msg("Getting user by email")
 
 	user := uModel.User{}
 
 	err := r.DB.QueryRow(
-		"SELECT id_user, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE email = $1 AND deleted_at IS NULL",
+		"SELECT id_user, tenant_id, id_role, name, email, password_hash, phone, created_on, deleted_at FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL",
+		tenantID,
 		email,
 	).Scan(
 		&user.ID,
+		&user.TenantID,
 		&user.IDRole,
 		&user.Name,
 		&user.Email,
@@ -56,12 +58,13 @@ func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserR
 		Uint64("role_id", uint64(user.IDRole)).
 		Msg("Creating user")
 
-	query := `INSERT INTO users (id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5) RETURNING id_user`
+	query := `INSERT INTO users (tenant_id, id_role, name, email, password_hash, phone) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id_user`
 
 	var insertedID uint64
 	err = r.DB.QueryRowContext(
 		ctx,
 		query,
+		user.TenantID,
 		user.IDRole,
 		user.Name,
 		user.Email,
@@ -83,13 +86,14 @@ func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserR
 	return insertedID, nil
 }
 
-// EmailExists checks if an email already exists in the database
-func (r *UserRepository) EmailExists(email string) (bool, error) {
-	logger.Debug().Str("email", email).Msg("Checking if email exists")
+// EmailExists checks if an email already exists in the database for the given tenant.
+func (r *UserRepository) EmailExists(tenantID uint64, email string) (bool, error) {
+	logger.Debug().Uint64("tenant_id", tenantID).Str("email", email).Msg("Checking if email exists")
 
 	var count int
 	err := r.DB.QueryRow(
-		"SELECT COUNT(*) FROM users WHERE email = $1 AND deleted_at IS NULL",
+		"SELECT COUNT(*) FROM users WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL",
+		tenantID,
 		email,
 	).Scan(&count)
 

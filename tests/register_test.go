@@ -66,7 +66,7 @@ func TestRegister_Success(t *testing.T) {
 	assert.Equal(t, "Admin user registered successfully", response.Message)
 
 	// Verify user was created in database with admin role
-	createdUser, err := repository.GetUserByEmail("admin@test.com")
+	createdUser, err := repository.GetUserByEmail(1, "admin@test.com")
 	require.NoError(t, err)
 	assert.Equal(t, "Test Admin", createdUser.Name)
 	assert.Equal(t, "admin@test.com", createdUser.Email)

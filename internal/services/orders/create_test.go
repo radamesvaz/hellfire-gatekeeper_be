@@ -24,11 +24,11 @@ type MockUserRepo struct {
 	CreateUserErr  error
 }
 
-func (m *MockUserRepo) GetUserByEmail(email string) (uModel.User, error) {
+func (m *MockUserRepo) GetUserByEmail(tenantID uint64, email string) (uModel.User, error) {
 	if m.ShouldCreate {
 		return uModel.User{}, internalErrors.ErrUserNotFound
 	}
-	return uModel.User{ID: 1, Email: email}, nil
+	return uModel.User{ID: 1, TenantID: tenantID, Email: email}, nil
 }
 
 func (m *MockUserRepo) CreateUser(ctx context.Context, input uModel.CreateUserRequest) (uint64, error) {
@@ -39,7 +39,7 @@ func (m *MockUserRepo) CreateUser(ctx context.Context, input uModel.CreateUserRe
 	return 2, nil
 }
 
-func (m *MockUserRepo) EmailExists(email string) (bool, error) {
+func (m *MockUserRepo) EmailExists(tenantID uint64, email string) (bool, error) {
 	return false, nil
 }
 
@@ -117,7 +117,7 @@ func TestFindOrCreateUser_CreatesUserIfNotExists(t *testing.T) {
 		Phone: "12345678",
 	}
 
-	user, err := service.GetOrCreateUser(ctx, input)
+	user, err := service.GetOrCreateUser(ctx, 1, input)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, user)
@@ -136,7 +136,7 @@ func TestFindOrCreateUser_DoesNotCreateAnUser(t *testing.T) {
 		Phone: "12345678",
 	}
 
-	user, err := service.GetOrCreateUser(ctx, input)
+	user, err := service.GetOrCreateUser(ctx, 1, input)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, user)
@@ -158,7 +158,7 @@ func TestFindOrCreateUser_CreateUserError(t *testing.T) {
 		Phone: "12345678",
 	}
 
-	user, err := service.GetOrCreateUser(ctx, input)
+	user, err := service.GetOrCreateUser(ctx, 1, input)
 
 	assert.Error(t, err)
 	assert.Nil(t, user)
@@ -202,7 +202,7 @@ func TestCreateOrder_UpdatesProductStock(t *testing.T) {
 	}
 
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(ctx, payload, deliveryDate)
+	err = service.CreateOrder(ctx, 1, payload, deliveryDate)
 
 	assert.NoError(t, err)
 	assert.True(t, mockOrderRepo.OrderCreated)
@@ -247,7 +247,7 @@ func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {
 	}
 
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(ctx, payload, deliveryDate)
+	err = service.CreateOrder(ctx, 1, payload, deliveryDate)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not enough product stock")
@@ -293,7 +293,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 		DeliveryDate: "2024-12-25",
 	}
 	deliveryDate, _ := time.Parse("2006-01-02", firstPayload.DeliveryDate)
-	err = service.CreateOrder(ctx, firstPayload, deliveryDate)
+	err = service.CreateOrder(ctx, 1, firstPayload, deliveryDate)
 	assert.NoError(t, err)
 	assert.True(t, mockOrderRepo.OrderCreated)
 	assert.Equal(t, uint64(0), mockProductRepo.StockUpdates[1])
@@ -314,7 +314,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 		DeliveryDate: "2024-12-26",
 	}
 	deliveryDate2, _ := time.Parse("2006-01-02", secondPayload.DeliveryDate)
-	err2 := service.CreateOrder(ctx, secondPayload, deliveryDate2)
+	err2 := service.CreateOrder(ctx, 1, secondPayload, deliveryDate2)
 	assert.Error(t, err2)
 	assert.Contains(t, err2.Error(), "not enough product stock")
 	assert.False(t, mockOrderRepo.OrderCreated)

@@ -16,6 +16,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
@@ -25,6 +26,7 @@ type OrderHandler struct {
 	Repo        *ordersRepository.OrderRepository
 	UserRepo    userRepo.Repository
 	ProductRepo *productRepo.ProductRepository
+	TenantRepo  *tenantRepository.Repository
 }
 
 // Get all orders
@@ -104,8 +106,17 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo)
-	err = orderCreator.CreateOrder(ctx, payload, deliveryDate)
+	// Tenant: from path (public POST /t/{tenant_slug}/orders) or from auth context; fallback 1 for legacy POST /orders.
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+	var tenantCfgRepo orderService.TenantConfigRepository = nil
+	if h.TenantRepo != nil {
+		tenantCfgRepo = h.TenantRepo
+	}
+	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo, tenantCfgRepo)
+	err = orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
 		return

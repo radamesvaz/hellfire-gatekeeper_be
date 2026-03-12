@@ -23,6 +23,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
@@ -298,12 +299,16 @@ func main() {
 		AuthService: *authService,
 	}
 
+	// Tenant setup (for path-based public routes)
+	tenantRepo := &tenantRepository.Repository{DB: db}
+
 	// Order setup
 	orderRepo := &ordersRepository.OrderRepository{DB: db}
 	orderHandler := &h.OrderHandler{
 		Repo:        orderRepo,
 		UserRepo:    &userRepo,
 		ProductRepo: productRepo,
+		TenantRepo:  tenantRepo,
 	}
 
 	// Ghost order worker: cancel expired pending orders on an interval
@@ -336,6 +341,7 @@ func main() {
 		"Origin",
 		"Access-Control-Request-Method",
 		"Access-Control-Request-Headers",
+		"X-Tenant-Slug",
 	})
 	allowCredentials := handlers.AllowCredentials()
 
@@ -359,9 +365,10 @@ func main() {
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/register", authHandler.Register).Methods("POST")
 
-	// Test middleware endpoint
+	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()
 	auth.Use(middleware.AuthMiddleware(authService))
+	auth.Use(middleware.TenantMiddleware())
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
@@ -377,10 +384,17 @@ func main() {
 	auth.HandleFunc("/products/{id}/images", imageHandler.ReplaceProductImages).Methods("PUT")
 	auth.HandleFunc("/products/{id}/images", imageHandler.DeleteProductImage).Methods("DELETE")
 
-	// Order endnpoints
+	// Order endpoints (authenticated: list, get, update)
 	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 	auth.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+
+	// Public create order: tenant from path /t/{tenant_slug}/orders or header X-Tenant-Slug on /orders
+	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()
+	tPublic.Use(middleware.TenantFromPathOrHeader(tenantRepo))
+	tPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	// Legacy: POST /orders (no tenant in path; handler falls back to tenant 1)
 	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// Wrap router with CORS

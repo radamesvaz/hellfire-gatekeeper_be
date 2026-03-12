@@ -16,6 +16,7 @@ const (
 
 type Order struct {
 	ID                 uint64      `json:"id_order" gorm:"primaryKey"`
+	TenantID           uint64      `json:"tenant_id"`
 	IdUser             uint64      `json:"id_user" gorm:"not null;unique"`
 	Status             OrderStatus `json:"status"`
 	Price              float64     `json:"total_price" gorm:"not null;check:price >= 0"`
@@ -29,6 +30,7 @@ type Order struct {
 
 type OrderResponse struct {
 	ID                 uint64      `json:"id_order" gorm:"primaryKey"`
+	TenantID           uint64      `json:"tenant_id"`
 	IdUser             uint64      `json:"id_user" gorm:"not null"`
 	User               string      `json:"user_name" gorm:"not null;unique"`
 	Phone              string      `json:"phone"`
@@ -53,6 +55,7 @@ type CreateOrderPayload struct {
 }
 
 type CreateOrderRequest struct {
+	TenantID     uint64      `json:"tenant_id"`
 	IdUser       uint64      `json:"id_user" gorm:"not null;unique"`
 	DeliveryDate time.Time   `json:"delivery_date" validate:"required,datetime=2006-01-02"`
 	Note         string      `json:"note"`

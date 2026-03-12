@@ -11,10 +11,10 @@ import (
 
 // OrderStatusRepository defines the interface for order status operations
 type OrderStatusRepository interface {
-	GetOrderByID(ctx context.Context, id uint64) (oModel.OrderResponse, error)
-	UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error
+	GetOrderByID(ctx context.Context, tenantID, id uint64) (oModel.OrderResponse, error)
+	UpdateOrderStatus(ctx context.Context, tenantID, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error
 	CreateOrderHistory(ctx context.Context, order oModel.OrderHistory) error
-	GetOrderItemsByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderItems, error)
+	GetOrderItemsByOrderID(ctx context.Context, tenantID, orderID uint64) ([]oModel.OrderItems, error)
 }
 
 // ProductStockRepository defines the interface for product stock operations
@@ -41,9 +41,9 @@ func (s *StatusUpdaterWithStock) validateStatusTransition(currentStatus, newStat
 
 // UpdateOrderStatusWithStockReversion updates order status and reverts stock if admin cancels order.
 // cancellationReason is optional; only used when newStatus is cancelled (e.g. user-provided reason or nil).
-func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string) error {
+func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, tenantID, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string) error {
 	// Get the current order
-	order, err := s.OrderRepo.GetOrderByID(ctx, orderID)
+	order, err := s.OrderRepo.GetOrderByID(ctx, tenantID, orderID)
 	if err != nil {
 		return err
 	}
@@ -57,14 +57,14 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 	if newStatus == oModel.StatusCancelled {
 		effectiveCancellationReason = cancellationReason
 	}
-	err = s.OrderRepo.UpdateOrderStatus(ctx, orderID, newStatus, effectiveCancellationReason)
+	err = s.OrderRepo.UpdateOrderStatus(ctx, tenantID, orderID, newStatus, effectiveCancellationReason)
 	if err != nil {
 		return fmt.Errorf("error updating order status: %w", err)
 	}
 
 	// If admin is cancelling the order, revert the stock
 	if isAdmin && newStatus == oModel.StatusCancelled {
-		err = s.revertOrderStock(ctx, orderID)
+		err = s.revertOrderStock(ctx, tenantID, orderID)
 		if err != nil {
 			// If stock reversion fails, we should return the error
 			// This is because the order status has already been updated
@@ -109,9 +109,9 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 }
 
 // revertOrderStock reverts the stock for all items in an order
-func (s *StatusUpdaterWithStock) revertOrderStock(ctx context.Context, orderID uint64) error {
+func (s *StatusUpdaterWithStock) revertOrderStock(ctx context.Context, tenantID, orderID uint64) error {
 	// Get all items for the order
-	items, err := s.OrderRepo.GetOrderItemsByOrderID(ctx, orderID)
+	items, err := s.OrderRepo.GetOrderItemsByOrderID(ctx, tenantID, orderID)
 	if err != nil {
 		return fmt.Errorf("error getting order items: %w", err)
 	}

@@ -27,7 +27,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 	deliveryDate := time.Now().AddDate(0, 0, 7)
 	idUserOne := uint64(1)
 
-	tests := []struct {
+		tests := []struct {
 		name          string
 		payload       oModel.OrderHistory
 		mockError     error
@@ -36,6 +36,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		{
 			name: "HAPPY PATH: Creating an order history",
 			payload: oModel.OrderHistory{
+				TenantID:     1,
 				IDOrder:      1,
 				IdUser:       &idUserOne,
 				Status:       oModel.StatusPending,
@@ -52,6 +53,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		{
 			name: "HAPPY PATH: Updating an order history",
 			payload: oModel.OrderHistory{
+				TenantID:     1,
 				IDOrder:      1,
 				IdUser:       &idUserOne,
 				Status:       oModel.StatusPreparing,
@@ -68,6 +70,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		{
 			name: "HAPPY PATH: Deleting an order history",
 			payload: oModel.OrderHistory{
+				TenantID:     1,
 				IDOrder:      1,
 				IdUser:       &idUserOne,
 				Status:       oModel.StatusCancelled,
@@ -84,6 +87,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		{
 			name: "ERROR PATH: Database error",
 			payload: oModel.OrderHistory{
+				TenantID:     1,
 				IDOrder:      1,
 				IdUser:       &idUserOne,
 				Status:       oModel.StatusPending,
@@ -105,56 +109,60 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO orders_history (
-						id_order, 
-						id_user, 
-						status, 
-						total_price, 
-						note,
-						delivery_date,
-						paid,
-						cancellation_reason,
-						modified_by, 
-						action
-						) 
-						VALUES (
-						$1,
-						$2, 
-						$3, 
-						$4, 
-						$5,
-						$6,
-						$7,
-						$8,
-						$9, 
-						$10)`,
+		tenant_id,
+		id_order, 
+		id_user, 
+		status, 
+		total_price, 
+		note,
+		delivery_date,
+		paid,
+		cancellation_reason,
+		modified_by, 
+		action
+		) 
+		VALUES (
+		$1,
+		$2,
+		$3, 
+		$4, 
+		$5, 
+		$6,
+		$7,
+		$8,
+		$9, 
+		$10, 
+		$11)`,
 					),
 				).WillReturnError(tt.mockError)
 			} else {
 				mock.ExpectExec(
 					regexp.QuoteMeta(
 						`INSERT INTO orders_history (
-						id_order, 
-						id_user, 
-						status, 
-						total_price, 
-						note,
-						delivery_date,
-						paid,
-						cancellation_reason,
-						modified_by, 
-						action
-						) 
-						VALUES (
-						$1,
-						$2, 
-						$3, 
-						$4, 
-						$5,
-						$6,
-						$7,
-						$8,
-						$9, 
-						$10)`,
+		tenant_id,
+		id_order, 
+		id_user, 
+		status, 
+		total_price, 
+		note,
+		delivery_date,
+		paid,
+		cancellation_reason,
+		modified_by, 
+		action
+		) 
+		VALUES (
+		$1,
+		$2,
+		$3, 
+		$4, 
+		$5, 
+		$6,
+		$7,
+		$8,
+		$9, 
+		$10, 
+		$11)`,
 					),
 				).WillReturnResult(sqlmock.NewResult(1, 1))
 			}

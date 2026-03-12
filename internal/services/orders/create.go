@@ -21,7 +21,7 @@ import (
 type orderCreatorRepository interface {
 	BeginTx(ctx context.Context) (*sql.Tx, error)
 	CreateOrder(ctx context.Context, tx *sql.Tx, order oModel.CreateOrderRequest) (uint64, error)
-	CreateOrderItems(ctx context.Context, tx *sql.Tx, items []oModel.OrderItemRequest) error
+	CreateOrderItems(ctx context.Context, tx *sql.Tx, tenantID uint64, items []oModel.OrderItemRequest) error
 	CreateOrderHistoryTx(ctx context.Context, tx *sql.Tx, order oModel.OrderHistory) error
 }
 
@@ -139,6 +139,7 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 	}
 
 	orderRequest := oModel.CreateOrderRequest{
+		TenantID:     tenantID,
 		IdUser:       user.ID,
 		DeliveryDate: deliveryDate,
 		Note:         payload.Note,
@@ -164,17 +165,18 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 			Quantity:            item.Quantity,
 		}
 	}
-	if err := c.OrderRepo.CreateOrderItems(ctx, tx, orderItems); err != nil {
+	if err := c.OrderRepo.CreateOrderItems(ctx, tx, tenantID, orderItems); err != nil {
 		return fmt.Errorf("error creating order items: %w", err)
 	}
 
 	idUser := user.ID
 	orderHistory := oModel.OrderHistory{
-		IDOrder: orderID,
-		IdUser:  &idUser,
-		Status:  orderRequest.Status,
-		Price:   orderRequest.Price,
-		Note:    orderRequest.Note,
+		TenantID: tenantID,
+		IDOrder:  orderID,
+		IdUser:   &idUser,
+		Status:   orderRequest.Status,
+		Price:    orderRequest.Price,
+		Note:     orderRequest.Note,
 		DeliveryDate: sql.NullTime{
 			Time:  deliveryDate,
 			Valid: !deliveryDate.IsZero(),

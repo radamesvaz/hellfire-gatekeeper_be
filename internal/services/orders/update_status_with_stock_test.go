@@ -15,13 +15,13 @@ type MockOrderStatusRepositoryWithStock struct {
 	mock.Mock
 }
 
-func (m *MockOrderStatusRepositoryWithStock) GetOrderByID(ctx context.Context, id uint64) (oModel.OrderResponse, error) {
-	args := m.Called(ctx, id)
+func (m *MockOrderStatusRepositoryWithStock) GetOrderByID(ctx context.Context, tenantID, id uint64) (oModel.OrderResponse, error) {
+	args := m.Called(ctx, tenantID, id)
 	return args.Get(0).(oModel.OrderResponse), args.Error(1)
 }
 
-func (m *MockOrderStatusRepositoryWithStock) UpdateOrderStatus(ctx context.Context, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
-	args := m.Called(ctx, orderID, status, cancellationReason)
+func (m *MockOrderStatusRepositoryWithStock) UpdateOrderStatus(ctx context.Context, tenantID, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
+	args := m.Called(ctx, tenantID, orderID, status, cancellationReason)
 	return args.Error(0)
 }
 
@@ -30,8 +30,8 @@ func (m *MockOrderStatusRepositoryWithStock) CreateOrderHistory(ctx context.Cont
 	return args.Error(0)
 }
 
-func (m *MockOrderStatusRepositoryWithStock) GetOrderItemsByOrderID(ctx context.Context, orderID uint64) ([]oModel.OrderItems, error) {
-	args := m.Called(ctx, orderID)
+func (m *MockOrderStatusRepositoryWithStock) GetOrderItemsByOrderID(ctx context.Context, tenantID, orderID uint64) ([]oModel.OrderItems, error) {
+	args := m.Called(ctx, tenantID, orderID)
 	return args.Get(0).([]oModel.OrderItems), args.Error(1)
 }
 
@@ -51,10 +51,11 @@ func TestUpdateOrderStatus_AdminCancelsOrder_RevertsStock(t *testing.T) {
 
 	// Setup order data
 	order := oModel.OrderResponse{
-		ID:     1,
-		IdUser: 1,
-		Status: oModel.StatusPending,
-		Price:  15.0,
+		ID:       1,
+		TenantID: 1,
+		IdUser:   1,
+		Status:   oModel.StatusPending,
+		Price:    15.0,
 		OrderItems: []oModel.OrderItems{
 			{ID: 1, IdOrder: 1, IdProduct: 1, Name: "Product 1", Quantity: 3},
 			{ID: 2, IdOrder: 1, IdProduct: 2, Name: "Product 2", Quantity: 2},
@@ -67,10 +68,11 @@ func TestUpdateOrderStatus_AdminCancelsOrder_RevertsStock(t *testing.T) {
 	}
 
 	// Setup expectations
-	mockOrderRepo.On("GetOrderByID", mock.Anything, uint64(1)).Return(order, nil)
-	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, uint64(1), oModel.StatusCancelled, (*string)(nil)).Return(nil)
+	const tenantID = uint64(1)
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, tenantID, uint64(1), oModel.StatusCancelled, (*string)(nil)).Return(nil)
 	mockOrderRepo.On("CreateOrderHistory", mock.Anything, mock.Anything).Return(nil)
-	mockOrderRepo.On("GetOrderItemsByOrderID", mock.Anything, uint64(1)).Return(orderItems, nil)
+	mockOrderRepo.On("GetOrderItemsByOrderID", mock.Anything, tenantID, uint64(1)).Return(orderItems, nil)
 
 	// Expect stock reversion for both products
 	mockProductRepo.On("RevertProductStock", mock.Anything, uint64(1), uint64(3)).Return(nil)
@@ -83,7 +85,7 @@ func TestUpdateOrderStatus_AdminCancelsOrder_RevertsStock(t *testing.T) {
 	}
 
 	// Execute
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), 1, oModel.StatusCancelled, 1, true, nil)
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil)
 
 	// Assert
 	assert.NoError(t, err)
@@ -97,15 +99,17 @@ func TestUpdateOrderStatus_ClientCancelsOrder_NoStockRevert(t *testing.T) {
 
 	// Setup order data
 	order := oModel.OrderResponse{
-		ID:     1,
-		IdUser: 2, // Client user
-		Status: oModel.StatusPending,
-		Price:  15.0,
+		ID:       1,
+		TenantID: 1,
+		IdUser:   2, // Client user
+		Status:   oModel.StatusPending,
+		Price:    15.0,
 	}
 
 	// Setup expectations
-	mockOrderRepo.On("GetOrderByID", mock.Anything, uint64(1)).Return(order, nil)
-	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, uint64(1), oModel.StatusCancelled, (*string)(nil)).Return(nil)
+	const tenantID = uint64(1)
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, tenantID, uint64(1), oModel.StatusCancelled, (*string)(nil)).Return(nil)
 	mockOrderRepo.On("CreateOrderHistory", mock.Anything, mock.Anything).Return(nil)
 
 	// Should NOT call stock reversion for client
@@ -118,7 +122,7 @@ func TestUpdateOrderStatus_ClientCancelsOrder_NoStockRevert(t *testing.T) {
 	}
 
 	// Execute
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), 1, oModel.StatusCancelled, 2, false, nil) // Client role
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 2, false, nil) // Client role
 
 	// Assert
 	assert.NoError(t, err)
@@ -133,15 +137,17 @@ func TestUpdateOrderStatus_NonCancelledStatus_NoStockRevert(t *testing.T) {
 
 	// Setup order data
 	order := oModel.OrderResponse{
-		ID:     1,
-		IdUser: 1,
-		Status: oModel.StatusPending,
-		Price:  15.0,
+		ID:       1,
+		TenantID: 1,
+		IdUser:   1,
+		Status:   oModel.StatusPending,
+		Price:    15.0,
 	}
 
 	// Setup expectations
-	mockOrderRepo.On("GetOrderByID", mock.Anything, uint64(1)).Return(order, nil)
-	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, uint64(1), oModel.StatusPreparing, (*string)(nil)).Return(nil)
+	const tenantID = uint64(1)
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).Return(nil)
 	mockOrderRepo.On("CreateOrderHistory", mock.Anything, mock.Anything).Return(nil)
 
 	// Should NOT call stock reversion for non-cancelled status
@@ -154,7 +160,7 @@ func TestUpdateOrderStatus_NonCancelledStatus_NoStockRevert(t *testing.T) {
 	}
 
 	// Execute
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), 1, oModel.StatusPreparing, 1, true, nil) // Admin but not cancelled
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil) // Admin but not cancelled
 
 	// Assert
 	assert.NoError(t, err)
@@ -169,10 +175,11 @@ func TestUpdateOrderStatus_StockRevertFails_ReturnsError(t *testing.T) {
 
 	// Setup order data
 	order := oModel.OrderResponse{
-		ID:     1,
-		IdUser: 1,
-		Status: oModel.StatusPending,
-		Price:  15.0,
+		ID:       1,
+		TenantID: 1,
+		IdUser:   1,
+		Status:   oModel.StatusPending,
+		Price:    15.0,
 	}
 
 	orderItems := []oModel.OrderItems{
@@ -180,9 +187,10 @@ func TestUpdateOrderStatus_StockRevertFails_ReturnsError(t *testing.T) {
 	}
 
 	// Setup expectations
-	mockOrderRepo.On("GetOrderByID", mock.Anything, uint64(1)).Return(order, nil)
-	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, uint64(1), oModel.StatusCancelled, (*string)(nil)).Return(nil)
-	mockOrderRepo.On("GetOrderItemsByOrderID", mock.Anything, uint64(1)).Return(orderItems, nil)
+	const tenantID = uint64(1)
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, tenantID, uint64(1), oModel.StatusCancelled, (*string)(nil)).Return(nil)
+	mockOrderRepo.On("GetOrderItemsByOrderID", mock.Anything, tenantID, uint64(1)).Return(orderItems, nil)
 	// Don't expect CreateOrderHistory to be called when stock reversion fails
 
 	// Stock reversion fails
@@ -195,7 +203,7 @@ func TestUpdateOrderStatus_StockRevertFails_ReturnsError(t *testing.T) {
 	}
 
 	// Execute
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), 1, oModel.StatusCancelled, 1, true, nil)
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil)
 
 	// Assert
 	assert.Error(t, err)

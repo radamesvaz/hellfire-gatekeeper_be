@@ -14,6 +14,7 @@ const (
 
 type OrderHistory struct {
 	ID                 uint64       `json:"id_order_history" gorm:"primaryKey"`
+	TenantID           uint64       `json:"tenant_id"`
 	IDOrder            uint64       `json:"id_order" gorm:"not null"`
 	IdUser             *uint64      `json:"id_user"` // nil when order's user was deleted (ON DELETE SET NULL)
 	Status             OrderStatus  `json:"status"`

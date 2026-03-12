@@ -97,7 +97,7 @@ func (m *MockOrderRepo2) CreateOrder(ctx context.Context, tx *sql.Tx, order oMod
 	return m.OrderID, nil
 }
 
-func (m *MockOrderRepo2) CreateOrderItems(ctx context.Context, tx *sql.Tx, items []oModel.OrderItemRequest) error {
+func (m *MockOrderRepo2) CreateOrderItems(ctx context.Context, tx *sql.Tx, tenantID uint64, items []oModel.OrderItemRequest) error {
 	return nil
 }
 

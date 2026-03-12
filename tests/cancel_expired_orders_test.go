@@ -33,8 +33,8 @@ func TestCancelExpiredOrders_Integration(t *testing.T) {
 	recentCreated := time.Now().Add(-5 * time.Minute)
 	deliveryDate := time.Now().AddDate(0, 0, 7)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO orders (id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES (2, 'pending', 20.0, 'ghost order', $1, $2, false)`, ghostCreated, deliveryDate)
+	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
+		VALUES (1, 2, 'pending', 20.0, 'ghost order', $1, $2, false)`, ghostCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var ghostOrderID int
@@ -46,21 +46,21 @@ func TestCancelExpiredOrders_Integration(t *testing.T) {
 	_, err = db.ExecContext(ctx, `UPDATE orders SET expires_at = $1 WHERE id_order = $2`, time.Now().Add(-time.Minute), ghostOrderID)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, 1, 2), ($1, 2, 1)`, ghostOrderID)
+	_, err = db.ExecContext(ctx, `INSERT INTO order_items (tenant_id, id_order, id_product, quantity) VALUES (1, $1, 1, 2), (1, $1, 2, 1)`, ghostOrderID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `UPDATE products SET stock = stock - 2 WHERE id_product = 1`)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `UPDATE products SET stock = stock - 1 WHERE id_product = 2`)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO orders (id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES (2, 'pending', 10.0, 'recent order', $1, $2, false)`, recentCreated, deliveryDate)
+	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
+		VALUES (1, 2, 'pending', 10.0, 'recent order', $1, $2, false)`, recentCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var recentOrderID int
 	err = db.QueryRowContext(ctx, `SELECT id_order FROM orders WHERE note = 'recent order'`).Scan(&recentOrderID)
 	require.NoError(t, err)
-	_, err = db.ExecContext(ctx, `INSERT INTO order_items (id_order, id_product, quantity) VALUES ($1, 1, 1)`, recentOrderID)
+	_, err = db.ExecContext(ctx, `INSERT INTO order_items (tenant_id, id_order, id_product, quantity) VALUES (1, $1, 1, 1)`, recentOrderID)
 	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `UPDATE products SET stock = stock - 1 WHERE id_product = 1`)
 	require.NoError(t, err)
@@ -118,8 +118,8 @@ func TestCancelExpiredOrders_Integration_PaidOrderNotCancelled(t *testing.T) {
 	oldCreated := time.Now().Add(-2 * time.Hour)
 	deliveryDate := time.Now().AddDate(0, 0, 7)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO orders (id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES (2, 'pending', 15.0, 'old but paid', $1, $2, true)`, oldCreated, deliveryDate)
+	_, err := db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
+		VALUES (1, 2, 'pending', 15.0, 'old but paid', $1, $2, true)`, oldCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var orderID int

@@ -7,7 +7,7 @@ import (
 )
 
 type Repository interface {
-	GetUserByEmail(email string) (uModel.User, error)
+	GetUserByEmail(tenantID uint64, email string) (uModel.User, error)
 	CreateUser(ctx context.Context, user uModel.CreateUserRequest) (id uint64, err error)
-	EmailExists(email string) (bool, error)
+	EmailExists(tenantID uint64, email string) (bool, error)
 }

@@ -13,6 +13,7 @@ const (
 
 type User struct {
 	ID        uint64       `json:"id_user" gorm:"primaryKey"`
+	TenantID  uint64       `json:"tenant_id,omitempty"`
 	IDRole    UserRole     `json:"role"`
 	Name      string       `json:"name" gorm:"not null"`
 	Email     string       `json:"email" gorm:"not null;unique"`
@@ -23,6 +24,7 @@ type User struct {
 }
 
 type CreateUserRequest struct {
+	TenantID uint64   `json:"tenant_id"`
 	IDRole   UserRole `json:"role"`
 	Name     string   `json:"name" gorm:"not null"`
 	Email    string   `json:"email" gorm:"not null;unique"`

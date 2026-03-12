@@ -104,8 +104,13 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Tenant: from path (public POST /t/{tenant_slug}/orders) or from auth context; fallback 1 for legacy POST /orders.
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
 	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo)
-	err = orderCreator.CreateOrder(ctx, payload, deliveryDate)
+	err = orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
 		return

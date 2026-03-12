@@ -52,7 +52,9 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := lh.UserRepo.GetUserByEmail(req.Email)
+	// Login without tenant in path: use default tenant (1). Later, use /t/{tenant_slug}/login and resolve from context.
+	const defaultTenantID = 1
+	user, err := lh.UserRepo.GetUserByEmail(defaultTenantID, req.Email)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusInternalServerError)
 		return
@@ -114,8 +116,9 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if email already exists
-	exists, err := lh.UserRepo.EmailExists(req.Email)
+	// Check if email already exists (default tenant until path-based tenant for register)
+	const defaultTenantID = 1
+	exists, err := lh.UserRepo.EmailExists(defaultTenantID, req.Email)
 	if err != nil {
 		if httpErr, ok := err.(*errors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -136,8 +139,9 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create user
+	// Create user (default tenant until path-based tenant for register)
 	createUserReq := uModel.CreateUserRequest{
+		TenantID: defaultTenantID,
 		IDRole:   uModel.UserRoleAdmin, // Default role for new users (administrators)
 		Name:     req.Name,
 		Email:    req.Email,

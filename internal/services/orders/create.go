@@ -62,9 +62,9 @@ func NewCreator(
 }
 
 // CreateOrder creates a costumer order
-func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPayload, deliveryDate time.Time) error {
-	// Find user or create it if not found
-	user, err := c.GetOrCreateUser(ctx, payload)
+func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oModel.CreateOrderPayload, deliveryDate time.Time) error {
+	// Find user or create it if not found (scoped to tenant)
+	user, err := c.GetOrCreateUser(ctx, tenantID, payload)
 	if err != nil {
 		return fmt.Errorf("error getting or creating user: %w", err)
 	}
@@ -175,14 +175,14 @@ func (c *Creator) CreateOrder(ctx context.Context, payload oModel.CreateOrderPay
 	return nil
 }
 
-func (c *Creator) GetOrCreateUser(ctx context.Context, payload oModel.CreateOrderPayload) (*uModel.User, error) {
-	user, err := c.UserRepo.GetUserByEmail(payload.Email)
+func (c *Creator) GetOrCreateUser(ctx context.Context, tenantID uint64, payload oModel.CreateOrderPayload) (*uModel.User, error) {
+	user, err := c.UserRepo.GetUserByEmail(tenantID, payload.Email)
 	if err == nil {
 		return &user, nil
 	}
 
 	if stdErrors.Is(err, errors.ErrUserNotFound) {
-		id, err := c.CreateUser(ctx, payload)
+		id, err := c.CreateUser(ctx, tenantID, payload)
 		if err != nil {
 			return nil, fmt.Errorf("error creating user: %w", err)
 		}
@@ -197,18 +197,14 @@ func (c *Creator) GetOrCreateUser(ctx context.Context, payload oModel.CreateOrde
 	return nil, fmt.Errorf("error retrieving user: %w", err)
 }
 
-func (c *Creator) CreateUser(ctx context.Context, user oModel.CreateOrderPayload) (id uint64, err error) {
-	// Get the client role ID dynamically
-	clientRoleID, err := c.getClientRoleID(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("Error getting client role ID: %w", err)
-	}
-
+// CreateUser creates a user in the order flow: always as client (customer), scoped to the given tenant.
+func (c *Creator) CreateUser(ctx context.Context, tenantID uint64, user oModel.CreateOrderPayload) (id uint64, err error) {
 	createUserRequest := uModel.CreateUserRequest{
-		IDRole: uModel.UserRole(clientRoleID),
-		Name:   user.Name,
-		Email:  user.Email,
-		Phone:  user.Phone,
+		TenantID: tenantID,
+		IDRole:   uModel.UserRoleClient, // customer placing the order, not admin/staff
+		Name:     user.Name,
+		Email:    user.Email,
+		Phone:    user.Phone,
 	}
 
 	userID, err := c.UserRepo.CreateUser(ctx, createUserRequest)
@@ -217,22 +213,4 @@ func (c *Creator) CreateUser(ctx context.Context, user oModel.CreateOrderPayload
 	}
 
 	return userID, nil
-}
-
-func (c *Creator) getClientRoleID(ctx context.Context) (uint64, error) {
-	// For now, we'll use a simple approach - the client role is always the second role
-	// In a real application, you might want to add a method to the repository
-	// or pass the DB connection to this service
-	return 2, nil
-}
-
-func mapItemsToInternalModel(input []oModel.CreateOrderItemInput) []oModel.OrderItemRequest {
-	items := make([]oModel.OrderItemRequest, len(input))
-	for i, item := range input {
-		items[i] = oModel.OrderItemRequest{
-			IdProduct: item.IdProduct,
-			Quantity:  item.Quantity,
-		}
-	}
-	return items
 }

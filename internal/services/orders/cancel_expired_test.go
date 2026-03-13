@@ -9,6 +9,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	orderRepo "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,8 +19,12 @@ func TestExpiredOrderCanceller_CancelExpiredOrders_NoExpiredOrders(t *testing.T)
 	require.NoError(t, err)
 	defer db.Close()
 
-	// Single transaction: Begin, Claim (UPDATE ... RETURNING returns 0 rows), Commit
+	// Single tenant, no expired orders: Begin, Claim (UPDATE ... RETURNING returns 0 rows), Commit
 	const tenantID = uint64(1)
+	tenantRepository := &tenantRepo.Repository{DB: db}
+
+	mock.ExpectQuery("SELECT id FROM tenants").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(tenantID))
 	mock.ExpectBegin()
 	mock.ExpectQuery("UPDATE orders").
 		WithArgs("expired", "Cancelación automática: tiempo de espera de pago agotado", tenantID, sqlmock.AnyArg()).
@@ -33,6 +38,7 @@ func TestExpiredOrderCanceller_CancelExpiredOrders_NoExpiredOrders(t *testing.T)
 	canceller := &ExpiredOrderCanceller{
 		OrderRepo:      orderRepository,
 		ProductRepo:    productRepository,
+		TenantRepo:     tenantRepository,
 		TimeoutMinutes: 30,
 	}
 
@@ -45,9 +51,10 @@ func TestExpiredOrderCanceller_CancelExpiredOrders_NoExpiredOrders(t *testing.T)
 func TestNewExpiredOrderCanceller_TimeoutFromEnv(t *testing.T) {
 	orderRepository := &orderRepo.OrderRepository{}
 	productRepository := &productRepo.ProductRepository{}
+	tenantRepository := &tenantRepo.Repository{}
 
 	t.Setenv("GHOST_ORDER_TIMEOUT_MINUTES", "15")
-	canceller := NewExpiredOrderCanceller(orderRepository, productRepository)
+	canceller := NewExpiredOrderCanceller(orderRepository, productRepository, tenantRepository)
 	assert.Equal(t, 15, canceller.TimeoutMinutes, "timeout should be read from env when valid")
 }
 
@@ -55,7 +62,8 @@ func TestNewExpiredOrderCanceller_DefaultTimeout(t *testing.T) {
 	t.Setenv("GHOST_ORDER_TIMEOUT_MINUTES", "")
 	orderRepository := &orderRepo.OrderRepository{}
 	productRepository := &productRepo.ProductRepository{}
-	canceller := NewExpiredOrderCanceller(orderRepository, productRepository)
+	tenantRepository := &tenantRepo.Repository{}
+	canceller := NewExpiredOrderCanceller(orderRepository, productRepository, tenantRepository)
 	assert.Equal(t, defaultGhostOrderTimeoutMinutes, canceller.TimeoutMinutes)
 }
 
@@ -73,13 +81,14 @@ func TestExpiredOrderCanceller_expirationTimeCalculation(t *testing.T) {
 func TestNewExpiredOrderCanceller_InvalidEnvUsesDefault(t *testing.T) {
 	orderRepository := &orderRepo.OrderRepository{}
 	productRepository := &productRepo.ProductRepository{}
+	tenantRepository := &tenantRepo.Repository{}
 
 	t.Setenv("GHOST_ORDER_TIMEOUT_MINUTES", "invalid")
-	canceller := NewExpiredOrderCanceller(orderRepository, productRepository)
+	canceller := NewExpiredOrderCanceller(orderRepository, productRepository, tenantRepository)
 	assert.Equal(t, defaultGhostOrderTimeoutMinutes, canceller.TimeoutMinutes)
 
 	t.Setenv("GHOST_ORDER_TIMEOUT_MINUTES", "0")
-	canceller = NewExpiredOrderCanceller(orderRepository, productRepository)
+	canceller = NewExpiredOrderCanceller(orderRepository, productRepository, tenantRepository)
 	assert.Equal(t, defaultGhostOrderTimeoutMinutes, canceller.TimeoutMinutes)
 
 	os.Unsetenv("GHOST_ORDER_TIMEOUT_MINUTES")

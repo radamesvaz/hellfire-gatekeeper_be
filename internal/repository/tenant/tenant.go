@@ -49,3 +49,33 @@ func (r *Repository) GetGhostOrderTimeoutMinutes(ctx context.Context, tenantID u
 	}
 	return minutes, nil
 }
+
+// ListActiveTenantIDs returns the IDs of tenants that are currently active and
+// whose subscription is valid. It mirrors the availability conditions used in
+// GetBySlug so that public and background flows see a consistent view of which
+// tenants can operate.
+func (r *Repository) ListActiveTenantIDs(ctx context.Context) ([]uint64, error) {
+	rows, err := r.DB.QueryContext(ctx,
+		`SELECT id FROM tenants
+		 WHERE is_active = true
+		   AND subscription_status = 'active'
+		   AND (current_period_end IS NULL OR current_period_end > NOW())`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list active tenants: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []uint64
+	for rows.Next() {
+		var id uint64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan active tenant id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate active tenant ids: %w", err)
+	}
+	return ids, nil
+}

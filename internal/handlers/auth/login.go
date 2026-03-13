@@ -7,6 +7,7 @@ import (
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
+	"github.com/radamesvaz/bakery-app/internal/middleware"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
@@ -52,9 +53,15 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Login without tenant in path: use default tenant (1). Later, use /t/{tenant_slug}/login and resolve from context.
+	// Resolve tenant from context when available (multi-tenant path /t/{tenant_slug}/auth/login),
+	// falling back to defaultTenantID=1 for legacy /login without tenant in path.
 	const defaultTenantID = 1
-	user, err := lh.UserRepo.GetUserByEmail(defaultTenantID, req.Email)
+	tenantID := uint64(defaultTenantID)
+	if id, err := middleware.GetTenantIDFromContext(r.Context()); err == nil && id > 0 {
+		tenantID = id
+	}
+
+	user, err := lh.UserRepo.GetUserByEmail(tenantID, req.Email)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusInternalServerError)
 		return
@@ -66,8 +73,8 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	idRole := uModel.UserRole(user.IDRole)
-	tenantID := user.TenantID
-	token, err := lh.AuthService.GenerateJWT(user.ID, idRole, user.Email, &tenantID)
+	resolvedTenantID := user.TenantID
+	token, err := lh.AuthService.GenerateJWT(user.ID, idRole, user.Email, &resolvedTenantID)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)
 		return
@@ -116,9 +123,15 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if email already exists (default tenant until path-based tenant for register)
+	// Resolve tenant from context when available (multi-tenant path /t/{tenant_slug}/auth/register),
+	// falling back to defaultTenantID=1 for legacy /register without tenant in path.
 	const defaultTenantID = 1
-	exists, err := lh.UserRepo.EmailExists(defaultTenantID, req.Email)
+	tenantID := uint64(defaultTenantID)
+	if id, err := middleware.GetTenantIDFromContext(r.Context()); err == nil && id > 0 {
+		tenantID = id
+	}
+
+	exists, err := lh.UserRepo.EmailExists(tenantID, req.Email)
 	if err != nil {
 		if httpErr, ok := err.(*errors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -139,9 +152,9 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create user (default tenant until path-based tenant for register)
+	// Create user in resolved tenant
 	createUserReq := uModel.CreateUserRequest{
-		TenantID: defaultTenantID,
+		TenantID: tenantID,
 		IDRole:   uModel.UserRoleAdmin, // Default role for new users (administrators)
 		Name:     req.Name,
 		Email:    req.Email,
@@ -160,7 +173,7 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate token for the new user
-	tenantIDPtr := func(v uint64) *uint64 { return &v }(defaultTenantID)
+	tenantIDPtr := func(v uint64) *uint64 { return &v }(tenantID)
 	token, err := lh.AuthService.GenerateJWT(userID, uModel.UserRoleAdmin, req.Email, tenantIDPtr)
 	if err != nil {
 		http.Error(w, "Could not generate token", http.StatusInternalServerError)

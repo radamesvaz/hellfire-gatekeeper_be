@@ -9,9 +9,10 @@ import (
 	"time"
 
 	"github.com/radamesvaz/bakery-app/internal/logger"
-	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	orderRepo "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
+	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
 const (
@@ -24,6 +25,7 @@ const (
 type ExpiredOrderCanceller struct {
 	OrderRepo      *orderRepo.OrderRepository
 	ProductRepo    *productRepo.ProductRepository
+	TenantRepo     *tenantRepo.Repository
 	TimeoutMinutes int // From env today; in multi-tenant will come from DB per tenant (see NewExpiredOrderCanceller doc).
 }
 
@@ -33,7 +35,7 @@ type ExpiredOrderCanceller struct {
 // e.g. a per-tenant config (tenant_config or similar). CancelExpiredOrders will then need to
 // resolve timeout per tenant and process expired orders per tenant. Keep this in mind when
 // implementing multi-tenant support to avoid losing traceability of this design decision.
-func NewExpiredOrderCanceller(orderRepo *orderRepo.OrderRepository, productRepo *productRepo.ProductRepository) *ExpiredOrderCanceller {
+func NewExpiredOrderCanceller(orderRepo *orderRepo.OrderRepository, productRepo *productRepo.ProductRepository, tenantRepo *tenantRepo.Repository) *ExpiredOrderCanceller {
 	timeout := defaultGhostOrderTimeoutMinutes
 	if v := os.Getenv("GHOST_ORDER_TIMEOUT_MINUTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -43,6 +45,7 @@ func NewExpiredOrderCanceller(orderRepo *orderRepo.OrderRepository, productRepo 
 	return &ExpiredOrderCanceller{
 		OrderRepo:      orderRepo,
 		ProductRepo:    productRepo,
+		TenantRepo:     tenantRepo,
 		TimeoutMinutes: timeout,
 	}
 }
@@ -57,41 +60,55 @@ func (c *ExpiredOrderCanceller) CancelExpiredOrders(ctx context.Context) (cancel
 	now := time.Now()
 	reason := systemCancellationReason
 
-	tx, err := c.OrderRepo.DB.BeginTx(ctx, nil)
+	tenantIDs, err := c.TenantRepo.ListActiveTenantIDs(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("begin tx: %w", err)
+		return 0, fmt.Errorf("list active tenants: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
-
-	// NOTE: for now we use tenant_id = 1; once orders are fully multi-tenant,
-	// this cron must iterate over all active tenants and call ClaimExpiredPendingOrdersTx per tenant.
-	const defaultTenantID = 1
-	claimed, err := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, defaultTenantID, now, oModel.StatusExpired, &reason)
-	if err != nil {
-		return 0, fmt.Errorf("claim expired pending orders: %w", err)
+	if len(tenantIDs) == 0 {
+		logger.Info().Msg("CancelExpiredOrders: no active tenants found, nothing to process")
+		return 0, nil
 	}
 
-	logger.Info().
-		Int("count", len(claimed)).
-		Time("now", now).
-		Int("timeout_minutes", c.TimeoutMinutes).
-		Msg("CancelExpiredOrders: claimed expired pending orders (using expires_at < now())")
+	totalCancelled := 0
 
-	for _, order := range claimed {
-		if processErr := c.revertStockAndRecordHistoryTx(ctx, tx, order); processErr != nil {
-			return 0, fmt.Errorf("process claimed order %d: %w", order.ID, processErr)
+	for _, tenantID := range tenantIDs {
+		tx, beginErr := c.OrderRepo.DB.BeginTx(ctx, nil)
+		if beginErr != nil {
+			return totalCancelled, fmt.Errorf("begin tx for tenant %d: %w", tenantID, beginErr)
 		}
-	}
 
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit tx: %w", err)
+		claimed, claimErr := c.OrderRepo.ClaimExpiredPendingOrdersTx(ctx, tx, tenantID, now, oModel.StatusExpired, &reason)
+		if claimErr != nil {
+			_ = tx.Rollback()
+			return totalCancelled, fmt.Errorf("claim expired pending orders for tenant %d: %w", tenantID, claimErr)
+		}
+
+		logger.Info().
+			Uint64("tenant_id", tenantID).
+			Int("count", len(claimed)).
+			Time("now", now).
+			Int("timeout_minutes", c.TimeoutMinutes).
+			Msg("CancelExpiredOrders: claimed expired pending orders (using expires_at < now())")
+
+		for _, order := range claimed {
+			if processErr := c.revertStockAndRecordHistoryTx(ctx, tx, order); processErr != nil {
+				_ = tx.Rollback()
+				return totalCancelled, fmt.Errorf("process claimed order %d for tenant %d: %w", order.ID, tenantID, processErr)
+			}
+		}
+
+		if commitErr := tx.Commit(); commitErr != nil {
+			return totalCancelled, fmt.Errorf("commit tx for tenant %d: %w", tenantID, commitErr)
+		}
+
+		totalCancelled += len(claimed)
 	}
 
 	logger.Info().
-		Int("expired", len(claimed)).
-		Int("found", len(claimed)).
-		Msg("CancelExpiredOrders: finished (marked as expired)")
-	return len(claimed), nil
+		Int("expired", totalCancelled).
+		Int("found", totalCancelled).
+		Msg("CancelExpiredOrders: finished (marked as expired) across tenants")
+	return totalCancelled, nil
 }
 
 // RunGhostOrderWorker runs CancelExpiredOrders every intervalMinutes until ctx is cancelled.

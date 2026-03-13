@@ -313,7 +313,7 @@ func main() {
 
 	// Ghost order worker: cancel expired pending orders on an interval
 	ghostOrderIntervalMin := parseIntWithDefault(os.Getenv("GHOST_ORDER_CRON_INTERVAL_MINUTES"), 5)
-	ghostCanceller := orderService.NewExpiredOrderCanceller(orderRepo, productRepo)
+	ghostCanceller := orderService.NewExpiredOrderCanceller(orderRepo, productRepo, tenantRepo)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	var workerWg sync.WaitGroup
 	workerWg.Add(1)
@@ -361,9 +361,15 @@ func main() {
 
 	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
-	// Auth endpoints
+	// Auth endpoints (legacy single-tenant)
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/register", authHandler.Register).Methods("POST")
+
+	// Auth endpoints (multi-tenant, path-based)
+	tAuth := r.PathPrefix("/t/{tenant_slug}/auth").Subrouter()
+	tAuth.Use(middleware.TenantFromPathOrHeader(tenantRepo))
+	tAuth.HandleFunc("/login", authHandler.Login).Methods("POST")
+	tAuth.HandleFunc("/register", authHandler.Register).Methods("POST")
 
 	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()

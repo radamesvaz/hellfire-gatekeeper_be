@@ -9,6 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 type contextKey string
@@ -76,10 +77,7 @@ func TenantMiddleware() func(http.Handler) http.Handler {
 			// Determine if user is superadmin based on role_id claim.
 			isSuperadmin := false
 			if roleIDFloat, ok := claims["role_id"].(float64); ok {
-				// Today, role_id=1 is admin; we treat it as superadmin in the
-				// multi-tenant model.
-				const userRoleAdmin = 1
-				if uint64(roleIDFloat) == userRoleAdmin {
+				if uint64(roleIDFloat) == uint64(uModel.UserRoleAdmin) {
 					isSuperadmin = true
 				}
 			}

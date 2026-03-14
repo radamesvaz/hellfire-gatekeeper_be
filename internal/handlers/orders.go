@@ -20,6 +20,7 @@ import (
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 type OrderHandler struct {
@@ -259,7 +260,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Check if user is admin for cancellation
-		isAdmin := userRole == 1 // Admin role ID is 1
+		isAdmin := userRole == uint64(uModel.UserRoleAdmin)
 
 		// Create status updater service with stock reversion capability
 		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)

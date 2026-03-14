@@ -26,6 +26,7 @@ import (
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	brandingService "github.com/radamesvaz/bakery-app/internal/services/branding"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 
@@ -291,6 +292,13 @@ func main() {
 		ImageService: imageService,
 	}
 
+	// Tenant setup (for path-based public routes and branding)
+	tenantRepo := &tenantRepository.Repository{DB: db}
+
+	// Branding setup
+	brandingSvc := brandingService.New(tenantRepo, imageService)
+	brandingHandler := &h.BrandingHandler{BrandingService: brandingSvc}
+
 	// Auth setup
 	userRepo := user.UserRepository{DB: db}
 	authService := authService.New(secret, exp)
@@ -298,9 +306,6 @@ func main() {
 		UserRepo:    userRepo,
 		AuthService: *authService,
 	}
-
-	// Tenant setup (for path-based public routes)
-	tenantRepo := &tenantRepository.Repository{DB: db}
 
 	// Order setup
 	orderRepo := &ordersRepository.OrderRepository{DB: db}
@@ -395,10 +400,17 @@ func main() {
 	auth.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
-	// Public create order: tenant from path /t/{tenant_slug}/orders or header X-Tenant-Slug on /orders
+	// Public: tenant from path /t/{tenant_slug}
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()
 	tPublic.Use(middleware.TenantFromPathOrHeader(tenantRepo))
 	tPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+	tPublic.HandleFunc("/branding", brandingHandler.GetBranding).Methods("GET")
+
+	// Branding (authenticated): GET, PATCH colors, PATCH logo
+	auth.HandleFunc("/tenant/branding", brandingHandler.GetBranding).Methods("GET")
+	auth.HandleFunc("/tenant/branding/colors", brandingHandler.UpdateColors).Methods("PATCH")
+	auth.HandleFunc("/tenant/branding/logo", brandingHandler.UpdateLogo).Methods("PATCH")
+	auth.HandleFunc("/tenant/branding/logo", brandingHandler.UpdateLogo).Methods("POST")
 
 	// Legacy: POST /orders (no tenant in path; handler falls back to tenant 1)
 	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")

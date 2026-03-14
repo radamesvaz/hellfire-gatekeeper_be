@@ -3,6 +3,9 @@ package images
 import (
 	"context"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"mime/multipart"
 	"os"
@@ -12,7 +15,9 @@ import (
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/logger"
+	tModel "github.com/radamesvaz/bakery-app/model/tenant"
 )
 
 type Service struct {
@@ -85,6 +90,87 @@ func (s *Service) SaveProductImages(productID uint64, files []*multipart.FileHea
 	}
 
 	return imageURLs, nil
+}
+
+// GetImageDimensions reads image dimensions from the file without fully decoding the image.
+// Supports JPEG and PNG. Returns error for unsupported formats (e.g. webp) or invalid content.
+func (s *Service) GetImageDimensions(file *multipart.FileHeader) (width, height int, err error) {
+	src, err := file.Open()
+	if err != nil {
+		return 0, 0, fmt.Errorf("open file: %w", err)
+	}
+	defer src.Close()
+	cfg, _, err := image.DecodeConfig(src)
+	if err != nil {
+		return 0, 0, fmt.Errorf("decode image config: %w", err)
+	}
+	return cfg.Width, cfg.Height, nil
+}
+
+// SaveTenantLogo saves a single logo image for a tenant. Uses deterministic path/name for replacement.
+// Returns the URL to store, width, and height. Caller is responsible for deleting the old logo if replacing.
+func (s *Service) SaveTenantLogo(tenantID uint64, file *multipart.FileHeader) (logoURL string, width, height int, err error) {
+	if !s.IsValidImageType(file) {
+		return "", 0, 0, fmt.Errorf("invalid file type: %s", file.Filename)
+	}
+	width, height, err = s.GetImageDimensions(file)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	if width < tModel.LogoMinWidth || height < tModel.LogoMinHeight || width > tModel.LogoMaxWidth || height > tModel.LogoMaxHeight {
+		return "", 0, 0, appErrors.ErrInvalidBrandingDimensions
+	}
+	if s.UseCloudinary {
+		logoURL, err = s.uploadTenantLogoToCloudinary(tenantID, file)
+		return logoURL, width, height, err
+	}
+	logoURL, err = s.saveTenantLogoToLocal(tenantID, file)
+	return logoURL, width, height, err
+}
+
+// saveTenantLogoToLocal writes the tenant logo to disk under uploads/tenants/{tenantID}/logo.{ext}.
+// Returns the URL path to serve the logo (e.g. /uploads/tenants/1/logo.png). Uses a deterministic
+// filename so replacing the logo overwrites the existing file.
+func (s *Service) saveTenantLogoToLocal(tenantID uint64, file *multipart.FileHeader) (string, error) {
+	tenantDir := filepath.Join(s.UploadDir, "tenants", fmt.Sprintf("%d", tenantID))
+	if err := os.MkdirAll(tenantDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create tenant directory: %w", err)
+	}
+	ext := filepath.Ext(file.Filename)
+	if ext == "" {
+		ext = ".png"
+	}
+	logoPath := filepath.Join(tenantDir, "logo"+ext)
+	if err := s.saveFile(file, logoPath); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("/uploads/tenants/%d/logo%s", tenantID, ext), nil
+}
+
+// uploadTenantLogoToCloudinary uploads the tenant logo to Cloudinary under bakery/tenants/{tenantID}/logo.
+// Returns the secure URL of the uploaded asset. The public ID is deterministic so replacing the logo
+// overwrites the existing asset.
+func (s *Service) uploadTenantLogoToCloudinary(tenantID uint64, file *multipart.FileHeader) (string, error) {
+	src, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+	ext := filepath.Ext(file.Filename)
+	if ext == "" {
+		ext = ".png"
+	}
+	publicID := fmt.Sprintf("%d/logo", tenantID)
+	ctx := context.Background()
+	result, err := s.Cloudinary.Upload.Upload(ctx, src, uploader.UploadParams{
+		PublicID: publicID,
+		Folder:   "bakery/tenants",
+		Tags:     []string{"bakery", "tenant", fmt.Sprintf("tenant_%d", tenantID)},
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.SecureURL, nil
 }
 
 // IsValidImageType checks if the file is a valid image type

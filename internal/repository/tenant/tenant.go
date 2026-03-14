@@ -3,7 +3,10 @@ package tenant
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+
+	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
 )
 
 // Repository provides tenant lookup by slug for path/header resolution.
@@ -78,4 +81,84 @@ func (r *Repository) ListActiveTenantIDs(ctx context.Context) ([]uint64, error) 
 		return nil, fmt.Errorf("iterate active tenant ids: %w", err)
 	}
 	return ids, nil
+}
+
+// Branding holds the branding fields for a tenant.
+type Branding struct {
+	LogoURL      string
+	LogoWidth    int
+	LogoHeight   int
+	PrimaryColor   string
+	SecondaryColor string
+	AccentColor    string
+}
+
+// GetBranding returns the branding (logo + colors) for the given tenant.
+func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (Branding, error) {
+	var b Branding
+	var logoURL sql.NullString
+	var logoWidth, logoHeight sql.NullInt64
+	var primary, secondary, accent sql.NullString
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT logo_url, logo_width, logo_height, primary_color, secondary_color, accent_color
+		 FROM tenants WHERE id = $1`,
+		tenantID,
+	).Scan(&logoURL, &logoWidth, &logoHeight, &primary, &secondary, &accent)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Branding{}, appErrors.ErrTenantNotFound
+		}
+		return Branding{}, fmt.Errorf("get branding: %w", err)
+	}
+	if logoURL.Valid {
+		b.LogoURL = logoURL.String
+	}
+	if logoWidth.Valid {
+		b.LogoWidth = int(logoWidth.Int64)
+	}
+	if logoHeight.Valid {
+		b.LogoHeight = int(logoHeight.Int64)
+	}
+	if primary.Valid {
+		b.PrimaryColor = primary.String
+	}
+	if secondary.Valid {
+		b.SecondaryColor = secondary.String
+	}
+	if accent.Valid {
+		b.AccentColor = accent.String
+	}
+	return b, nil
+}
+
+// UpdateColors updates primary_color, secondary_color, accent_color and updated_on for the tenant.
+func (r *Repository) UpdateColors(ctx context.Context, tenantID uint64, primary, secondary, accent string) error {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants SET primary_color = $1, secondary_color = $2, accent_color = $3, updated_on = NOW() WHERE id = $4`,
+		primary, secondary, accent, tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("update colors: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return appErrors.ErrTenantNotFound
+	}
+	return nil
+}
+
+// UpdateLogo updates logo_url, logo_width, logo_height and updated_on for the tenant.
+func (r *Repository) UpdateLogo(ctx context.Context, tenantID uint64, logoURL string, width, height int) error {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants SET logo_url = $1, logo_width = $2, logo_height = $3, updated_on = NOW() WHERE id = $4`,
+		logoURL, width, height, tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("update logo: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return appErrors.ErrTenantNotFound
+	}
+	return nil
 }

@@ -2,12 +2,15 @@ package images
 
 import (
 	"bytes"
+	"image"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"os"
 	"path/filepath"
 	"testing"
 
+	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -358,6 +361,87 @@ func TestService_DeleteImage(t *testing.T) {
 			}
 		})
 	}
+}
+
+// createTestPNGFileHeader creates a multipart.FileHeader containing a real PNG image with the given dimensions.
+func createTestPNGFileHeader(width, height int, filename string) *multipart.FileHeader {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		panic(err)
+	}
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	fw, err := w.CreateFormFile("logo", filename)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := fw.Write(buf.Bytes()); err != nil {
+		panic(err)
+	}
+	boundary := w.Boundary()
+	w.Close()
+	r := multipart.NewReader(&b, boundary)
+	form, err := r.ReadForm(32 << 20)
+	if err != nil {
+		panic(err)
+	}
+	files := form.File["logo"]
+	if len(files) == 0 {
+		panic("no logo file in form")
+	}
+	files[0].Header = map[string][]string{"Content-Type": {"image/png"}}
+	return files[0]
+}
+
+func TestService_GetImageDimensions_ValidPNG(t *testing.T) {
+	service := New("/uploads")
+	fh := createTestPNGFileHeader(64, 48, "logo.png")
+	width, height, err := service.GetImageDimensions(fh)
+	require.NoError(t, err)
+	assert.Equal(t, 64, width)
+	assert.Equal(t, 48, height)
+}
+
+func TestService_GetImageDimensions_InvalidContent(t *testing.T) {
+	service := New("/uploads")
+	fh := createTestFileHeader("fake.txt", "text/plain")
+	_, _, err := service.GetImageDimensions(fh)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "decode image config")
+}
+
+func TestService_SaveTenantLogo_ValidDimensions(t *testing.T) {
+	restore := disableCloudinaryForTests(t)
+	defer restore()
+	testDir := "test_uploads_logo"
+	require.NoError(t, os.MkdirAll(testDir, 0755))
+	defer os.RemoveAll(testDir)
+	service := New(testDir)
+	fh := createTestPNGFileHeader(64, 64, "logo.png")
+	logoURL, width, height, err := service.SaveTenantLogo(1, fh)
+	require.NoError(t, err)
+	assert.Equal(t, 64, width)
+	assert.Equal(t, 64, height)
+	assert.Contains(t, logoURL, "/uploads/tenants/1/logo")
+}
+
+func TestService_SaveTenantLogo_InvalidDimensions(t *testing.T) {
+	restore := disableCloudinaryForTests(t)
+	defer restore()
+	service := New("test_uploads")
+	fh := createTestPNGFileHeader(10, 10, "small.png")
+	_, _, _, err := service.SaveTenantLogo(1, fh)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, appErrors.ErrInvalidBrandingDimensions)
+}
+
+func TestService_SaveTenantLogo_InvalidFileType(t *testing.T) {
+	service := New("test_uploads")
+	fh := createTestFileHeader("doc.txt", "text/plain")
+	_, _, _, err := service.SaveTenantLogo(1, fh)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid file type")
 }
 
 // disableCloudinaryForTests unsets Cloudinary env vars during a test and returns a restore func

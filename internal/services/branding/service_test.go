@@ -1,8 +1,10 @@
 package branding
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"mime/multipart"
 	"regexp"
 	"testing"
 
@@ -137,4 +139,47 @@ func TestService_UpdateColors_InvalidHex(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, appErrors.ErrInvalidColorFormat)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestService_UpdateLogo_TenantNotFound(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	tenantRepo := &tenant.Repository{DB: db}
+	svc := &Service{TenantRepo: tenantRepo}
+
+	ctx := context.Background()
+	mock.ExpectQuery(regexp.QuoteMeta(
+		`SELECT logo_url, logo_width, logo_height, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1`)).
+		WithArgs(999).
+		WillReturnError(sql.ErrNoRows)
+
+	// FileHeader with minimal content; we only need tenant lookup to fail before image is used
+	fh := createMinimalMultipartFileHeader("logo.png", "image/png")
+	_, err = svc.UpdateLogo(ctx, 999, fh)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, appErrors.ErrTenantNotFound)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// createMinimalMultipartFileHeader creates a multipart.FileHeader for tests that only need the form field to exist.
+func createMinimalMultipartFileHeader(filename, contentType string) *multipart.FileHeader {
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	fw, _ := w.CreateFormFile("logo", filename)
+	_, _ = fw.Write([]byte("x"))
+	boundary := w.Boundary()
+	w.Close()
+	r := multipart.NewReader(&b, boundary)
+	form, err := r.ReadForm(32 << 20)
+	if err != nil {
+		panic(err)
+	}
+	files := form.File["logo"]
+	if len(files) == 0 {
+		panic("no logo file")
+	}
+	files[0].Header = map[string][]string{"Content-Type": {contentType}}
+	return files[0]
 }

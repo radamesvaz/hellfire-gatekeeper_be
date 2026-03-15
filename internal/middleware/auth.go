@@ -58,9 +58,11 @@ func AuthMiddleware(authService auth.Service) func(http.Handler) http.Handler {
 //   - If the route defines "{tenant_slug}" (e.g. "/t/{tenant_slug}/..."), it is
 //     read from mux.Vars.
 //   - Otherwise, it falls back to "default".
+//
 // - tenantID:
 //   - For now we always assume 1 (default tenant). In later phases this
 //     middleware will resolve tenantSlug -> tenant.id from the database.
+//
 // - isSuperadmin:
 //   - Derived from the "role_id" claim (UserRoleAdmin is treated as superadmin).
 func TenantMiddleware() func(http.Handler) http.Handler {
@@ -154,4 +156,19 @@ func IsSuperadminFromContext(ctx context.Context) bool {
 		return false
 	}
 	return flag
+}
+
+// SuperadminRequired requires the request to be authenticated as superadmin.
+// Must be used after AuthMiddleware and TenantMiddleware so that IsSuperadminFromContext is set.
+// Responds with 403 Forbidden if the user is not a superadmin.
+func SuperadminRequired(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !IsSuperadminFromContext(r.Context()) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"error":"superadmin required","code":"FORBIDDEN"}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

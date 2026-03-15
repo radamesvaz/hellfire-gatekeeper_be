@@ -31,3 +31,11 @@ func NewBadRequest(err error) *HTTPError {
 		StatusCode: http.StatusBadRequest,
 	}
 }
+
+// NewConflict returns an HTTPError with status 409 Conflict.
+func NewConflict(err error) *HTTPError {
+	return &HTTPError{
+		Err:        err,
+		StatusCode: http.StatusConflict,
+	}
+}

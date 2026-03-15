@@ -85,6 +85,45 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+// AdminLogin handles POST /admin/login. Only users with role admin in the default tenant (1) can log in.
+// Returns a JWT that can be used for admin routes (e.g. POST /admin/tenants) when sent as Bearer token.
+func (lh *LoginHandler) AdminLogin(w http.ResponseWriter, r *http.Request) {
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if valid := v.IsValidEmail(req.Email); !valid {
+		http.Error(w, "Invalid email", http.StatusBadRequest)
+		return
+	}
+
+	const defaultTenantID = 1
+	user, err := lh.UserRepo.GetUserByEmail(defaultTenantID, req.Email)
+	if err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	if uModel.UserRole(user.IDRole) != uModel.UserRoleAdmin {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+	if err := lh.AuthService.ComparePasswords(user.Password, req.Password); err != nil {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	tenantID := user.TenantID
+	token, err := lh.AuthService.GenerateJWT(user.ID, uModel.UserRoleAdmin, user.Email, &tenantID)
+	if err != nil {
+		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(LoginResponse{Token: token})
+}
+
 func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 	req := RegisterRequest{}
 

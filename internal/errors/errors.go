@@ -35,7 +35,8 @@ var (
 	ErrOrderAlreadyCancelled   = NewBadRequest(errors.New("order is already cancelled and cannot be modified"))
 	ErrOrderAlreadyDelivered   = NewBadRequest(errors.New("order is already delivered and cannot be modified"))
 	// Tenant / Branding Errors
-	ErrTenantNotFound            = errors.New("tenant not found")
+	ErrTenantNotFound   = errors.New("tenant not found")
+	ErrTenantSlugExists = NewConflict(errors.New("tenant slug already exists"))
 	ErrInvalidBrandingDimensions = NewBadRequest(errors.New("logo dimensions must be between 32x32 and 512x512 pixels"))
 	ErrInvalidColorFormat        = NewBadRequest(errors.New("color must be in format #RRGGBB"))
 )

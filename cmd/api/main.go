@@ -295,6 +295,9 @@ func main() {
 	// Tenant setup (for path-based public routes and branding)
 	tenantRepo := &tenantRepository.Repository{DB: db}
 
+	// Admin handler (create tenant, etc.); protected by JWT + superadmin role
+	adminHandler := &h.AdminHandler{TenantRepo: tenantRepo}
+
 	// Branding setup
 	brandingSvc := brandingService.New(tenantRepo, imageService)
 	brandingHandler := &h.BrandingHandler{BrandingService: brandingSvc}
@@ -352,6 +355,15 @@ func main() {
 
 	// Serve static files (images)
 	r.PathPrefix("/uploads/").Handler(http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
+
+	// Admin: login (public) then use the JWT as Bearer for protected admin routes
+	r.HandleFunc("/admin/login", authHandler.AdminLogin).Methods("POST")
+	adminProtected := r.PathPrefix("/admin").Subrouter()
+	adminProtected.Use(middleware.AuthMiddleware(authService))
+	adminProtected.Use(middleware.TenantMiddleware())
+	adminProtected.Use(middleware.SuperadminRequired)
+	adminProtected.HandleFunc("/tenants", adminHandler.CreateTenant).Methods("POST")
+	adminProtected.HandleFunc("/tenants/{id}/subscription", adminHandler.UpdateTenantSubscription).Methods("PATCH")
 
 	// Health check endpoint
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

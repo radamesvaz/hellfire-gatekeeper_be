@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
+	tModel "github.com/radamesvaz/bakery-app/model/tenant"
 )
 
 // Repository provides tenant lookup by slug for path/header resolution.
@@ -51,6 +53,68 @@ func (r *Repository) GetGhostOrderTimeoutMinutes(ctx context.Context, tenantID u
 		return 0, fmt.Errorf("reading ghost_order_timeout_minutes for tenant %d: %w", tenantID, err)
 	}
 	return minutes, nil
+}
+
+// SlugExists returns true if a tenant with the given slug already exists (any status).
+func (r *Repository) SlugExists(ctx context.Context, slug string) (bool, error) {
+	var exists bool
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM tenants WHERE slug = $1)`,
+		slug,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check slug exists: %w", err)
+	}
+	return exists, nil
+}
+
+// Create inserts a new tenant and returns its data. Caller must ensure slug is unique (e.g. via SlugExists).
+func (r *Repository) Create(ctx context.Context, in tModel.CreateTenantInput) (tModel.CreateTenantResponse, error) {
+	var currentPeriodEnd sql.NullTime
+	if in.CurrentPeriodEnd != nil {
+		currentPeriodEnd = sql.NullTime{Time: *in.CurrentPeriodEnd, Valid: true}
+	}
+	var row tModel.CreateTenantResponse
+	var outPeriodEnd sql.NullTime
+	err := r.DB.QueryRowContext(ctx,
+		`INSERT INTO tenants (name, slug, is_active, ghost_order_timeout_minutes, subscription_status, current_period_end, plan_code)
+		 VALUES ($1, $2, true, $3, $4, $5, $6)
+		 RETURNING id, name, slug, plan_code, subscription_status, ghost_order_timeout_minutes, is_active, current_period_end`,
+		in.Name, in.Slug, in.GhostOrderTimeoutMinutes, in.SubscriptionStatus, currentPeriodEnd, in.PlanCode,
+	).Scan(&row.ID, &row.Name, &row.Slug, &row.PlanCode, &row.SubscriptionStatus, &row.GhostOrderTimeoutMinutes, &row.IsActive, &outPeriodEnd)
+	if err != nil {
+		return tModel.CreateTenantResponse{}, fmt.Errorf("create tenant: %w", err)
+	}
+	if outPeriodEnd.Valid {
+		row.CurrentPeriodEnd = &outPeriodEnd.Time
+	}
+	return row, nil
+}
+
+// UpdateSubscription updates subscription_status and optionally current_period_end for the tenant.
+// Returns ErrTenantNotFound if the tenant does not exist.
+func (r *Repository) UpdateSubscription(ctx context.Context, tenantID uint64, subscriptionStatus string, currentPeriodEnd *time.Time) error {
+	var result sql.Result
+	var err error
+	if currentPeriodEnd != nil {
+		result, err = r.DB.ExecContext(ctx,
+			`UPDATE tenants SET subscription_status = $1, current_period_end = $2, updated_on = NOW() WHERE id = $3`,
+			subscriptionStatus, *currentPeriodEnd, tenantID,
+		)
+	} else {
+		result, err = r.DB.ExecContext(ctx,
+			`UPDATE tenants SET subscription_status = $1, updated_on = NOW() WHERE id = $2`,
+			subscriptionStatus, tenantID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("update subscription: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return appErrors.ErrTenantNotFound
+	}
+	return nil
 }
 
 // ListActiveTenantIDs returns the IDs of tenants that are currently active and

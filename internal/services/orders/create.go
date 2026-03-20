@@ -139,14 +139,15 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 	}
 
 	orderRequest := oModel.CreateOrderRequest{
-		TenantID:     tenantID,
-		IdUser:       user.ID,
-		DeliveryDate: deliveryDate,
-		Note:         payload.Note,
-		Price:        totalPrice,
-		Status:       oModel.StatusPending,
-		Paid:         false,
-		ExpiresAt:    expiresAt,
+		TenantID:          tenantID,
+		IdUser:            user.ID,
+		DeliveryDate:      deliveryDate,
+		DeliveryDirection: payload.DeliveryDirection,
+		Note:              payload.Note,
+		Price:             totalPrice,
+		Status:            oModel.StatusPending,
+		Paid:              false,
+		ExpiresAt:         expiresAt,
 	}
 
 	orderID, err := c.OrderRepo.CreateOrder(ctx, tx, orderRequest)
@@ -171,12 +172,13 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 
 	idUser := user.ID
 	orderHistory := oModel.OrderHistory{
-		TenantID: tenantID,
-		IDOrder:  orderID,
-		IdUser:   &idUser,
-		Status:   orderRequest.Status,
-		Price:    orderRequest.Price,
-		Note:     orderRequest.Note,
+		TenantID:          tenantID,
+		IDOrder:           orderID,
+		IdUser:            &idUser,
+		Status:            orderRequest.Status,
+		Price:             orderRequest.Price,
+		Note:              orderRequest.Note,
+		DeliveryDirection: orderRequest.DeliveryDirection,
 		DeliveryDate: sql.NullTime{
 			Time:  deliveryDate,
 			Valid: !deliveryDate.IsZero(),

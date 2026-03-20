@@ -411,7 +411,7 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		Str("status", string(order.Status)).
 		Msg("Creating order for user")
 
-	query := `INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_order`
+	query := `INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, delivery_direction, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_order`
 
 	var insertedID uint64
 	err = tx.QueryRowContext(
@@ -423,6 +423,7 @@ func (r *OrderRepository) createOrderTx(ctx context.Context, tx *sql.Tx, order o
 		order.Status,
 		order.Note,
 		order.DeliveryDate,
+		order.DeliveryDirection,
 		order.Paid,
 		order.ExpiresAt,
 	).Scan(&insertedID)
@@ -522,6 +523,7 @@ func (r *OrderRepository) createOrderHistoryExec(tx *sql.Tx, fallback *sql.DB, o
 		total_price, 
 		note,
 		delivery_date,
+		delivery_direction,
 		paid,
 		cancellation_reason,
 		modified_by, 
@@ -538,7 +540,8 @@ func (r *OrderRepository) createOrderHistoryExec(tx *sql.Tx, fallback *sql.DB, o
 		$8,
 		$9, 
 		$10, 
-		$11)`,
+		$11,
+		$12)`,
 		order.TenantID,
 		order.IDOrder,
 		idUserVal,
@@ -546,6 +549,7 @@ func (r *OrderRepository) createOrderHistoryExec(tx *sql.Tx, fallback *sql.DB, o
 		order.Price,
 		order.Note,
 		order.DeliveryDate,
+		order.DeliveryDirection,
 		order.Paid,
 		nullStringFromPtr(order.CancellationReason),
 		order.ModifiedBy,

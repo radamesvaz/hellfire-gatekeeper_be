@@ -116,6 +116,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		total_price, 
 		note,
 		delivery_date,
+		delivery_direction,
 		paid,
 		cancellation_reason,
 		modified_by, 
@@ -132,7 +133,8 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		$8,
 		$9, 
 		$10, 
-		$11)`,
+		$11,
+		$12)`,
 					),
 				).WillReturnError(tt.mockError)
 			} else {
@@ -146,6 +148,7 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		total_price, 
 		note,
 		delivery_date,
+		delivery_direction,
 		paid,
 		cancellation_reason,
 		modified_by, 
@@ -162,7 +165,8 @@ func TestOrderRepository_CreateOrderHistory(t *testing.T) {
 		$8,
 		$9, 
 		$10, 
-		$11)`,
+		$11,
+		$12)`,
 					),
 				).WillReturnResult(sqlmock.NewResult(1, 1))
 			}

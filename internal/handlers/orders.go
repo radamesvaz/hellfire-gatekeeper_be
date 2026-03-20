@@ -99,7 +99,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Validate payload fields
 	if err := v.ValidateCreateOrderPayload(payload); err != nil {
-		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

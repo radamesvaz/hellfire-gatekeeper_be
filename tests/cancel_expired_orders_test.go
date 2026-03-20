@@ -34,8 +34,8 @@ func TestCancelExpiredOrders_Integration_SingleTenant(t *testing.T) {
 	recentCreated := time.Now().Add(-5 * time.Minute)
 	deliveryDate := time.Now().AddDate(0, 0, 7)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES (1, 2, 'pending', 20.0, 'ghost order', $1, $2, false)`, ghostCreated, deliveryDate)
+	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid)
+		VALUES (1, 2, 'pending', 20.0, 'ghost order', $1, $2, 'direccion ghost', false)`, ghostCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var ghostOrderID int
@@ -54,8 +54,8 @@ func TestCancelExpiredOrders_Integration_SingleTenant(t *testing.T) {
 	_, err = db.ExecContext(ctx, `UPDATE products SET stock = stock - 1 WHERE id_product = 2`)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES (1, 2, 'pending', 10.0, 'recent order', $1, $2, false)`, recentCreated, deliveryDate)
+	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid)
+		VALUES (1, 2, 'pending', 10.0, 'recent order', $1, $2, 'direccion recent', false)`, recentCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var recentOrderID int
@@ -149,8 +149,8 @@ func TestCancelExpiredOrders_Integration_MultiTenantIsolation(t *testing.T) {
 	deliveryDate := time.Now().AddDate(0, 0, 7)
 
 	// Tenant A: one ghost order (expired) and one recent (not expired).
-	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES ($1, 2, 'pending', 20.0, 'tenant A ghost', $2, $3, false)`, tenantAID, ghostCreated, deliveryDate)
+	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid)
+		VALUES ($1, 2, 'pending', 20.0, 'tenant A ghost', $2, $3, 'direccion tenant A ghost', false)`, tenantAID, ghostCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var ghostAID int
@@ -163,8 +163,8 @@ func TestCancelExpiredOrders_Integration_MultiTenantIsolation(t *testing.T) {
 	_, err = db.ExecContext(ctx, `INSERT INTO order_items (tenant_id, id_order, id_product, quantity) VALUES ($1, $2, $3, 1)`, tenantAID, ghostAID, productAID)
 	require.NoError(t, err)
 
-	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES ($1, 2, 'pending', 10.0, 'tenant A recent', $2, $3, false)`, tenantAID, recentCreated, deliveryDate)
+	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid)
+		VALUES ($1, 2, 'pending', 10.0, 'tenant A recent', $2, $3, 'direccion tenant A recent', false)`, tenantAID, recentCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var recentAID int
@@ -172,8 +172,8 @@ func TestCancelExpiredOrders_Integration_MultiTenantIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Tenant B: one ghost order (expired) only.
-	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES ($1, 2, 'pending', 30.0, 'tenant B ghost', $2, $3, false)`, tenantBID, ghostCreated, deliveryDate)
+	_, err = db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid)
+		VALUES ($1, 2, 'pending', 30.0, 'tenant B ghost', $2, $3, 'direccion tenant B ghost', false)`, tenantBID, ghostCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var ghostBID int
@@ -230,8 +230,8 @@ func TestCancelExpiredOrders_Integration_PaidOrderNotCancelled(t *testing.T) {
 	oldCreated := time.Now().Add(-2 * time.Hour)
 	deliveryDate := time.Now().AddDate(0, 0, 7)
 
-	_, err := db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, paid)
-		VALUES (1, 2, 'pending', 15.0, 'old but paid', $1, $2, true)`, oldCreated, deliveryDate)
+	_, err := db.ExecContext(ctx, `INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid)
+		VALUES (1, 2, 'pending', 15.0, 'old but paid', $1, $2, 'direccion old paid', true)`, oldCreated, deliveryDate)
 	require.NoError(t, err)
 
 	var orderID int

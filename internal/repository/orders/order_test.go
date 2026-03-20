@@ -552,14 +552,15 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 			name:     "HAPPY PATH: creating an order",
 			expected: 666,
 			orderRequest: oModel.CreateOrderRequest{
-				TenantID:     1,
-				IdUser:       2,
-				DeliveryDate: deliveryDate,
-				Note:         "entregar a la tarde",
-				Price:        20,
-				Status:       oModel.StatusPending,
-				Paid:         false,
-				ExpiresAt:    time.Date(2025, 4, 30, 10, 30, 0, 0, time.UTC),
+				TenantID:          1,
+				IdUser:            2,
+				DeliveryDate:      deliveryDate,
+				DeliveryDirection: "direccion de prueba",
+				Note:              "entregar a la tarde",
+				Price:             20,
+				Status:            oModel.StatusPending,
+				Paid:              false,
+				ExpiresAt:         time.Date(2025, 4, 30, 10, 30, 0, 0, time.UTC),
 			},
 			expectedError: false,
 			errorStatus:   0,
@@ -575,7 +576,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 
 			if tt.expectedError {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_order",
+					"INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, delivery_direction, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_order",
 				)).WithArgs(
 					tt.orderRequest.TenantID,
 					tt.orderRequest.IdUser,
@@ -583,12 +584,13 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 					tt.orderRequest.Status,
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
+					tt.orderRequest.DeliveryDirection,
 					tt.orderRequest.Paid,
 					tt.orderRequest.ExpiresAt,
 				).WillReturnError(tt.mockError)
 			} else {
 				mock.ExpectQuery(regexp.QuoteMeta(
-					"INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id_order",
+					"INSERT INTO orders (tenant_id, id_user, total_price, status, note, delivery_date, delivery_direction, paid, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_order",
 				)).WithArgs(
 					tt.orderRequest.TenantID,
 					tt.orderRequest.IdUser,
@@ -596,6 +598,7 @@ func TestOrderRepository_CreateOrder(t *testing.T) {
 					oModel.StatusPending,
 					tt.orderRequest.Note,
 					tt.orderRequest.DeliveryDate,
+					tt.orderRequest.DeliveryDirection,
 					tt.orderRequest.Paid,
 					tt.orderRequest.ExpiresAt,
 				).WillReturnRows(sqlmock.NewRows([]string{"id_order"}).AddRow(tt.expected))

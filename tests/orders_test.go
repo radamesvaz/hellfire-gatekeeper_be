@@ -14,6 +14,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
+	internalErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/handlers"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
@@ -71,6 +72,7 @@ func TestGetAllOrders(t *testing.T) {
         "tenant_id": 1,
         "total_price": 57,
         "note": "make it bright",
+        "delivery_direction": "",
         "OrderItems": [
             {
                 "id_order_item": 1,
@@ -103,6 +105,7 @@ func TestGetAllOrders(t *testing.T) {
         "tenant_id": 1,
         "total_price": 10,
         "note": "deliver at the door",
+        "delivery_direction": "",
         "OrderItems": [
             {
                 "id_order_item": 3,
@@ -127,6 +130,7 @@ func TestGetAllOrders(t *testing.T) {
         "tenant_id": 1,
         "total_price": 12,
         "note": "not so sweet",
+        "delivery_direction": "",
         "OrderItems": [
             {
                 "id_order_item": 4,
@@ -201,6 +205,7 @@ func TestGetOrderByID(t *testing.T) {
     "tenant_id": 1,
     "total_price": 57,
     "note": "make it bright",
+    "delivery_direction": "",
     "OrderItems": [
         {
             "id_order_item": 1,
@@ -258,6 +263,7 @@ func TestCreateOrder(t *testing.T) {
         "email": "clienteprueba@example.com",
         "phone": "1234567890",
         "delivery_date": "%v",
+        "delivery_direction": "https://maps.app.goo.gl/integration-create-order",
         "note": "make it bright",
         "items": [
             {
@@ -282,6 +288,54 @@ func TestCreateOrder(t *testing.T) {
 	assert.JSONEq(t, expected, rr.Body.String())
 }
 
+func TestCreateOrder_MissingDeliveryDirection(t *testing.T) {
+	// setup
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	// Order setup
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	userRepo := userRepo.NewUserRepository(db)
+	productRepo := &productRepo.ProductRepository{DB: db}
+	orderHandler := handlers.OrderHandler{
+		Repo:        orderRepo,
+		UserRepo:    userRepo,
+		ProductRepo: productRepo,
+	}
+
+	// Setup the router
+	router := mux.NewRouter()
+	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`
+    {
+        "name": "Cliente sin direccion",
+        "email": "clientesindireccion@example.com",
+        "phone": "1234567890",
+        "delivery_date": "%v",
+        "note": "test sin delivery_direction",
+        "items": [
+            {
+                "id_product": 1,
+                "quantity": 2
+            }
+        ]
+    }
+    `, deliveryDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), internalErrors.ErrMissingDeliveryDirection.Error())
+}
+
 func TestOrderHistoryMigration(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)
@@ -292,8 +346,8 @@ func TestOrderHistoryMigration(t *testing.T) {
 	// Test that the orders_history table accepts 'create' action
 	ctx := context.Background()
 	_, err := db.ExecContext(ctx, `
-		INSERT INTO orders_history (id_order, tenant_id, id_user, status, total_price, note, modified_by, action) 
-		VALUES (1, 1, 1, 'pending', 20.0, 'test', 1, 'create')
+		INSERT INTO orders_history (id_order, tenant_id, id_user, status, total_price, note, delivery_direction, modified_by, action) 
+		VALUES (1, 1, 1, 'pending', 20.0, 'test', 'https://maps.app.goo.gl/history-test', 1, 'create')
 	`)
 
 	if err != nil {
@@ -334,6 +388,7 @@ func TestCreateOrder_WithOrderHistory(t *testing.T) {
         "email": "clientehistorial@example.com",
         "phone": "1234567890",
         "delivery_date": "%v",
+        "delivery_direction": "https://maps.app.goo.gl/integration-history",
         "note": "test order for history",
         "items": [
             {
@@ -412,6 +467,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
         "email": "clientestatus@example.com",
         "phone": "1234567890",
         "delivery_date": "%v",
+        "delivery_direction": "https://maps.app.goo.gl/integration-status-update",
         "note": "test order for status update",
         "items": [
             {

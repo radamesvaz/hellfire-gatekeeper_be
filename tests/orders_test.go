@@ -72,7 +72,7 @@ func TestGetAllOrders(t *testing.T) {
         "tenant_id": 1,
         "total_price": 57,
         "note": "make it bright",
-        "delivery_direction": "",
+        "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
         "OrderItems": [
             {
                 "id_order_item": 1,
@@ -105,7 +105,7 @@ func TestGetAllOrders(t *testing.T) {
         "tenant_id": 1,
         "total_price": 10,
         "note": "deliver at the door",
-        "delivery_direction": "",
+        "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
         "OrderItems": [
             {
                 "id_order_item": 3,
@@ -130,7 +130,7 @@ func TestGetAllOrders(t *testing.T) {
         "tenant_id": 1,
         "total_price": 12,
         "note": "not so sweet",
-        "delivery_direction": "",
+        "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
         "OrderItems": [
             {
                 "id_order_item": 4,
@@ -205,7 +205,7 @@ func TestGetOrderByID(t *testing.T) {
     "tenant_id": 1,
     "total_price": 57,
     "note": "make it bright",
-    "delivery_direction": "",
+    "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
     "OrderItems": [
         {
             "id_order_item": 1,
@@ -427,6 +427,7 @@ func TestCreateOrder_WithOrderHistory(t *testing.T) {
 	assert.Equal(t, "create", string(history.Action), "History action should be 'create'")
 	assert.Equal(t, "pending", string(history.Status), "History status should be 'pending'")
 	assert.Equal(t, "test order for history", history.Note, "History note should match order note")
+	assert.Equal(t, "https://maps.app.goo.gl/integration-history", history.DeliveryDirection, "History delivery direction should match order delivery direction")
 	assert.Equal(t, float64(3.5), history.Price, "History price should match order price (1 × 3.5)")
 }
 

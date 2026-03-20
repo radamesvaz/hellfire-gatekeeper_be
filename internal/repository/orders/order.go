@@ -51,6 +51,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.delivery_direction,
             o.paid,
             o.created_on,
             o.expires_at,
@@ -102,6 +103,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
 			status             string
 			note               string
 			deliveryDate       time.Time
+			deliveryDirection  string
 			paid               bool
 			createdOn          time.Time
 			expiresAt          sql.NullTime
@@ -123,6 +125,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
 			&status,
 			&note,
 			&deliveryDate,
+			&deliveryDirection,
 			&paid,
 			&createdOn,
 			&expiresAt,
@@ -147,6 +150,7 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
 				Status:       oModel.OrderStatus(status),
 				Note:         note,
 				DeliveryDate: deliveryDate,
+				DeliveryDirection: deliveryDirection,
 				Paid:         paid,
 				CreatedOn:    createdOn,
 				OrderItems:   []oModel.OrderItems{},
@@ -206,6 +210,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, tenantID, id uint64)
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.delivery_direction,
             o.paid,
             o.created_on,
             o.expires_at,
@@ -248,6 +253,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, tenantID, id uint64)
 			status             string
 			note               string
 			deliveryDate       time.Time
+			deliveryDirection  string
 			paid               bool
 			createdOn          time.Time
 			expiresAt          sql.NullTime
@@ -269,6 +275,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, tenantID, id uint64)
 			&status,
 			&note,
 			&deliveryDate,
+			&deliveryDirection,
 			&paid,
 			&createdOn,
 			&expiresAt,
@@ -295,6 +302,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, tenantID, id uint64)
 			order.Status = oModel.OrderStatus(status)
 			order.Note = note
 			order.DeliveryDate = deliveryDate
+			order.DeliveryDirection = deliveryDirection
 			order.Paid = paid
 			order.CreatedOn = createdOn
 			if expiresAt.Valid {
@@ -589,7 +597,7 @@ func (r *OrderRepository) createOrderHistoryExec(tx *sql.Tx, fallback *sql.DB, o
 func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, tenantID, orderID uint64) ([]oModel.OrderHistory, error) {
 	query := `
 		SELECT id_order_history, tenant_id, id_order, id_user, status, total_price, note, 
-			delivery_date, paid, cancellation_reason, modified_on, modified_by, action
+			delivery_date, delivery_direction, paid, cancellation_reason, modified_on, modified_by, action
 		FROM orders_history 
 		WHERE id_order = $1 AND tenant_id = $2
 		ORDER BY modified_on DESC
@@ -617,6 +625,7 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, tenantID
 			&history.Price,
 			&history.Note,
 			&history.DeliveryDate,
+			&history.DeliveryDirection,
 			&history.Paid,
 			&cancellationReason,
 			&history.ModifiedOn,
@@ -646,7 +655,7 @@ func (r *OrderRepository) GetOrderHistoryByOrderID(ctx context.Context, tenantID
 // GetExpiredPendingOrders returns orders that are pending, unpaid, and created before the given expiration time (ghost orders) for a tenant.
 func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, tenantID uint64, expirationTime time.Time) ([]oModel.Order, error) {
 	query := `
-		SELECT id_order, tenant_id, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+		SELECT id_order, tenant_id, id_user, total_price, status, note, created_on, delivery_date, delivery_direction, paid, cancellation_reason
 		FROM orders
 		WHERE tenant_id = $1 AND status = 'pending' AND paid = false AND created_on < $2
 		ORDER BY created_on ASC
@@ -660,7 +669,7 @@ func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, tenantID 
 	var orders []oModel.Order
 	for rows.Next() {
 		var o oModel.Order
-		var note, cancellationReason sql.NullString
+		var note, deliveryDirection, cancellationReason sql.NullString
 		err := rows.Scan(
 			&o.ID,
 			&o.TenantID,
@@ -670,6 +679,7 @@ func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, tenantID 
 			&note,
 			&o.CreatedOn,
 			&o.DeliveryDate,
+			&deliveryDirection,
 			&o.Paid,
 			&cancellationReason,
 		)
@@ -678,6 +688,9 @@ func (r *OrderRepository) GetExpiredPendingOrders(ctx context.Context, tenantID 
 		}
 		if note.Valid {
 			o.Note = note.String
+		}
+		if deliveryDirection.Valid {
+			o.DeliveryDirection = deliveryDirection.String
 		}
 		if cancellationReason.Valid {
 			o.CancellationReason = &cancellationReason.String
@@ -706,7 +719,7 @@ func (r *OrderRepository) ClaimExpiredPendingOrdersTx(
 		UPDATE orders
 		SET status = $1, cancellation_reason = $2
 		WHERE tenant_id = $3 AND status = 'pending' AND paid = false AND expires_at < $4
-		RETURNING id_order, tenant_id, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+		RETURNING id_order, tenant_id, id_user, total_price, status, note, created_on, delivery_date, delivery_direction, paid, cancellation_reason
 	`
 	rows, err := tx.QueryContext(ctx, query, status, nullStringFromPtr(cancellationReason), tenantID, currentTime)
 	if err != nil {
@@ -717,7 +730,7 @@ func (r *OrderRepository) ClaimExpiredPendingOrdersTx(
 	var orders []oModel.Order
 	for rows.Next() {
 		var o oModel.Order
-		var note, reason sql.NullString
+		var note, deliveryDirection, reason sql.NullString
 		err := rows.Scan(
 			&o.ID,
 			&o.TenantID,
@@ -727,6 +740,7 @@ func (r *OrderRepository) ClaimExpiredPendingOrdersTx(
 			&note,
 			&o.CreatedOn,
 			&o.DeliveryDate,
+			&deliveryDirection,
 			&o.Paid,
 			&reason,
 		)
@@ -735,6 +749,9 @@ func (r *OrderRepository) ClaimExpiredPendingOrdersTx(
 		}
 		if note.Valid {
 			o.Note = note.String
+		}
+		if deliveryDirection.Valid {
+			o.DeliveryDirection = deliveryDirection.String
 		}
 		if reason.Valid {
 			o.CancellationReason = &reason.String

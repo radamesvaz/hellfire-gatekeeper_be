@@ -48,6 +48,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"status",
 				"note",
 				"delivery_date",
+				"delivery_direction",
 				"paid",
 				"created_on",
 				"expires_at",
@@ -68,6 +69,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					"pending",
 					"note testing",
 					time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+					"direccion 1",
 					false,
 					time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					nil,
@@ -88,6 +90,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					"pending",
 					"note testing",
 					deliveryDate,
+					"direccion 1",
 					false,
 					createdOn,
 					nil,
@@ -107,6 +110,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 				"delivered",
 				"note testing",
 				time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+				"direccion 2",
 				true,
 				time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 				nil,
@@ -128,6 +132,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					Status:       oModel.StatusPending,
 					Note:         "note testing",
 					DeliveryDate: time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+					DeliveryDirection: "direccion 1",
 					Paid:         false,
 					CreatedOn:    time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					User:         "Client Example",
@@ -157,6 +162,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
 					Status:       oModel.StatusDelivered,
 					Note:         "note testing",
 					DeliveryDate: time.Date(2025, 4, 15, 10, 0, 0, 0, time.UTC),
+					DeliveryDirection: "direccion 2",
 					Paid:         true,
 					CreatedOn:    time.Date(2025, 4, 10, 10, 0, 0, 0, time.UTC),
 					User:         "Client Example",
@@ -191,6 +197,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.delivery_direction,
             o.paid,
             o.created_on,
             o.expires_at,
@@ -221,6 +228,7 @@ func TestOrderRepository_GetOrders(t *testing.T) {
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.delivery_direction,
             o.paid,
             o.created_on,
             o.expires_at,
@@ -289,6 +297,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"status",
 				"note",
 				"delivery_date",
+				"delivery_direction",
 				"paid",
 				"created_on",
 				"expires_at",
@@ -309,6 +318,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					"pending",
 					"note testing",
 					deliveryDate,
+					"direccion 1",
 					false,
 					createdOn,
 					nil,
@@ -329,6 +339,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 					"pending",
 					"note testing",
 					deliveryDate,
+					"direccion 1",
 					false,
 					createdOn,
 					nil,
@@ -349,6 +360,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				Status:       oModel.StatusPending,
 				Note:         "note testing",
 				DeliveryDate: time.Date(2025, 4, 30, 10, 0, 0, 0, time.UTC),
+				DeliveryDirection: "direccion 1",
 				Paid:         false,
 				CreatedOn:    time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC),
 				User:         "Client Example",
@@ -384,6 +396,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"total_price",
 				"status", "note",
 				"delivery_date",
+				"delivery_direction",
 				"paid",
 				"created_on",
 				"expires_at",
@@ -396,9 +409,9 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				"unit_price_snapshot",
 				"quantity",
 			}).
-				AddRow(1, 1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, nil, nil, "Client Example", "66-6666",
+				AddRow(1, 1, 2, 50.0, "pending", "note testing", deliveryDate, "direccion 1", false, createdOn, nil, nil, "Client Example", "66-6666",
 					1, 2, "Product A", 0.0, 2).
-				AddRow(1, 1, 2, 50.0, "pending", "note testing", deliveryDate, false, createdOn, nil, nil, "Client Example", "66-6666",
+				AddRow(1, 1, 2, 50.0, "pending", "note testing", deliveryDate, "direccion 1", false, createdOn, nil, nil, "Client Example", "66-6666",
 					2, 1, "Product B", 0.0, 3),
 			expected: oModel.OrderResponse{
 				ID:           1,
@@ -407,6 +420,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
 				Status:       oModel.StatusPending,
 				Note:         "note testing",
 				DeliveryDate: time.Date(2025, 4, 30, 10, 0, 0, 0, time.UTC),
+				DeliveryDirection: "direccion 1",
 				Paid:         false,
 				CreatedOn:    time.Date(2025, 4, 25, 10, 0, 0, 0, time.UTC),
 				User:         "Client Example",
@@ -448,6 +462,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.delivery_direction,
             o.paid,
             o.created_on,
             o.expires_at,
@@ -478,6 +493,7 @@ func TestOrderRepository_GetOrderByID(t *testing.T) {
             o.status, 
             o.note, 
             o.delivery_date, 
+            o.delivery_direction,
             o.paid,
             o.created_on,
             o.expires_at,
@@ -694,7 +710,7 @@ func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
 	expirationTime := time.Date(2025, 6, 1, 12, 0, 0, 0, time.UTC)
 	const tenantID = uint64(1)
 
-	queryExp := regexp.QuoteMeta(`SELECT id_order, tenant_id, id_user, total_price, status, note, created_on, delivery_date, paid, cancellation_reason
+queryExp := regexp.QuoteMeta(`SELECT id_order, tenant_id, id_user, total_price, status, note, created_on, delivery_date, delivery_direction, paid, cancellation_reason
 		FROM orders
 		WHERE tenant_id = $1 AND status = 'pending' AND paid = false AND created_on < $2
 		ORDER BY created_on ASC`)
@@ -703,7 +719,7 @@ func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
 		mock.ExpectQuery(queryExp).
 			WithArgs(tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "delivery_direction", "paid", "cancellation_reason",
 			}))
 
 		orders, err := repo.GetExpiredPendingOrders(ctx, tenantID, expirationTime)
@@ -719,9 +735,9 @@ func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
 		mock.ExpectQuery(queryExp).
 			WithArgs(tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "delivery_direction", "paid", "cancellation_reason",
 			}).
-				AddRow(1, tenantID, 2, 25.5, "pending", "test note", createdOn, deliveryDate, false, sql.NullString{}))
+				AddRow(1, tenantID, 2, 25.5, "pending", "test note", createdOn, deliveryDate, "direccion vencida", false, sql.NullString{}))
 
 		orders, err := repo.GetExpiredPendingOrders(ctx, tenantID, expirationTime)
 		require.NoError(t, err)
@@ -731,6 +747,7 @@ func TestOrderRepository_GetExpiredPendingOrders(t *testing.T) {
 		assert.Equal(t, 25.5, orders[0].Price)
 		assert.Equal(t, oModel.StatusPending, orders[0].Status)
 		assert.Equal(t, "test note", orders[0].Note)
+		assert.Equal(t, "direccion vencida", orders[0].DeliveryDirection)
 		assert.False(t, orders[0].Paid)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
@@ -762,7 +779,7 @@ func TestOrderRepository_ClaimExpiredPendingOrdersTx(t *testing.T) {
 		mock.ExpectQuery("UPDATE orders").
 			WithArgs("cancelled", reason, tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "delivery_direction", "paid", "cancellation_reason",
 			}))
 
 		tx, err := db.BeginTx(ctx, nil)
@@ -781,9 +798,9 @@ func TestOrderRepository_ClaimExpiredPendingOrdersTx(t *testing.T) {
 		mock.ExpectQuery("UPDATE orders").
 			WithArgs("cancelled", reason, tenantID, expirationTime).
 			WillReturnRows(sqlmock.NewRows([]string{
-				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "paid", "cancellation_reason",
+				"id_order", "tenant_id", "id_user", "total_price", "status", "note", "created_on", "delivery_date", "delivery_direction", "paid", "cancellation_reason",
 			}).
-				AddRow(1, tenantID, 2, 25.5, "cancelled", "test note", createdOn, deliveryDate, false, reason))
+				AddRow(1, tenantID, 2, 25.5, "cancelled", "test note", createdOn, deliveryDate, "direccion reclamada", false, reason))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
@@ -795,6 +812,7 @@ func TestOrderRepository_ClaimExpiredPendingOrdersTx(t *testing.T) {
 		assert.Equal(t, 25.5, orders[0].Price)
 		assert.Equal(t, oModel.OrderStatus("cancelled"), orders[0].Status)
 		assert.Equal(t, "test note", orders[0].Note)
+		assert.Equal(t, "direccion reclamada", orders[0].DeliveryDirection)
 		assert.Equal(t, reason, *orders[0].CancellationReason)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})

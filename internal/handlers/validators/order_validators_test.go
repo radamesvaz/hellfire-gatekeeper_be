@@ -15,11 +15,12 @@ func TestValidateCreateOrderPayload(t *testing.T) {
 		{
 			name: "Happy path: All fields are valid",
 			payload: oModel.CreateOrderPayload{
-				Name:         "usuario uno",
-				Email:        "usuario1@gmail.com",
-				Phone:        "55-555",
-				Note:         "entregar temprano",
-				DeliveryDate: "2025-05-20",
+				Name:              "usuario uno",
+				Email:             "usuario1@gmail.com",
+				Phone:             "55-555",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "direccion de entrega",
 				Items: []oModel.CreateOrderItemInput{
 					{
 						IdProduct: 1,
@@ -32,11 +33,12 @@ func TestValidateCreateOrderPayload(t *testing.T) {
 		{
 			name: "Sad path: missing name",
 			payload: oModel.CreateOrderPayload{
-				Name:         "",
-				Email:        "usuario1@gmail.com",
-				Phone:        "55-555",
-				Note:         "entregar temprano",
-				DeliveryDate: "2025-05-20",
+				Name:              "",
+				Email:             "usuario1@gmail.com",
+				Phone:             "55-555",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "direccion de entrega",
 				Items: []oModel.CreateOrderItemInput{
 					{
 						IdProduct: 1,
@@ -49,11 +51,12 @@ func TestValidateCreateOrderPayload(t *testing.T) {
 		{
 			name: "Sad path: empty email",
 			payload: oModel.CreateOrderPayload{
-				Name:         "usuario uno",
-				Email:        "",
-				Phone:        "55-555",
-				Note:         "entregar temprano",
-				DeliveryDate: "2025-05-20",
+				Name:              "usuario uno",
+				Email:             "",
+				Phone:             "55-555",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "direccion de entrega",
 				Items: []oModel.CreateOrderItemInput{
 					{IdProduct: 1, Quantity: 1},
 				},
@@ -63,11 +66,12 @@ func TestValidateCreateOrderPayload(t *testing.T) {
 		{
 			name: "Sad path: empty phone",
 			payload: oModel.CreateOrderPayload{
-				Name:         "usuario uno",
-				Email:        "usuario1@gmail.com",
-				Phone:        "",
-				Note:         "entregar temprano",
-				DeliveryDate: "2025-05-20",
+				Name:              "usuario uno",
+				Email:             "usuario1@gmail.com",
+				Phone:             "",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "direccion de entrega",
 				Items: []oModel.CreateOrderItemInput{
 					{IdProduct: 1, Quantity: 1},
 				},
@@ -77,23 +81,40 @@ func TestValidateCreateOrderPayload(t *testing.T) {
 		{
 			name: "Sad path: empty items",
 			payload: oModel.CreateOrderPayload{
-				Name:         "usuario uno",
-				Email:        "usuario1@gmail.com",
-				Phone:        "55-555",
-				Note:         "entregar temprano",
-				DeliveryDate: "2025-05-20",
-				Items:        []oModel.CreateOrderItemInput{},
+				Name:              "usuario uno",
+				Email:             "usuario1@gmail.com",
+				Phone:             "55-555",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "direccion de entrega",
+				Items:             []oModel.CreateOrderItemInput{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "Sad path: missing delivery direction",
+			payload: oModel.CreateOrderPayload{
+				Name:              "usuario uno",
+				Email:             "usuario1@gmail.com",
+				Phone:             "55-555",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "",
+				Items: []oModel.CreateOrderItemInput{
+					{IdProduct: 1, Quantity: 1},
+				},
 			},
 			wantErr: true,
 		},
 		{
 			name: "Sad path: item with zero quantity",
 			payload: oModel.CreateOrderPayload{
-				Name:         "usuario uno",
-				Email:        "usuario1@gmail.com",
-				Phone:        "55-555",
-				Note:         "entregar temprano",
-				DeliveryDate: "2025-05-20",
+				Name:              "usuario uno",
+				Email:             "usuario1@gmail.com",
+				Phone:             "55-555",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "direccion de entrega",
 				Items: []oModel.CreateOrderItemInput{
 					{IdProduct: 1, Quantity: 0},
 				},
@@ -103,11 +124,12 @@ func TestValidateCreateOrderPayload(t *testing.T) {
 		{
 			name: "Sad path: item with zero id_product",
 			payload: oModel.CreateOrderPayload{
-				Name:         "usuario uno",
-				Email:        "usuario1@gmail.com",
-				Phone:        "55-555",
-				Note:         "entregar temprano",
-				DeliveryDate: "2025-05-20",
+				Name:              "usuario uno",
+				Email:             "usuario1@gmail.com",
+				Phone:             "55-555",
+				Note:              "entregar temprano",
+				DeliveryDate:      "2025-05-20",
+				DeliveryDirection: "direccion de entrega",
 				Items: []oModel.CreateOrderItemInput{
 					{IdProduct: 0, Quantity: 2},
 				},

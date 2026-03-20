@@ -99,7 +99,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Validate payload fields
 	if err := v.ValidateCreateOrderPayload(payload); err != nil {
-		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -157,6 +157,7 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 		Status:   order.Status,
 		Price:    order.Price,
 		Note:     order.Note,
+		DeliveryDirection: order.DeliveryDirection,
 		DeliveryDate: sql.NullTime{
 			Time:  order.DeliveryDate,
 			Valid: !order.DeliveryDate.IsZero(),
@@ -296,6 +297,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		Status:       currentOrder.Status,
 		Price:        currentOrder.Price,
 		Note:         currentOrder.Note,
+		DeliveryDirection: currentOrder.DeliveryDirection,
 		DeliveryDate: currentOrder.DeliveryDate,
 		Paid:         currentOrder.Paid,
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
@@ -22,6 +23,9 @@ func ValidateCreateOrderPayload(payload oModel.CreateOrderPayload) error {
 	}
 	if strings.TrimSpace(payload.DeliveryDate) == "" {
 		return fmt.Errorf("The 'delivery_date' field is mandatory")
+	}
+	if strings.TrimSpace(payload.DeliveryDirection) == "" {
+		return errors.ErrMissingDeliveryDirection
 	}
 	if len(payload.Items) == 0 {
 		return fmt.Errorf("An item must be sent for the order")

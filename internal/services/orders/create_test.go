@@ -193,6 +193,7 @@ func TestCreateOrder_UpdatesProductStock(t *testing.T) {
 		Name:  "Cliente Test",
 		Email: "test@example.com",
 		Phone: "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-1",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 3}, // Pan: 10 - 3 = 7
 			{IdProduct: 2, Quantity: 2}, // Leche: 5 - 2 = 3
@@ -239,6 +240,7 @@ func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {
 		Name:  "Cliente Test",
 		Email: "test@example.com",
 		Phone: "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-2",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 5}, // Intenta comprar 5 panes pero solo hay 2
 		},
@@ -286,6 +288,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 		Name:  "Cliente 1",
 		Email: "cliente1@example.com",
 		Phone: "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-3",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 3}, // Compra todos los 3 panes
 		},
@@ -307,6 +310,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 		Name:  "Cliente 2",
 		Email: "cliente2@example.com",
 		Phone: "87654321",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-4",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 1}, // Intenta comprar 1 pan pero no hay stock
 		},

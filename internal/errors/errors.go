@@ -22,11 +22,12 @@ var (
 	ErrUpdatingProductStatus  = errors.New("error updating the product status")
 	ErrUpdatingTheProduct     = errors.New("error updating the product")
 	// Order errors
-	ErrNoOrdersFound     = errors.New("error getting all the orders")
-	ErrOrderNotFound     = errors.New("error getting the order")
-	ErrCreatingOrder     = errors.New("error creating the order")
-	ErrCreatingOrderItem = errors.New("error creating the order item")
-	ErrGettingTheOrderID = errors.New("error getting the order ID")
+	ErrNoOrdersFound              = errors.New("error getting all the orders")
+	ErrOrderNotFound              = errors.New("error getting the order")
+	ErrCreatingOrder              = errors.New("error creating the order")
+	ErrCreatingOrderItem          = errors.New("error creating the order item")
+	ErrGettingTheOrderID          = errors.New("error getting the order ID")
+	ErrMissingDeliveryDirection   = errors.New("the 'delivery_direction' field is mandatory")
 	// Order History Errors
 	ErrCreatingOrderHistory = errors.New("error creating order history")
 	ErrGettingOrderHistory  = errors.New("error getting order history")

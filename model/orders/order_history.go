@@ -20,6 +20,7 @@ type OrderHistory struct {
 	Status             OrderStatus  `json:"status"`
 	Price              float64      `json:"total_price" gorm:"not null;check:price >= 0"`
 	Note               string       `json:"note"`
+	DeliveryDirection  string       `json:"delivery_direction"`
 	DeliveryDate       sql.NullTime `json:"delivery_date"`
 	Paid               bool         `json:"paid"`
 	CancellationReason *string      `json:"cancellation_reason,omitempty"`

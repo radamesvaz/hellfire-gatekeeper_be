@@ -26,8 +26,8 @@ import (
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
-	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
+	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -384,6 +384,7 @@ func main() {
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProductStatus).Methods("PATCH")
 	auth.HandleFunc("/products/{id}/thumbnail", productHandler.UpdateProductThumbnail).Methods("PATCH")
+	auth.HandleFunc("/products/{id}/thumbnail", imageHandler.UploadProductThumbnail).Methods("POST")
 
 	// Image endpoints (image management)
 	auth.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")

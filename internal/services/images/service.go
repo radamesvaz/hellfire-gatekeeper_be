@@ -2,6 +2,7 @@ package images
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -20,6 +21,13 @@ type Service struct {
 	Cloudinary    *cloudinary.Cloudinary
 	UseCloudinary bool
 }
+
+var (
+	ErrInvalidThumbnailType = errors.New("invalid thumbnail type")
+	ErrThumbnailTooLarge    = errors.New("thumbnail file too large")
+)
+
+const MaxThumbnailUploadBytes int64 = 5 * 1024 * 1024
 
 func New(uploadDir string) *Service {
 	// Try to initialize Cloudinary from environment variables
@@ -87,6 +95,33 @@ func (s *Service) SaveProductImages(productID uint64, files []*multipart.FileHea
 	return imageURLs, nil
 }
 
+// SaveProductThumbnail saves one thumbnail image for a product.
+func (s *Service) SaveProductThumbnail(productID uint64, file *multipart.FileHeader) (string, error) {
+	if file == nil {
+		return "", fmt.Errorf("%w: file is required", ErrInvalidThumbnailType)
+	}
+	if !s.IsValidImageType(file) {
+		return "", fmt.Errorf("%w: %s", ErrInvalidThumbnailType, file.Filename)
+	}
+	if file.Size > MaxThumbnailUploadBytes {
+		return "", fmt.Errorf("%w: %d > %d", ErrThumbnailTooLarge, file.Size, MaxThumbnailUploadBytes)
+	}
+
+	if s.UseCloudinary {
+		url, err := s.uploadThumbnailToCloudinary(productID, file)
+		if err != nil {
+			return "", fmt.Errorf("failed to upload thumbnail to Cloudinary: %w", err)
+		}
+		return url, nil
+	}
+
+	url, err := s.saveThumbnailToLocal(productID, file)
+	if err != nil {
+		return "", fmt.Errorf("failed to save thumbnail locally: %w", err)
+	}
+	return url, nil
+}
+
 // IsValidImageType checks if the file is a valid image type
 func (s *Service) IsValidImageType(file *multipart.FileHeader) bool {
 	allowedTypes := map[string]bool{
@@ -121,6 +156,11 @@ func (s *Service) generateFilename(index int, ext string) string {
 		return fmt.Sprintf("main_%d%s", timestamp, ext)
 	}
 	return fmt.Sprintf("gallery_%d_%d%s", index, timestamp, ext)
+}
+
+func (s *Service) generateThumbnailFilename(ext string) string {
+	timestamp := time.Now().UnixNano()
+	return fmt.Sprintf("thumbnail_%d%s", timestamp, ext)
 }
 
 // saveFile saves the uploaded file to disk
@@ -312,6 +352,22 @@ func (s *Service) saveToLocal(productID uint64, file *multipart.FileHeader, inde
 	return fmt.Sprintf("/uploads/products/%d/%s", productID, filename), nil
 }
 
+func (s *Service) saveThumbnailToLocal(productID uint64, file *multipart.FileHeader) (string, error) {
+	productDir := filepath.Join(s.UploadDir, "products", fmt.Sprintf("%d", productID), "thumbnails")
+	if err := os.MkdirAll(productDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create thumbnail directory: %w", err)
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	filename := s.generateThumbnailFilename(ext)
+	filePath := filepath.Join(productDir, filename)
+	if err := s.saveFile(file, filePath); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("/uploads/products/%d/thumbnails/%s", productID, filename), nil
+}
+
 // generateCloudinaryPublicID generates a unique public ID for Cloudinary
 func (s *Service) generateCloudinaryPublicID(productID uint64, index int, ext string) string {
 	timestamp := time.Now().UnixNano()
@@ -319,4 +375,27 @@ func (s *Service) generateCloudinaryPublicID(productID uint64, index int, ext st
 		return fmt.Sprintf("product_%d_main_%d", productID, timestamp)
 	}
 	return fmt.Sprintf("product_%d_gallery_%d_%d", productID, index, timestamp)
+}
+
+func (s *Service) uploadThumbnailToCloudinary(productID uint64, file *multipart.FileHeader) (string, error) {
+	src, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+
+	timestamp := time.Now().UnixNano()
+	publicID := fmt.Sprintf("product_%d_thumbnail_%d", productID, timestamp)
+
+	ctx := context.Background()
+	result, err := s.Cloudinary.Upload.Upload(ctx, src, uploader.UploadParams{
+		PublicID: publicID,
+		Folder:   "bakery/products/thumbnails",
+		Tags:     []string{"bakery", "product", "thumbnail", fmt.Sprintf("product_%d", productID)},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return result.SecureURL, nil
 }

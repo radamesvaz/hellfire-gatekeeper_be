@@ -360,6 +360,41 @@ func TestService_DeleteImage(t *testing.T) {
 	}
 }
 
+func TestService_SaveProductThumbnail(t *testing.T) {
+	restore := disableCloudinaryForTests(t)
+	defer restore()
+
+	testDir := "test_uploads"
+	err := os.MkdirAll(testDir, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(testDir)
+
+	service := New(testDir)
+
+	t.Run("HAPPY PATH: valid thumbnail", func(t *testing.T) {
+		file := createTestFileHeader("thumb.jpg", "image/jpeg")
+		url, err := service.SaveProductThumbnail(5, file)
+		require.NoError(t, err)
+		assert.Contains(t, url, "/uploads/products/5/thumbnails/")
+		assert.Contains(t, url, ".jpg")
+	})
+
+	t.Run("SAD PATH: invalid type", func(t *testing.T) {
+		file := createTestFileHeader("thumb.txt", "text/plain")
+		_, err := service.SaveProductThumbnail(5, file)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidThumbnailType)
+	})
+
+	t.Run("SAD PATH: file too large", func(t *testing.T) {
+		file := createTestFileHeader("thumb.jpg", "image/jpeg")
+		file.Size = MaxThumbnailUploadBytes + 1
+		_, err := service.SaveProductThumbnail(5, file)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrThumbnailTooLarge)
+	})
+}
+
 // disableCloudinaryForTests unsets Cloudinary env vars during a test and returns a restore func
 func disableCloudinaryForTests(t *testing.T) func() {
 	t.Helper()

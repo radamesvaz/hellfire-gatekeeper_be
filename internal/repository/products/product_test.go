@@ -738,6 +738,31 @@ func TestProductRepository_UpdateProductThumbnail(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestProductRepository_PrependImageAndSetThumbnail(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	const tenantID7 = uint64(1)
+	const productID = uint64(2)
+	newURL := "/uploads/products/2/thumbnails/thumbnail.jpg"
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT image_urls FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
+		WithArgs(tenantID7, productID).
+		WillReturnRows(sqlmock.NewRows([]string{"image_urls"}).AddRow(`["/uploads/products/2/main.jpg","/uploads/products/2/gallery.jpg"]`))
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4")).
+		WithArgs(`["/uploads/products/2/thumbnails/thumbnail.jpg","/uploads/products/2/main.jpg","/uploads/products/2/gallery.jpg"]`, newURL, tenantID7, productID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	updatedURLs, err := repo.PrependImageAndSetThumbnail(context.Background(), tenantID7, productID, newURL)
+	require.NoError(t, err)
+	assert.Equal(t, []string{newURL, "/uploads/products/2/main.jpg", "/uploads/products/2/gallery.jpg"}, updatedURLs)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestProductRepo_GetProductsByIDs(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -745,19 +770,19 @@ func TestProductRepo_GetProductsByIDs(t *testing.T) {
 
 	repo := &ProductRepository{DB: db}
 
-	const tenantID7 = uint64(1)
+	const tenantID8 = uint64(1)
 	ids := []uint64{1, 2}
 	rows := sqlmock.NewRows([]string{"id_product", "tenant_id", "name", "price", "stock"}).
-		AddRow(1, tenantID7, "Torta Chocolate", 12.5, 5).
-		AddRow(2, tenantID7, "Torta Vainilla", 10.0, 3)
+		AddRow(1, tenantID8, "Torta Chocolate", 12.5, 5).
+		AddRow(2, tenantID8, "Torta Vainilla", 10.0, 3)
 
 	query := "SELECT id_product, tenant_id, name, price, stock FROM products WHERE tenant_id = $1 AND id_product IN ($2,$3)"
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
-		WithArgs(tenantID7, 1, 2).
+		WithArgs(tenantID8, 1, 2).
 		WillReturnRows(rows)
 
-	products, err := repo.GetProductsByIDs(context.Background(), tenantID7, ids)
+	products, err := repo.GetProductsByIDs(context.Background(), tenantID8, ids)
 	assert.NoError(t, err)
 	assert.Len(t, products, 2)
 	assert.Equal(t, "Torta Chocolate", products[0].Name)
@@ -773,17 +798,17 @@ func TestProductRepository_DecrementProductStockTx(t *testing.T) {
 	repo := &ProductRepository{DB: db}
 	ctx := context.Background()
 
-	const tenantID8 = uint64(1)
+	const tenantID9 = uint64(1)
 
 	t.Run("success_decrements_stock", func(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1")).
-			WithArgs(3, tenantID8, 1).
+			WithArgs(3, tenantID9, 1).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		rows, err := repo.DecrementProductStockTx(ctx, tx, tenantID8, 1, 3)
+		rows, err := repo.DecrementProductStockTx(ctx, tx, tenantID9, 1, 3)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), rows)
 		_ = tx.Rollback()
@@ -793,12 +818,12 @@ func TestProductRepository_DecrementProductStockTx(t *testing.T) {
 	t.Run("zero_rows_when_insufficient_stock", func(t *testing.T) {
 		mock.ExpectBegin()
 		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1")).
-			WithArgs(10, tenantID8, 1).
+			WithArgs(10, tenantID9, 1).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		rows, err := repo.DecrementProductStockTx(ctx, tx, tenantID8, 1, 10)
+		rows, err := repo.DecrementProductStockTx(ctx, tx, tenantID9, 1, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(0), rows)
 		_ = tx.Rollback()
@@ -809,7 +834,7 @@ func TestProductRepository_DecrementProductStockTx(t *testing.T) {
 		mock.ExpectBegin()
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		rows, err := repo.DecrementProductStockTx(ctx, tx, tenantID8, 1, 0)
+		rows, err := repo.DecrementProductStockTx(ctx, tx, tenantID9, 1, 0)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), rows)
 		_ = tx.Rollback()

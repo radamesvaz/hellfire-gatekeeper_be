@@ -41,3 +41,13 @@ func ValidatePassword(password string) error {
 
 	return nil
 }
+
+// ThumbnailURLInImageURLs reports whether thumbnailURL is exactly equal to one of the entries in imageURLs.
+func ThumbnailURLInImageURLs(thumbnailURL string, imageURLs []string) bool {
+	for _, u := range imageURLs {
+		if u == thumbnailURL {
+			return true
+		}
+	}
+	return false
+}

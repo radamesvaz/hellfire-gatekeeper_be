@@ -453,6 +453,103 @@ func TestCreateProductWithImages(t *testing.T) {
 	}
 }
 
+func TestUploadProductThumbnail(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repository := repository.ProductRepository{
+		DB: db,
+	}
+
+	testDir := "test_uploads"
+	err := os.MkdirAll(testDir, 0755)
+	require.NoError(t, err)
+	defer os.RemoveAll(testDir)
+
+	productHandler := handlers.ProductHandler{
+		Repo: &repository,
+	}
+	imageService := imagesService.New(testDir)
+	imageHandler := handlers.ImageHandler{
+		Repo:         &repository,
+		ImageService: imageService,
+	}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
+
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	secret := "testingsecret"
+	exp := 60
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
+	authRouter.HandleFunc("/products/{id}/thumbnail", imageHandler.UploadProductThumbnail).Methods("POST")
+
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	createPayload := `{
+		"name": "Producto thumbnail dedicado",
+		"description": "Producto para probar endpoint de thumbnail",
+		"price": 7.5,
+		"available": true,
+		"stock": 4,
+		"status": "active"
+	}`
+	createReq := httptest.NewRequest("POST", "/auth/products", strings.NewReader(createPayload))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("Authorization", "Bearer "+jwt)
+	createRR := httptest.NewRecorder()
+	router.ServeHTTP(createRR, createReq)
+	require.Equal(t, http.StatusOK, createRR.Code)
+
+	var createResp map[string]interface{}
+	err = json.Unmarshal(createRR.Body.Bytes(), &createResp)
+	require.NoError(t, err)
+	productID := fmt.Sprintf("%.0f", createResp["product_id"].(float64))
+
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	fw, err := w.CreateFormFile("thumbnail", "thumb.jpg")
+	require.NoError(t, err)
+	_, err = fw.Write([]byte("fake thumbnail content"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	thumbReq := httptest.NewRequest("POST", fmt.Sprintf("/auth/products/%s/thumbnail", productID), &b)
+	thumbReq.Header.Set("Content-Type", w.FormDataContentType())
+	thumbReq.Header.Set("Authorization", "Bearer "+jwt)
+	thumbRR := httptest.NewRecorder()
+	router.ServeHTTP(thumbRR, thumbReq)
+	require.Equal(t, http.StatusOK, thumbRR.Code)
+
+	var thumbResp map[string]interface{}
+	err = json.Unmarshal(thumbRR.Body.Bytes(), &thumbResp)
+	require.NoError(t, err)
+	thumbnailURL, ok := thumbResp["thumbnail_url"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, thumbnailURL)
+
+	getReq := httptest.NewRequest("GET", fmt.Sprintf("/products/%s", productID), nil)
+	getRR := httptest.NewRecorder()
+	router.ServeHTTP(getRR, getReq)
+	require.Equal(t, http.StatusOK, getRR.Code)
+
+	var product map[string]interface{}
+	err = json.Unmarshal(getRR.Body.Bytes(), &product)
+	require.NoError(t, err)
+	assert.Equal(t, thumbnailURL, product["thumbnail_url"])
+
+	imageURLs, ok := product["image_urls"].([]interface{})
+	require.True(t, ok)
+	require.NotEmpty(t, imageURLs)
+	assert.Equal(t, thumbnailURL, imageURLs[0])
+}
+
 func TestUpdateProduct(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)

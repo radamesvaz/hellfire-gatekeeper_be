@@ -126,6 +126,94 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response)
 }
 
+// UploadProductThumbnail - Upload a dedicated thumbnail for a product
+func (h *ImageHandler) UploadProductThumbnail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	idStr := mux.Vars(r)["id"]
+	productID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
+		return
+	}
+
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		tenantID = 1
+	}
+
+	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID)
+	if err != nil {
+		if errors.Is(err, appErrors.ErrProductNotFound) {
+			http.Error(w, "Product not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to get product", http.StatusInternalServerError)
+		return
+	}
+
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
+		return
+	}
+	if r.MultipartForm == nil || r.MultipartForm.File == nil {
+		http.Error(w, "No files provided", http.StatusBadRequest)
+		return
+	}
+
+	files := r.MultipartForm.File["thumbnail"]
+	if len(files) != 1 {
+		http.Error(w, "Exactly one thumbnail file is required", http.StatusBadRequest)
+		return
+	}
+
+	thumbnailURL, err := h.ImageService.SaveProductThumbnail(productID, files[0])
+	if err != nil {
+		if errors.Is(err, imagesService.ErrInvalidThumbnailType) || errors.Is(err, imagesService.ErrThumbnailTooLarge) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Failed to save thumbnail", http.StatusInternalServerError)
+		return
+	}
+
+	updatedImageURLs, err := h.Repo.PrependImageAndSetThumbnail(ctx, tenantID, productID, thumbnailURL)
+	if err != nil {
+		if errors.Is(err, appErrors.ErrProductNotFound) {
+			http.Error(w, "Product not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to update product thumbnail", http.StatusInternalServerError)
+		return
+	}
+
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+
+	existingProduct.ImageURLs = updatedImageURLs
+	existingProduct.ThumbnailURL = thumbnailURL
+	err = h.UpdateHistoryTable(ctx, &existingProduct, productID, idUser, pModel.ActionUpdate)
+	if err != nil {
+		logger.Warn().Err(err).
+			Uint64("product_id", productID).
+			Uint64("user_id", idUser).
+			Msg("Error creating the history record for upload thumbnail")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	response := map[string]interface{}{
+		"message":       "Thumbnail uploaded successfully",
+		"product_id":    productID,
+		"thumbnail_url": thumbnailURL,
+		"image_urls":    updatedImageURLs,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
 // DeleteProductImage - Delete a specific image from a product
 func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

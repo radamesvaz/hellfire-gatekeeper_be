@@ -106,3 +106,50 @@ func TestIsValidEmail(t *testing.T) {
 		})
 	}
 }
+
+func TestThumbnailURLInImageURLs(t *testing.T) {
+	tests := []struct {
+		name          string
+		thumbnailURL  string
+		imageURLs     []string
+		expectedFound bool
+	}{
+		{
+			name:          "HAPPY PATH: thumbnail is first gallery URL",
+			thumbnailURL:  "https://cdn.example/a.jpg",
+			imageURLs:     []string{"https://cdn.example/a.jpg", "https://cdn.example/b.jpg"},
+			expectedFound: true,
+		},
+		{
+			name:          "HAPPY PATH: thumbnail is last gallery URL",
+			thumbnailURL:  "https://cdn.example/b.jpg",
+			imageURLs:     []string{"https://cdn.example/a.jpg", "https://cdn.example/b.jpg"},
+			expectedFound: true,
+		},
+		{
+			name:          "SAD PATH: thumbnail not in gallery",
+			thumbnailURL:  "https://cdn.example/other.jpg",
+			imageURLs:     []string{"https://cdn.example/a.jpg"},
+			expectedFound: false,
+		},
+		{
+			name:          "SAD PATH: empty gallery",
+			thumbnailURL:  "https://cdn.example/a.jpg",
+			imageURLs:     []string{},
+			expectedFound: false,
+		},
+		{
+			name:          "SAD PATH: substring must not match (exact equality only)",
+			thumbnailURL:  "https://cdn.example/a",
+			imageURLs:     []string{"https://cdn.example/a.jpg"},
+			expectedFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ThumbnailURLInImageURLs(tt.thumbnailURL, tt.imageURLs)
+			assert.Equal(t, tt.expectedFound, got)
+		})
+	}
+}

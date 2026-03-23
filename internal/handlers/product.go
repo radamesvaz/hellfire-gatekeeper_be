@@ -9,6 +9,7 @@ import (
 
 	"github.com/gorilla/mux"
 	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
@@ -152,6 +153,11 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.ThumbnailURL != "" && !validators.ThumbnailURLInImageURLs(req.ThumbnailURL, req.ImageURLs) {
+		http.Error(w, "thumbnail_url must exist in image_urls", http.StatusBadRequest)
+		return
+	}
+
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
 		tenantID = 1
@@ -236,15 +242,7 @@ func (h *ProductHandler) UpdateProductThumbnail(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// Validate that the requested thumbnail belongs to the product images
-	found := false
-	for _, url := range product.ImageURLs {
-		if url == req.ThumbnailURL {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !validators.ThumbnailURLInImageURLs(req.ThumbnailURL, product.ImageURLs) {
 		http.Error(w, "thumbnail_url must exist in image_urls", http.StatusBadRequest)
 		return
 	}

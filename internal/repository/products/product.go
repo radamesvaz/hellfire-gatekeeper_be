@@ -475,11 +475,11 @@ func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql
 
 // UpdateProductImages updates the image URLs and thumbnail for a product
 func (r *ProductRepository) UpdateProductImages(
-		_ context.Context,
-		tenantID, idProduct uint64,
-		imageURLs []string,
-		thumbnailURL string,
-	) error {
+	_ context.Context,
+	tenantID, idProduct uint64,
+	imageURLs []string,
+	thumbnailURL string,
+) error {
 	logger.Debug().
 		Uint64("product_id", idProduct).
 		Int("image_count", len(imageURLs)).
@@ -592,4 +592,77 @@ func (r *ProductRepository) UpdateProductThumbnail(_ context.Context, tenantID, 
 		Msg("Product thumbnail updated successfully")
 
 	return nil
+}
+
+// PrependImageAndSetThumbnail prepends an image URL to image_urls and sets thumbnail_url.
+func (r *ProductRepository) PrependImageAndSetThumbnail(ctx context.Context, tenantID, idProduct uint64, newURL string) ([]string, error) {
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var imageURLsJSON sql.NullString
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT image_urls FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE",
+		tenantID,
+		idProduct,
+	).Scan(&imageURLsJSON)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.NewNotFound(errors.ErrProductNotFound)
+		}
+		return nil, errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	imageURLs := []string{}
+	if imageURLsJSON.Valid && imageURLsJSON.String != "" {
+		if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
+			return nil, errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+		}
+	}
+
+	filtered := make([]string, 0, len(imageURLs))
+	for _, url := range imageURLs {
+		if url != newURL {
+			filtered = append(filtered, url)
+		}
+	}
+	updatedImageURLs := append([]string{newURL}, filtered...)
+
+	updatedJSON, err := json.Marshal(updatedImageURLs)
+	if err != nil {
+		return nil, errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		"UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4",
+		string(updatedJSON),
+		newURL,
+		tenantID,
+		idProduct,
+	)
+	if err != nil {
+		return nil, errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	if rows == 0 {
+		return nil, errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	tx = nil
+	return updatedImageURLs, nil
 }

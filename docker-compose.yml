@@ -33,15 +33,19 @@ services:
     build: .
     container_name: bakery_backend
     depends_on:
-      - postgres_db
+      postgres_db:
+        condition: service_healthy
     ports:
       - "8080:8080"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT}
+      # DNS name of the Postgres service on the Compose network (not localhost)
+      DB_HOST: postgres_db
+      DB_PORT: ${DB_PORT:-5432}
+      # Official Postgres image has no TLS; require would fail with "SSL is not enabled on the server"
+      PGSSLMODE: disable
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES}
     volumes:

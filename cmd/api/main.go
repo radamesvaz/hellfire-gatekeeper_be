@@ -34,10 +34,11 @@ import (
 )
 
 func main() {
-	// Load .env first (if it exists)
-	err := godotenv.Load()
-	if err != nil {
-		fmt.Println("⚠ Could not load .env file")
+	// Load .env when present (local dev). In Docker, env comes from Compose / runtime — no file in the image.
+	if _, err := os.Stat(".env"); err == nil {
+		if err := godotenv.Load(); err != nil {
+			fmt.Println("⚠ Could not load .env file:", err)
+		}
 	}
 
 	// Get log level from environment, default to "info" if not set
@@ -109,10 +110,17 @@ func main() {
 
 	// Compose DSNs from discrete vars. Optionally add fallbacks controlled by env flags.
 	if dbHost != "" && dbUser != "" && dbPassword != "" && dbName != "" {
-		sslMode := "require"
-		lowerHost := strings.ToLower(dbHost)
-		if lowerHost == "localhost" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
-			sslMode = "disable"
+		// PGSSLMODE / DB_SSLMODE override heuristic (e.g. PGSSLMODE=disable for Docker Postgres without TLS).
+		sslMode := firstNonEmpty(
+			strings.TrimSpace(os.Getenv("PGSSLMODE")),
+			strings.TrimSpace(os.Getenv("DB_SSLMODE")),
+		)
+		if sslMode == "" {
+			sslMode = "require"
+			lowerHost := strings.ToLower(dbHost)
+			if lowerHost == "localhost" || lowerHost == "127.0.0.1" || lowerHost == "::1" {
+				sslMode = "disable"
+			}
 		}
 
 		// Build host candidates (no variants unless explicitly enabled)
@@ -396,9 +404,11 @@ func main() {
 	auth.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
-	// Public create order: tenant from path /t/{tenant_slug}/orders or header X-Tenant-Slug on /orders
+	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()
 	tPublic.Use(middleware.TenantFromPathOrHeader(tenantRepo))
+	tPublic.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
+	tPublic.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
 	tPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// Legacy: POST /orders (no tenant in path; handler falls back to tenant 1)

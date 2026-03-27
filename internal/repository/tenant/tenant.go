@@ -11,6 +11,28 @@ type Repository struct {
 	DB *sql.DB
 }
 
+type BrandingColors struct {
+	PrimaryColor   string `json:"primary_color"`
+	SecondaryColor string `json:"secondary_color"`
+	AccentColor    string `json:"accent_color"`
+}
+
+// TenantBranding is the full branding snapshot (logo + palette) for a tenant.
+type TenantBranding struct {
+	LogoURL        string `json:"logo_url"`
+	LogoWidth      *int   `json:"logo_width,omitempty"`
+	LogoHeight     *int   `json:"logo_height,omitempty"`
+	PrimaryColor   string `json:"primary_color"`
+	SecondaryColor string `json:"secondary_color"`
+	AccentColor    string `json:"accent_color"`
+}
+
+type UpdateBrandingColorsRequest struct {
+	PrimaryColor   *string `json:"primary_color"`
+	SecondaryColor *string `json:"secondary_color"`
+	AccentColor    *string `json:"accent_color"`
+}
+
 // GetBySlug returns the tenant id and active status for the given slug.
 // Only returns a tenant when it is active, subscription_status is 'active', and the current period has not ended.
 // Implements middleware.TenantResolver. Returns (0, false, err) when not found, inactive, or subscription expired.
@@ -78,4 +100,89 @@ func (r *Repository) ListActiveTenantIDs(ctx context.Context) ([]uint64, error) 
 		return nil, fmt.Errorf("iterate active tenant ids: %w", err)
 	}
 	return ids, nil
+}
+
+// GetBranding returns logo fields and branding colors for a tenant in one read.
+func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (TenantBranding, error) {
+	var logoURL sql.NullString
+	var logoWidth, logoHeight sql.NullInt64
+	var primaryColor, secondaryColor, accentColor sql.NullString
+
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT logo_url, logo_width, logo_height, primary_color, secondary_color, accent_color
+		 FROM tenants
+		 WHERE id = $1`,
+		tenantID,
+	).Scan(&logoURL, &logoWidth, &logoHeight, &primaryColor, &secondaryColor, &accentColor)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return TenantBranding{}, fmt.Errorf("tenant not found when reading branding: %d", tenantID)
+		}
+		return TenantBranding{}, fmt.Errorf("reading branding for tenant %d: %w", tenantID, err)
+	}
+
+	out := TenantBranding{
+		LogoURL:        nullStringToString(logoURL),
+		PrimaryColor:   nullStringToString(primaryColor),
+		SecondaryColor: nullStringToString(secondaryColor),
+		AccentColor:    nullStringToString(accentColor),
+	}
+	if logoWidth.Valid {
+		w := int(logoWidth.Int64)
+		out.LogoWidth = &w
+	}
+	if logoHeight.Valid {
+		h := int(logoHeight.Int64)
+		out.LogoHeight = &h
+	}
+	return out, nil
+}
+
+// GetBrandingColors returns the branding colors configured for a tenant.
+func (r *Repository) GetBrandingColors(ctx context.Context, tenantID uint64) (BrandingColors, error) {
+	branding, err := r.GetBranding(ctx, tenantID)
+	if err != nil {
+		return BrandingColors{}, err
+	}
+	return BrandingColors{
+		PrimaryColor:   branding.PrimaryColor,
+		SecondaryColor: branding.SecondaryColor,
+		AccentColor:    branding.AccentColor,
+	}, nil
+}
+
+// UpdateBrandingColors partially updates tenant branding colors.
+func (r *Repository) UpdateBrandingColors(ctx context.Context, tenantID uint64, req UpdateBrandingColorsRequest) error {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants
+		 SET primary_color = COALESCE($1, primary_color),
+		     secondary_color = COALESCE($2, secondary_color),
+		     accent_color = COALESCE($3, accent_color),
+		     updated_on = NOW()
+		 WHERE id = $4`,
+		req.PrimaryColor,
+		req.SecondaryColor,
+		req.AccentColor,
+		tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating branding colors for tenant %d: %w", tenantID, err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading affected rows for tenant %d branding colors update: %w", tenantID, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("tenant not found when updating branding colors: %d", tenantID)
+	}
+
+	return nil
+}
+
+func nullStringToString(value sql.NullString) string {
+	if !value.Valid {
+		return ""
+	}
+	return value.String
 }

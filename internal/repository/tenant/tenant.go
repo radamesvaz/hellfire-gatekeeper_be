@@ -18,10 +18,9 @@ type BrandingColors struct {
 }
 
 // TenantBranding is the full branding snapshot (logo + palette) for a tenant.
+// Logo pixel dimensions are not stored; layout is fixed in CSS and uploads are validated on the server.
 type TenantBranding struct {
 	LogoURL        string `json:"logo_url"`
-	LogoWidth      *int   `json:"logo_width,omitempty"`
-	LogoHeight     *int   `json:"logo_height,omitempty"`
 	PrimaryColor   string `json:"primary_color"`
 	SecondaryColor string `json:"secondary_color"`
 	AccentColor    string `json:"accent_color"`
@@ -105,15 +104,14 @@ func (r *Repository) ListActiveTenantIDs(ctx context.Context) ([]uint64, error) 
 // GetBranding returns logo fields and branding colors for a tenant in one read.
 func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (TenantBranding, error) {
 	var logoURL sql.NullString
-	var logoWidth, logoHeight sql.NullInt64
 	var primaryColor, secondaryColor, accentColor sql.NullString
 
 	err := r.DB.QueryRowContext(ctx,
-		`SELECT logo_url, logo_width, logo_height, primary_color, secondary_color, accent_color
+		`SELECT logo_url, primary_color, secondary_color, accent_color
 		 FROM tenants
 		 WHERE id = $1`,
 		tenantID,
-	).Scan(&logoURL, &logoWidth, &logoHeight, &primaryColor, &secondaryColor, &accentColor)
+	).Scan(&logoURL, &primaryColor, &secondaryColor, &accentColor)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return TenantBranding{}, fmt.Errorf("tenant not found when reading branding: %d", tenantID)
@@ -121,21 +119,12 @@ func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (TenantBr
 		return TenantBranding{}, fmt.Errorf("reading branding for tenant %d: %w", tenantID, err)
 	}
 
-	out := TenantBranding{
+	return TenantBranding{
 		LogoURL:        nullStringToString(logoURL),
 		PrimaryColor:   nullStringToString(primaryColor),
 		SecondaryColor: nullStringToString(secondaryColor),
 		AccentColor:    nullStringToString(accentColor),
-	}
-	if logoWidth.Valid {
-		w := int(logoWidth.Int64)
-		out.LogoWidth = &w
-	}
-	if logoHeight.Valid {
-		h := int(logoHeight.Int64)
-		out.LogoHeight = &h
-	}
-	return out, nil
+	}, nil
 }
 
 // GetBrandingColors returns the branding colors configured for a tenant.
@@ -177,6 +166,26 @@ func (r *Repository) UpdateBrandingColors(ctx context.Context, tenantID uint64, 
 		return fmt.Errorf("tenant not found when updating branding colors: %d", tenantID)
 	}
 
+	return nil
+}
+
+// UpdateTenantLogoURL sets the tenant logo URL (after a successful upload).
+func (r *Repository) UpdateTenantLogoURL(ctx context.Context, tenantID uint64, logoURL string) error {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants SET logo_url = $1, updated_on = NOW() WHERE id = $2`,
+		logoURL,
+		tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating tenant logo for tenant %d: %w", tenantID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected for tenant logo update %d: %w", tenantID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("tenant not found when updating logo: %d", tenantID)
+	}
 	return nil
 }
 

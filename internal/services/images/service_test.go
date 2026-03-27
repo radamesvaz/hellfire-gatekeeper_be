@@ -395,6 +395,38 @@ func TestService_SaveProductThumbnail(t *testing.T) {
 	})
 }
 
+func TestService_SaveTenantLogo(t *testing.T) {
+	restore := disableCloudinaryForTests(t)
+	defer restore()
+
+	testDir := t.TempDir()
+	service := New(testDir)
+
+	t.Run("HAPPY PATH: local logo", func(t *testing.T) {
+		file := createTestFileHeader("logo.png", "image/png")
+		url, err := service.SaveTenantLogo(3, file)
+		require.NoError(t, err)
+		assert.Contains(t, url, "/uploads/tenants/3/")
+		assert.Contains(t, url, "logo_")
+		assert.Contains(t, url, ".png")
+	})
+
+	t.Run("SAD PATH: invalid type", func(t *testing.T) {
+		file := createTestFileHeader("logo.txt", "text/plain")
+		_, err := service.SaveTenantLogo(3, file)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidTenantLogoType)
+	})
+
+	t.Run("SAD PATH: file too large", func(t *testing.T) {
+		file := createTestFileHeader("logo.png", "image/png")
+		file.Size = MaxTenantLogoUploadBytes + 1
+		_, err := service.SaveTenantLogo(3, file)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrTenantLogoTooLarge)
+	})
+}
+
 // disableCloudinaryForTests unsets Cloudinary env vars during a test and returns a restore func
 func disableCloudinaryForTests(t *testing.T) func() {
 	t.Helper()

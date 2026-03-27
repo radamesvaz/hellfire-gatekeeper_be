@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -12,6 +14,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
+	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,10 +30,10 @@ func TestTenantHandler_GetBranding_Success(t *testing.T) {
 
 	tenantID := uint64(1)
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT logo_url, logo_width, logo_height, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
+		regexp.QuoteMeta("SELECT logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
 	).WithArgs(tenantID).WillReturnRows(
-		sqlmock.NewRows([]string{"logo_url", "logo_width", "logo_height", "primary_color", "secondary_color", "accent_color"}).
-			AddRow("https://example.com/logo.png", 320, 120, "#111827", "#374151", "#F59E0B"),
+		sqlmock.NewRows([]string{"logo_url", "primary_color", "secondary_color", "accent_color"}).
+			AddRow("https://example.com/logo.png", "#111827", "#374151", "#F59E0B"),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/t/default/tenant/branding", nil)
@@ -94,10 +97,10 @@ func TestTenantHandler_UpdateBrandingColors_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT logo_url, logo_width, logo_height, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
+		regexp.QuoteMeta("SELECT logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
 	).WithArgs(tenantID).WillReturnRows(
-		sqlmock.NewRows([]string{"logo_url", "logo_width", "logo_height", "primary_color", "secondary_color", "accent_color"}).
-			AddRow(nil, nil, nil, "#111827", "#374151", "#F59E0B"),
+		sqlmock.NewRows([]string{"logo_url", "primary_color", "secondary_color", "accent_color"}).
+			AddRow(nil, "#111827", "#374151", "#F59E0B"),
 	)
 
 	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/colors", strings.NewReader(payload))
@@ -110,6 +113,52 @@ func TestTenantHandler_UpdateBrandingColors_Success(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), "Tenant branding colors updated successfully")
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTenantHandler_UploadTenantLogo_NoImageService(t *testing.T) {
+	handler := &TenantHandler{
+		Repo:         &tenantRepository.Repository{},
+		ImageService: nil,
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/logo", nil)
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.UploadTenantLogo(rr, req)
+
+	require.Equal(t, http.StatusInternalServerError, rr.Code)
+}
+
+func TestTenantHandler_UploadTenantLogo_WrongFieldName(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	part, err := w.CreateFormFile("not_logo", "x.png")
+	require.NoError(t, err)
+	_, err = part.Write([]byte("x"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	handler := &TenantHandler{
+		Repo:         &tenantRepository.Repository{DB: db},
+		ImageService: imagesService.New(t.TempDir()),
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/logo", &b)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.UploadTenantLogo(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Exactly one logo file is required")
 }
 
 func TestTenantHandler_UpdateBrandingColors_InvalidColor(t *testing.T) {

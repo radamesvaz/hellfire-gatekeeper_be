@@ -23,11 +23,16 @@ type Service struct {
 }
 
 var (
-	ErrInvalidThumbnailType = errors.New("invalid thumbnail type")
-	ErrThumbnailTooLarge    = errors.New("thumbnail file too large")
+	ErrInvalidThumbnailType  = errors.New("invalid thumbnail type")
+	ErrThumbnailTooLarge     = errors.New("thumbnail file too large")
+	ErrInvalidTenantLogoType = errors.New("invalid tenant logo type")
+	ErrTenantLogoTooLarge    = errors.New("tenant logo file too large")
 )
 
 const MaxThumbnailUploadBytes int64 = 5 * 1024 * 1024
+
+// MaxTenantLogoUploadBytes limits tenant logo uploads (admin branding).
+const MaxTenantLogoUploadBytes int64 = 5 * 1024 * 1024
 
 func New(uploadDir string) *Service {
 	// Try to initialize Cloudinary from environment variables
@@ -118,6 +123,33 @@ func (s *Service) SaveProductThumbnail(productID uint64, file *multipart.FileHea
 	url, err := s.saveThumbnailToLocal(productID, file)
 	if err != nil {
 		return "", fmt.Errorf("failed to save thumbnail locally: %w", err)
+	}
+	return url, nil
+}
+
+// SaveTenantLogo stores one logo image for a tenant (local disk or Cloudinary).
+func (s *Service) SaveTenantLogo(tenantID uint64, file *multipart.FileHeader) (string, error) {
+	if file == nil {
+		return "", fmt.Errorf("logo file is required")
+	}
+	if !s.IsValidImageType(file) {
+		return "", fmt.Errorf("%w: %s", ErrInvalidTenantLogoType, file.Filename)
+	}
+	if file.Size > MaxTenantLogoUploadBytes {
+		return "", fmt.Errorf("%w: %d > %d", ErrTenantLogoTooLarge, file.Size, MaxTenantLogoUploadBytes)
+	}
+
+	if s.UseCloudinary {
+		url, err := s.uploadTenantLogoToCloudinary(tenantID, file)
+		if err != nil {
+			return "", fmt.Errorf("failed to upload tenant logo to Cloudinary: %w", err)
+		}
+		return url, nil
+	}
+
+	url, err := s.saveTenantLogoToLocal(tenantID, file)
+	if err != nil {
+		return "", fmt.Errorf("failed to save tenant logo locally: %w", err)
 	}
 	return url, nil
 }
@@ -392,6 +424,46 @@ func (s *Service) uploadThumbnailToCloudinary(productID uint64, file *multipart.
 		PublicID: publicID,
 		Folder:   "bakery/products/thumbnails",
 		Tags:     []string{"bakery", "product", "thumbnail", fmt.Sprintf("product_%d", productID)},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return result.SecureURL, nil
+}
+
+func (s *Service) saveTenantLogoToLocal(tenantID uint64, file *multipart.FileHeader) (string, error) {
+	dir := filepath.Join(s.UploadDir, "tenants", fmt.Sprintf("%d", tenantID))
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create tenant logo directory: %w", err)
+	}
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext == "" {
+		ext = ".png"
+	}
+	filename := fmt.Sprintf("logo_%d%s", time.Now().UnixNano(), ext)
+	filePath := filepath.Join(dir, filename)
+	if err := s.saveFile(file, filePath); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("/uploads/tenants/%d/%s", tenantID, filename), nil
+}
+
+func (s *Service) uploadTenantLogoToCloudinary(tenantID uint64, file *multipart.FileHeader) (string, error) {
+	src, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+
+	timestamp := time.Now().UnixNano()
+	publicID := fmt.Sprintf("tenant_%d_logo_%d", tenantID, timestamp)
+
+	ctx := context.Background()
+	result, err := s.Cloudinary.Upload.Upload(ctx, src, uploader.UploadParams{
+		PublicID: publicID,
+		Folder:   "bakery/tenants/logos",
+		Tags:     []string{"bakery", "tenant", "logo", fmt.Sprintf("tenant_%d", tenantID)},
 	})
 	if err != nil {
 		return "", err

@@ -309,7 +309,10 @@ func main() {
 
 	// Tenant setup (for path-based public routes)
 	tenantRepo := &tenantRepository.Repository{DB: db}
-	tenantHandler := &h.TenantHandler{Repo: tenantRepo}
+	tenantHandler := &h.TenantHandler{
+		Repo:         tenantRepo,
+		ImageService: imageService,
+	}
 
 	// Order setup
 	orderRepo := &ordersRepository.OrderRepository{DB: db}
@@ -406,6 +409,7 @@ func main() {
 	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Tenant branding: reads are public (see tPublic); mutations require auth
+	auth.HandleFunc("/tenant/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
 	auth.HandleFunc("/tenant/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header

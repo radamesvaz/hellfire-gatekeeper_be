@@ -1,0 +1,3 @@
+ALTER TABLE tenants
+    ADD COLUMN IF NOT EXISTS logo_width INT,
+    ADD COLUMN IF NOT EXISTS logo_height INT;

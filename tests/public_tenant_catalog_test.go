@@ -43,6 +43,60 @@ func TestPublicGetAllProductsByTenantSlug(t *testing.T) {
 	assert.Equal(t, "Brownie Clásico", products[0]["name"])
 }
 
+func TestPublicGetTenantBrandingBySlug(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	tenantRepo := tenantRepository.Repository{DB: db}
+	handler := handlers.TenantHandler{Repo: &tenantRepo}
+
+	router := mux.NewRouter()
+	tPublic := router.PathPrefix("/t/{tenant_slug}").Subrouter()
+	tPublic.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
+	tPublic.HandleFunc("/tenant/branding", handler.GetBranding).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/t/default/tenant/branding", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var body map[string]interface{}
+	err := json.Unmarshal(rr.Body.Bytes(), &body)
+	require.NoError(t, err)
+	assert.Equal(t, "default", body["tenant_slug"])
+	assert.NotNil(t, body["tenant_id"])
+	branding, ok := body["branding"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Contains(t, branding, "logo_url")
+	assert.Contains(t, branding, "primary_color")
+	assert.Contains(t, branding, "secondary_color")
+	assert.Contains(t, branding, "accent_color")
+}
+
+func TestPublicTenantBrandingUnknownTenantReturns404(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	tenantRepo := tenantRepository.Repository{DB: db}
+	handler := handlers.TenantHandler{Repo: &tenantRepo}
+
+	router := mux.NewRouter()
+	tPublic := router.PathPrefix("/t/{tenant_slug}").Subrouter()
+	tPublic.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
+	tPublic.HandleFunc("/tenant/branding", handler.GetBranding).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/t/no-such-tenant/tenant/branding", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
 func TestPublicGetProductByIDByTenantSlug(t *testing.T) {
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()

@@ -69,10 +69,11 @@ dev() {
   sleep 5
   
   echo -e "${YELLOW}🔄 Running migrations...${NC}"
-  go run cmd/migrate/main.go up
-  
+  go run ./cmd/migrate
+
   echo -e "${GREEN}✅ Development environment ready!${NC}"
   echo -e "${YELLOW}👉 Run './run.sh app' to start the application${NC}"
+  echo -e "${YELLOW}👉 Optional: './run.sh seed' for local multi-tenant demo data${NC}"
 }
 
 # Start the application
@@ -85,8 +86,54 @@ app() {
 # Run migrations only
 migrate() {
   echo -e "${YELLOW}🔄 Running migrations...${NC}"
-  go run cmd/migrate/main.go up
+  go run ./cmd/migrate
   echo -e "${GREEN}✅ Migrations completed!${NC}"
+}
+
+# Apply local SQL seeds (never used on Render). Requires psql or Docker postgres_db.
+seed() {
+  echo -e "${YELLOW}🌱 Applying local dev seeds from seeds/*.sql ...${NC}"
+
+  shopt -s nullglob
+  local sql_files=(seeds/*.sql)
+  shopt -u nullglob
+
+  if [ ${#sql_files[@]} -eq 0 ]; then
+    echo -e "${RED}❌ No .sql files found in seeds/${NC}"
+    exit 1
+  fi
+
+  export PGHOST="${DB_HOST:-localhost}"
+  export PGPORT="${DB_PORT:-5432}"
+  export PGUSER="${DB_USER:-${POSTGRES_USER:-}}"
+  export PGPASSWORD="${DB_PASSWORD:-${POSTGRES_PASSWORD:-}}"
+  export PGDATABASE="${DB_NAME:-${POSTGRES_DB:-}}"
+
+  if [ -z "$PGUSER" ] || [ -z "$PGDATABASE" ]; then
+    echo -e "${RED}❌ Set DB_USER and DB_NAME (or POSTGRES_USER and POSTGRES_DB) in .env${NC}"
+    exit 1
+  fi
+
+  apply_sql() {
+    local f="$1"
+    if command -v psql >/dev/null 2>&1; then
+      psql -v ON_ERROR_STOP=1 -f "$f"
+    else
+      if [ -z "${POSTGRES_USER:-}" ] || [ -z "${POSTGRES_DB:-}" ]; then
+        echo -e "${RED}❌ psql not found; for Docker fallback set POSTGRES_USER and POSTGRES_DB in .env${NC}"
+        exit 1
+      fi
+      echo -e "${YELLOW}   (using docker-compose exec postgres_db — install psql for direct use)${NC}"
+      docker-compose exec -T postgres_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 < "$f"
+    fi
+  }
+
+  for f in "${sql_files[@]}"; do
+    echo -e "${YELLOW}   → $f${NC}"
+    apply_sql "$f"
+  done
+
+  echo -e "${GREEN}✅ Seeds applied.${NC}"
 }
 
 # Reset project: full rebuild
@@ -122,6 +169,9 @@ case "$1" in
   migrate)
     migrate
     ;;
+  seed)
+    seed
+    ;;
   reset)
     reset
     ;;
@@ -131,6 +181,7 @@ case "$1" in
     echo -e "${YELLOW}   dev        - Start development environment (PostgreSQL + migrations)${NC}"
     echo -e "${YELLOW}   app        - Start the application${NC}"
     echo -e "${YELLOW}   migrate    - Run migrations only${NC}"
+    echo -e "${YELLOW}   seed       - Apply seeds/*.sql to local DB (dev only)${NC}"
     echo -e "${YELLOW}   unit       - Run unit tests${NC}"
     echo -e "${YELLOW}   integration - Run integration tests${NC}"
     echo -e "${YELLOW}   tests      - Run all tests${NC}"

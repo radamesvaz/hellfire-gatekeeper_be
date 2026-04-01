@@ -16,7 +16,7 @@ Este proyecto usa [`golang-migrate`](https://github.com/golang-migrate/migrate) 
 ### Opción 2: Comando Manual
 
 ```bash
-go run cmd/migrate/main.go up
+go run ./cmd/migrate
 ```
 
 ### Opción 3: Con Docker

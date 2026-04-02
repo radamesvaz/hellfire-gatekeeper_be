@@ -4,16 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/radamesvaz/bakery-app/internal/errors"
+	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	"github.com/radamesvaz/bakery-app/internal/pagination"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
@@ -29,7 +31,12 @@ type OrderHandler struct {
 	TenantRepo  *tenantRepository.Repository
 }
 
-// Get all orders
+type ordersListResponse struct {
+	Items      []oModel.OrderResponse `json:"items"`
+	NextCursor *string                `json:"next_cursor"`
+}
+
+// GetAllOrders lists orders with cursor pagination (query: limit, cursor) and existing filters (ignore_status, status).
 func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -38,23 +45,53 @@ func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 		tenantID = 1
 	}
 
-	// Parse query parameters
 	ignoreStatus := r.URL.Query().Get("ignore_status") == "true"
 	statusFilter := r.URL.Query().Get("status")
+
+	if err := v.ValidateOrderListStatusFilter(statusFilter); err != nil {
+		var he *appErrors.HTTPError
+		if errors.As(err, &he) {
+			http.Error(w, he.Error(), he.StatusCode)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
 
 	var statusFilterPtr *string
 	if statusFilter != "" {
 		statusFilterPtr = &statusFilter
 	}
 
-	orders, err := h.Repo.GetOrdersWithFilters(ctx, tenantID, ignoreStatus, statusFilterPtr)
+	limit, err := v.ParseListLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		var he *appErrors.HTTPError
+		if errors.As(err, &he) {
+			http.Error(w, he.Error(), he.StatusCode)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
+
+	var after *pagination.OrderKeyset
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		k, err := pagination.DecodeOrderCursor(c)
+		if err != nil {
+			http.Error(w, "Invalid cursor", http.StatusBadRequest)
+			return
+		}
+		after = &k
+	}
+
+	page, err := h.Repo.ListOrdersWithFiltersPage(ctx, tenantID, ignoreStatus, statusFilterPtr, limit, after)
 	if err != nil {
 		http.Error(w, "Error getting orders", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(orders)
+	json.NewEncoder(w).Encode(ordersListResponse{Items: page.Items, NextCursor: page.NextCursor})
 }
 
 // GetOrderByID retrieves a product by its ID
@@ -73,7 +110,7 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	}
 	order, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
-		if httpErr, ok := err.(*errors.HTTPError); ok {
+		if httpErr, ok := err.(*appErrors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
 			return
 		}
@@ -151,12 +188,12 @@ func (h *OrderHandler) UpdateOrderHistoryTable(
 		orderHistoryIdUser = &order.IdUser
 	}
 	orderHistory := oModel.OrderHistory{
-		TenantID: order.TenantID,
-		IDOrder:  idOrder,
-		IdUser:   orderHistoryIdUser,
-		Status:   order.Status,
-		Price:    order.Price,
-		Note:     order.Note,
+		TenantID:          order.TenantID,
+		IDOrder:           idOrder,
+		IdUser:            orderHistoryIdUser,
+		Status:            order.Status,
+		Price:             order.Price,
+		Note:              order.Note,
 		DeliveryDirection: order.DeliveryDirection,
 		DeliveryDate: sql.NullTime{
 			Time:  order.DeliveryDate,
@@ -220,7 +257,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	// Get the current order to track changes
 	currentOrder, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
-		if httpErr, ok := err.(*errors.HTTPError); ok {
+		if httpErr, ok := err.(*appErrors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
 			return
 		}
@@ -268,7 +305,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		// Update the order status with stock reversion if admin cancels; optional cancellation reason when cancelling
 		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason)
 		if err != nil {
-			if httpErr, ok := err.(*errors.HTTPError); ok {
+			if httpErr, ok := err.(*appErrors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
 				return
 			}
@@ -281,7 +318,7 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	if payload.Paid != nil {
 		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
 		if err != nil {
-			if httpErr, ok := err.(*errors.HTTPError); ok {
+			if httpErr, ok := err.(*appErrors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
 				return
 			}
@@ -292,14 +329,14 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 	// Create order history record for the update
 	orderModel := &oModel.Order{
-		ID:           currentOrder.ID,
-		IdUser:       currentOrder.IdUser,
-		Status:       currentOrder.Status,
-		Price:        currentOrder.Price,
-		Note:         currentOrder.Note,
+		ID:                currentOrder.ID,
+		IdUser:            currentOrder.IdUser,
+		Status:            currentOrder.Status,
+		Price:             currentOrder.Price,
+		Note:              currentOrder.Note,
 		DeliveryDirection: currentOrder.DeliveryDirection,
-		DeliveryDate: currentOrder.DeliveryDate,
-		Paid:         currentOrder.Paid,
+		DeliveryDate:      currentOrder.DeliveryDate,
+		Paid:              currentOrder.Paid,
 	}
 
 	// Update the model with new values

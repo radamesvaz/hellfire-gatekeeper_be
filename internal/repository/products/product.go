@@ -9,6 +9,7 @@ import (
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/logger"
+	"github.com/radamesvaz/bakery-app/internal/pagination"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 )
 
@@ -16,13 +17,37 @@ type ProductRepository struct {
 	DB *sql.DB
 }
 
-// GetAllProducts gets all the products from the table for a tenant
-func (r *ProductRepository) GetAllProducts(_ context.Context, tenantID uint64) ([]pModel.Product, error) {
-	logger.Debug().Uint64("tenant_id", tenantID).Msg("Getting all products for tenant")
-	rows, err := r.DB.Query("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1", tenantID)
+// ListProductsPageResult is one page of products (cursor pagination on id_product DESC).
+type ListProductsPageResult struct {
+	Items      []pModel.Product
+	NextCursor *string
+}
+
+// ListProductsPage returns up to limit products for the tenant, ordered by id_product descending.
+// If afterID is non-nil, only rows with id_product < *afterID are considered (next page).
+// Fetches limit+1 rows internally to detect a following page.
+func (r *ProductRepository) ListProductsPage(ctx context.Context, tenantID uint64, limit int, afterID *uint64) (ListProductsPageResult, error) {
+	logger.Debug().Uint64("tenant_id", tenantID).Int("limit", limit).Msg("Listing products page")
+	if limit < 1 {
+		return ListProductsPageResult{}, fmt.Errorf("limit must be at least 1")
+	}
+
+	q := `SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1`
+	args := []interface{}{tenantID}
+	argPos := 2
+	if afterID != nil {
+		q += fmt.Sprintf(" AND id_product < $%d", argPos)
+		args = append(args, *afterID)
+		argPos++
+	}
+	q += fmt.Sprintf(" ORDER BY id_product DESC LIMIT $%d", argPos)
+	args = append(args, limit+1)
+
+	rows, err := r.DB.QueryContext(ctx, q, args...)
 	if err != nil {
-		logger.Err(err).Msg("Error getting the products")
-		return nil, err
+		logger.Err(err).Msg("Error listing products page")
+		return ListProductsPageResult{}, err
 	}
 	defer rows.Close()
 
@@ -45,10 +70,9 @@ func (r *ProductRepository) GetAllProducts(_ context.Context, tenantID uint64) (
 			&product.CreatedOn,
 		); err != nil {
 			logger.Err(err).Msg("Error mapping the products")
-			return nil, err
+			return ListProductsPageResult{}, err
 		}
 
-		// Parse image URLs from JSON
 		if imageURLsJSON.Valid && imageURLsJSON.String != "" {
 			var imageURLs []string
 			if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
@@ -67,8 +91,31 @@ func (r *ProductRepository) GetAllProducts(_ context.Context, tenantID uint64) (
 
 		products = append(products, product)
 	}
-	logger.Debug().Int("count", len(products)).Msg("Products retrieved successfully")
-	return products, nil
+	if err := rows.Err(); err != nil {
+		return ListProductsPageResult{}, err
+	}
+
+	if products == nil {
+		products = []pModel.Product{}
+	}
+
+	hasNext := len(products) > limit
+	if hasNext {
+		products = products[:limit]
+	}
+
+	var next *string
+	if hasNext && len(products) > 0 {
+		last := products[len(products)-1].ID
+		enc, err := pagination.EncodeIDCursor(last)
+		if err != nil {
+			return ListProductsPageResult{}, fmt.Errorf("encoding next cursor: %w", err)
+		}
+		next = &enc
+	}
+
+	logger.Debug().Int("count", len(products)).Bool("has_next", hasNext).Msg("Products page retrieved")
+	return ListProductsPageResult{Items: products, NextCursor: next}, nil
 }
 
 // Getting a product by its ID for a tenant

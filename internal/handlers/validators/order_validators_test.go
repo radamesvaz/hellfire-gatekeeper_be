@@ -1,9 +1,13 @@
 package validators
 
 import (
+	"net/http"
 	"testing"
 
+	"github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateCreateOrderPayload(t *testing.T) {
@@ -150,4 +154,15 @@ func TestValidateCreateOrderPayload(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateOrderListStatusFilter(t *testing.T) {
+	assert.NoError(t, ValidateOrderListStatusFilter(""))
+	assert.NoError(t, ValidateOrderListStatusFilter(string(oModel.StatusPending)))
+
+	err := ValidateOrderListStatusFilter("nonexistent")
+	require.Error(t, err)
+	var he *errors.HTTPError
+	require.ErrorAs(t, err, &he)
+	assert.Equal(t, http.StatusBadRequest, he.StatusCode)
 }

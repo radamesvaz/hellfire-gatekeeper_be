@@ -12,6 +12,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	"github.com/radamesvaz/bakery-app/internal/pagination"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 )
@@ -20,21 +21,48 @@ type ProductHandler struct {
 	Repo *productsRepository.ProductRepository
 }
 
-// GetAllProducts - Get all products
+type productsListResponse struct {
+	Items      []pModel.Product `json:"items"`
+	NextCursor *string          `json:"next_cursor"`
+}
+
+// GetAllProducts lists products with cursor pagination (query: limit, cursor).
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
 		tenantID = 1
 	}
-	products, err := h.Repo.GetAllProducts(ctx, tenantID)
+
+	limit, err := validators.ParseListLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		var he *appErrors.HTTPError
+		if errors.As(err, &he) {
+			http.Error(w, he.Error(), he.StatusCode)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
+
+	var afterID *uint64
+	if c := r.URL.Query().Get("cursor"); c != "" {
+		id, err := pagination.DecodeIDCursor(c)
+		if err != nil {
+			http.Error(w, "Invalid cursor", http.StatusBadRequest)
+			return
+		}
+		afterID = &id
+	}
+
+	page, err := h.Repo.ListProductsPage(ctx, tenantID, limit, afterID)
 	if err != nil {
 		http.Error(w, "Failed to get products", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(products)
+	json.NewEncoder(w).Encode(productsListResponse{Items: page.Items, NextCursor: page.NextCursor})
 }
 
 // GetProductByID - Get a product by ID

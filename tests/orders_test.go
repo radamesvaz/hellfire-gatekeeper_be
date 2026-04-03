@@ -24,6 +24,7 @@ import (
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetAllOrders(t *testing.T) {
@@ -161,6 +162,63 @@ func TestGetAllOrders(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestGetAllOrdersFilteredByIDUser(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	secret := "testingsecret"
+	exp := 60
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
+
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/auth/orders?id_user=2", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var env struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                    `json:"next_cursor"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &env))
+	require.Len(t, env.Items, 3)
+
+	req = httptest.NewRequest("GET", "/auth/orders?id_user=1", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &env))
+	assert.Len(t, env.Items, 0)
+
+	req = httptest.NewRequest("GET", "/auth/orders?id_user=0", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = httptest.NewRequest("GET", "/auth/orders?id_user=notanumber", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestGetOrderByID(t *testing.T) {

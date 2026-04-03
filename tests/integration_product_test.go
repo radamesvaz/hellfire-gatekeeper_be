@@ -189,6 +189,56 @@ func TestGetAllProducts(t *testing.T) {
 	assert.Equal(t, []interface{}{}, product2["image_urls"])
 }
 
+func TestGetAllProductsWithQNamePrefix(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/products?q=Su", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var body struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                  `json:"next_cursor"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, "Suspiros", body.Items[0]["name"])
+
+	req = httptest.NewRequest("GET", "/products?q=zzzz", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Len(t, body.Items, 0)
+}
+
+func TestGetAllProductsQNameTooShort(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/products?q=x", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
 func TestGetProductByID(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)

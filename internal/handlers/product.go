@@ -26,7 +26,8 @@ type productsListResponse struct {
 	NextCursor *string          `json:"next_cursor"`
 }
 
-// GetAllProducts lists products with cursor pagination (query: limit, cursor).
+// GetAllProducts lists products with cursor pagination (query: limit, cursor, optional q).
+// q: case-insensitive name prefix; minimum 2 characters; omit or empty for no filter.
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
@@ -45,6 +46,22 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	namePrefixRaw, err := validators.ParseProductSearchQuery(r.URL.Query().Get("q"))
+	if err != nil {
+		var he *appErrors.HTTPError
+		if errors.As(err, &he) {
+			http.Error(w, he.Error(), he.StatusCode)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
+	var nameLikePattern *string
+	if namePrefixRaw != nil {
+		pat := validators.ProductNamePrefixLikePattern(*namePrefixRaw)
+		nameLikePattern = &pat
+	}
+
 	var afterID *uint64
 	if c := r.URL.Query().Get("cursor"); c != "" {
 		id, err := pagination.DecodeIDCursor(c)
@@ -55,7 +72,7 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 		afterID = &id
 	}
 
-	page, err := h.Repo.ListProductsPage(ctx, tenantID, limit, afterID)
+	page, err := h.Repo.ListProductsPage(ctx, tenantID, limit, afterID, nameLikePattern)
 	if err != nil {
 		http.Error(w, "Failed to get products", http.StatusInternalServerError)
 		return

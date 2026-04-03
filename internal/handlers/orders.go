@@ -36,7 +36,8 @@ type ordersListResponse struct {
 	NextCursor *string                `json:"next_cursor"`
 }
 
-// GetAllOrders lists orders with cursor pagination (query: limit, cursor) and existing filters (ignore_status, status).
+// GetAllOrders lists orders with cursor pagination (query: limit, cursor, optional id_user) and filters ignore_status, status.
+// id_user: positive integer filters orders for that user within the tenant; omit for all users.
 func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -84,7 +85,17 @@ func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 		after = &k
 	}
 
-	page, err := h.Repo.ListOrdersWithFiltersPage(ctx, tenantID, ignoreStatus, statusFilterPtr, limit, after)
+	var filterUserID *uint64
+	if s := r.URL.Query().Get("id_user"); s != "" {
+		uid, err := strconv.ParseUint(s, 10, 64)
+		if err != nil || uid == 0 {
+			http.Error(w, "Invalid id_user", http.StatusBadRequest)
+			return
+		}
+		filterUserID = &uid
+	}
+
+	page, err := h.Repo.ListOrdersWithFiltersPage(ctx, tenantID, ignoreStatus, statusFilterPtr, limit, after, filterUserID)
 	if err != nil {
 		http.Error(w, "Error getting orders", http.StatusInternalServerError)
 		return

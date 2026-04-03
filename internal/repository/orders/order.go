@@ -104,12 +104,20 @@ type ListOrdersPageResult struct {
 
 // ListOrdersWithFiltersPage returns orders for the tenant with the same status semantics as GetOrdersWithFilters,
 // ordered by creation time ascending (then id_order), paginated with an opaque cursor (see pagination.OrderKeyset).
-func (r *OrderRepository) ListOrdersWithFiltersPage(ctx context.Context, tenantID uint64, ignoreStatus bool, statusFilter *string, limit int, after *pagination.OrderKeyset) (ListOrdersPageResult, error) {
+func (r *OrderRepository) ListOrdersWithFiltersPage(
+	ctx context.Context,
+	tenantID uint64,
+	ignoreStatus bool,
+	statusFilter *string,
+	limit int,
+	after *pagination.OrderKeyset,
+	filterUserID *uint64,
+) (ListOrdersPageResult, error) {
 	if limit < 1 {
 		return ListOrdersPageResult{}, fmt.Errorf("limit must be at least 1")
 	}
 
-	idQuery, idArgs := buildOrderIDPageQuery(tenantID, ignoreStatus, statusFilter, after, limit+1)
+	idQuery, idArgs := buildOrderIDPageQuery(tenantID, ignoreStatus, statusFilter, after, filterUserID, limit+1)
 	idRows, err := r.DB.QueryContext(ctx, idQuery, idArgs...)
 	if err != nil {
 		return ListOrdersPageResult{}, fmt.Errorf("listing order ids: %w", err)
@@ -188,7 +196,7 @@ func (r *OrderRepository) ListOrdersWithFiltersPage(ctx context.Context, tenantI
 	return ListOrdersPageResult{Items: orders, NextCursor: next}, nil
 }
 
-func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *string, after *pagination.OrderKeyset, limit int) (string, []interface{}) {
+func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *string, after *pagination.OrderKeyset, filterUserID *uint64, limit int) (string, []interface{}) {
 	q := `SELECT o.id_order FROM orders o WHERE o.tenant_id = $1`
 	args := []interface{}{tenantID}
 	idx := 2
@@ -198,6 +206,11 @@ func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *str
 		idx++
 	} else if !ignoreStatus {
 		q += " AND o.status != 'deleted'"
+	}
+	if filterUserID != nil {
+		q += fmt.Sprintf(" AND o.id_user = $%d", idx)
+		args = append(args, *filterUserID)
+		idx++
 	}
 	if after != nil {
 		tArg := idx
@@ -272,16 +285,16 @@ func ordersFromJoinRows(rows *sql.Rows, sortMode orderJoinSort) ([]oModel.OrderR
 
 		if _, exists := ordersMap[idOrder]; !exists {
 			resp := &oModel.OrderResponse{
-				ID:                  idOrder,
-				TenantID:            tenantIDRow,
-				Price:               totalPrice,
-				Status:              oModel.OrderStatus(status),
-				Note:                note,
-				DeliveryDate:        deliveryDate,
-				DeliveryDirection:   deliveryDirection,
-				Paid:                paid,
-				CreatedOn:           createdOn,
-				OrderItems:          []oModel.OrderItems{},
+				ID:                idOrder,
+				TenantID:          tenantIDRow,
+				Price:             totalPrice,
+				Status:            oModel.OrderStatus(status),
+				Note:              note,
+				DeliveryDate:      deliveryDate,
+				DeliveryDirection: deliveryDirection,
+				Paid:              paid,
+				CreatedOn:         createdOn,
+				OrderItems:        []oModel.OrderItems{},
 			}
 			if idUser.Valid {
 				resp.IdUser = uint64(idUser.Int64)

@@ -1,0 +1,355 @@
+openapi: 3.0.3
+info:
+  title: Hellfire Gatekeeper API — Listados (productos y órdenes)
+  version: 1.0.0
+  license:
+    name: Proprietary
+    url: https://github.com/radamesvaz/bakery-app
+  description: |
+    Contrato de **paginación por cursor** y **búsqueda/filtros** para listados públicos de catálogo y listado autenticado de pedidos.
+
+    ## Respuesta de listado (envelope)
+
+    Todos los endpoints de listado devuelven un **objeto JSON** (no un array en la raíz):
+
+    ```json
+    { "items": [ ... ], "next_cursor": "<string | null>" }
+    ```
+
+    - `items`: filas de la página actual.
+    - `next_cursor`: si es **no nulo**, hay más resultados; en la siguiente petición envía el mismo valor en el query param `cursor`. Si es **null**, no hay página siguiente.
+
+    ## Regla al cambiar filtros de búsqueda
+
+    Si cambias **`q`** (productos) o **`id_user`** / **`status`** / **`ignore_status`** (órdenes), **no reutilices** un `cursor` obtenido con otra combinación de parámetros. Vuelve a llamar **sin** `cursor` (primera página del nuevo filtro).
+
+    ## Formatos de cursor (distintos por recurso)
+
+    **Productos:** cursor opaco **versión 1**, keyset sobre `id_product` descendente. Solo aplica al listado de productos.
+
+    **Órdenes:** cursor opaco **versión 2**, keyset sobre `(created_on ASC, id_order ASC)`. **No** es intercambiable con el de productos.
+
+    El cliente debe tratar `cursor` y `next_cursor` como **cadenas opacas** (p. ej. Base64-URL); no dependas de su estructura interna.
+
+    ## Errores HTTP 400
+
+    El servidor suele responder con cuerpo **text/plain** (mensaje breve), no JSON. Casos frecuentes:
+
+    - `limit` fuera de rango (debe ser 1–100; si se omite, default 20).
+    - `cursor` inválido o corrupto.
+    - `q` presente pero con menos de **2** caracteres (tras quitar espacios).
+    - `id_user` no numérico o **0**.
+    - `status` en órdenes con valor que no coincide con el enum de estado del pedido.
+
+servers:
+  - url: "{baseUrl}"
+    variables:
+      baseUrl:
+        default: http://localhost:8080
+        description: Origen del API (sin barra final)
+
+tags:
+  - name: Catalog
+    description: Catálogo de productos (público o multi-tenant por ruta)
+  - name: Orders
+    description: Listado de pedidos (autenticado)
+
+paths:
+  /products:
+    get:
+      security: []
+      tags: [Catalog]
+      summary: Listar productos (legacy / tenant por contexto)
+      description: |
+        Listado paginado. El tenant efectivo depende del contexto (p. ej. default si no hay tenant en la petición).
+        Orden: **`id_product` descendente** (más alto primero).
+      operationId: listProductsLegacy
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/CursorProducts"
+        - $ref: "#/components/parameters/QueryQ"
+      responses:
+        "200":
+          description: Página de productos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+              examples:
+                firstPage:
+                  summary: Primera página
+                  value:
+                    items:
+                      - id_product: 2
+                        tenant_id: 1
+                        name: Suspiros
+                        description: ""
+                        price: 5
+                        available: true
+                        stock: 2
+                        status: active
+                        image_urls: []
+                        thumbnail_url: ""
+                        created_on: "2025-04-14T10:00:00Z"
+                    next_cursor: null
+        "400":
+          $ref: "#/components/responses/BadRequestText"
+
+  /t/{tenant_slug}/products:
+    get:
+      security: []
+      tags: [Catalog]
+      summary: Listar productos por tenant (slug en ruta)
+      description: |
+        Mismo contrato que `GET /products`. Resuelve el tenant por `tenant_slug` (y/o cabecera `X-Tenant-Slug` según middleware).
+      operationId: listProductsByTenantSlug
+      parameters:
+        - name: tenant_slug
+          in: path
+          required: true
+          schema:
+            type: string
+          example: default
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/CursorProducts"
+        - $ref: "#/components/parameters/QueryQ"
+      responses:
+        "200":
+          description: Página de productos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestText"
+        "404":
+          description: Tenant no encontrado (cuando aplica)
+
+  /auth/orders:
+    get:
+      tags: [Orders]
+      summary: Listar pedidos (autenticado)
+      description: |
+        Requiere **Bearer JWT** y tenant en contexto (middleware). Orden: **`created_on` ascendente**, desempate **`id_order` ascendente** (más antiguos primero).
+      operationId: listOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/CursorOrders"
+        - name: ignore_status
+          in: query
+          description: Si `true`, no se excluyen pedidos con estado `deleted` por defecto.
+          schema:
+            type: boolean
+        - name: status
+          in: query
+          description: Filtra por estado exacto (enum). Si se envía, interacciona con `ignore_status` según lógica del servidor.
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+        - name: id_user
+          in: query
+          description: Filtra pedidos cuyo `id_user` coincide. Entero positivo.
+          schema:
+            type: integer
+            minimum: 1
+            format: int64
+          example: 2
+      responses:
+        "200":
+          description: Página de pedidos con ítems anidados
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestText"
+        "401":
+          description: Sin token o token inválido
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Tamaño de página. Por defecto **20**. Máximo **100**.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    CursorProducts:
+      name: cursor
+      in: query
+      description: Cursor opaco (productos, v1). Omitir en la primera página.
+      schema:
+        type: string
+    CursorOrders:
+      name: cursor
+      in: query
+      description: Cursor opaco (órdenes, v2). Omitir en la primera página. **No** usar el cursor de productos.
+      schema:
+        type: string
+    QueryQ:
+      name: q
+      in: query
+      description: |
+        Prefijo de **nombre** de producto, **insensible a mayúsculas**. Mínimo **2** caracteres si se envía.
+        Omitir o vacío = sin filtro por nombre.
+      schema:
+        type: string
+        minLength: 2
+      example: Su
+
+  responses:
+    BadRequestText:
+      description: Solicitud inválida (mensaje en texto plano)
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: limit must be between 1 and 100
+
+  schemas:
+    ProductListResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Product"
+        next_cursor:
+          type: string
+          nullable: true
+          description: Siguiente página; null si no hay más.
+
+    Product:
+      type: object
+      properties:
+        id_product:
+          type: integer
+          format: int64
+        tenant_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+          format: double
+        available:
+          type: boolean
+        stock:
+          type: integer
+          format: int64
+        status:
+          type: string
+          description: p. ej. active, inactive, deleted
+        image_urls:
+          type: array
+          items:
+            type: string
+        thumbnail_url:
+          type: string
+        created_on:
+          type: string
+          format: date-time
+          nullable: true
+
+    OrderListResponse:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderListItem"
+        next_cursor:
+          type: string
+          nullable: true
+
+    OrderListItem:
+      type: object
+      description: Misma forma que la respuesta de detalle de pedido en listados.
+      properties:
+        id_order:
+          type: integer
+          format: int64
+        tenant_id:
+          type: integer
+          format: int64
+        id_user:
+          type: integer
+          format: int64
+        user_name:
+          type: string
+        phone:
+          type: string
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        total_price:
+          type: number
+          format: double
+        note:
+          type: string
+        delivery_direction:
+          type: string
+        OrderItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderLineItem"
+        created_on:
+          type: string
+          format: date-time
+        delivery_date:
+          type: string
+          format: date-time
+        paid:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+        cancellation_reason:
+          type: string
+          nullable: true
+
+    OrderLineItem:
+      type: object
+      properties:
+        id_order_item:
+          type: integer
+          format: int64
+        id_order:
+          type: integer
+          format: int64
+        id_product:
+          type: integer
+          format: int64
+        name:
+          type: string
+        unit_price:
+          type: number
+          format: double
+        quantity:
+          type: integer
+          format: int64
+
+    OrderStatus:
+      type: string
+      enum:
+        - pending
+        - preparing
+        - ready
+        - delivered
+        - cancelled
+        - expired
+        - deleted

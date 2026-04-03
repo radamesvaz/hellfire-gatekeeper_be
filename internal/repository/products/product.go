@@ -25,8 +25,15 @@ type ListProductsPageResult struct {
 
 // ListProductsPage returns up to limit products for the tenant, ordered by id_product descending.
 // If afterID is non-nil, only rows with id_product < *afterID are considered (next page).
+// If namePrefix is non-nil, only rows whose name matches a case-insensitive prefix (see handlers/validators.ProductNamePrefixLikePattern) are included.
 // Fetches limit+1 rows internally to detect a following page.
-func (r *ProductRepository) ListProductsPage(ctx context.Context, tenantID uint64, limit int, afterID *uint64) (ListProductsPageResult, error) {
+func (r *ProductRepository) ListProductsPage(
+	ctx context.Context,
+	tenantID uint64,
+	limit int,
+	afterID *uint64,
+	namePrefix *string,
+) (ListProductsPageResult, error) {
 	logger.Debug().Uint64("tenant_id", tenantID).Int("limit", limit).Msg("Listing products page")
 	if limit < 1 {
 		return ListProductsPageResult{}, fmt.Errorf("limit must be at least 1")
@@ -36,6 +43,11 @@ func (r *ProductRepository) ListProductsPage(ctx context.Context, tenantID uint6
 FROM products WHERE tenant_id = $1`
 	args := []interface{}{tenantID}
 	argPos := 2
+	if namePrefix != nil && *namePrefix != "" {
+		q += fmt.Sprintf(" AND lower(name) LIKE $%d ESCAPE '\\'", argPos)
+		args = append(args, *namePrefix)
+		argPos++
+	}
 	if afterID != nil {
 		q += fmt.Sprintf(" AND id_product < $%d", argPos)
 		args = append(args, *afterID)

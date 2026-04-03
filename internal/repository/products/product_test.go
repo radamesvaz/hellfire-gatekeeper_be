@@ -35,7 +35,7 @@ FROM products WHERE tenant_id = $1`)).
 			WithArgs(tenantID, limit+1).
 			WillReturnRows(rows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil)
 		require.NoError(t, err)
 		assert.Empty(t, page.Items)
 		assert.Nil(t, page.NextCursor)
@@ -54,7 +54,7 @@ FROM products WHERE tenant_id = $1`)).
 			WithArgs(tenantID, limit+1).
 			WillReturnRows(mockRows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil)
 		require.NoError(t, err)
 		require.Len(t, page.Items, 2)
 		assert.Equal(t, uint64(2), page.Items[0].ID)
@@ -76,7 +76,7 @@ FROM products WHERE tenant_id = $1`)).
 			WithArgs(tenantID, smallLimit+1).
 			WillReturnRows(mockRows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, nil)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, nil, nil)
 		require.NoError(t, err)
 		require.Len(t, page.Items, 1)
 		assert.Equal(t, uint64(2), page.Items[0].ID)
@@ -97,11 +97,30 @@ FROM products WHERE tenant_id = $1 AND id_product < $2`)).
 			WithArgs(tenantID, after, smallLimit+1).
 			WillReturnRows(mockRows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, &after)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, &after, nil)
 		require.NoError(t, err)
 		require.Len(t, page.Items, 1)
 		assert.Equal(t, uint64(1), page.Items[0].ID)
 		assert.Nil(t, page.NextCursor)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("name prefix filter", func(t *testing.T) {
+		likePat := "b%"
+		mockRows := sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"image_urls", "thumbnail_url", "created_on",
+		}).AddRow("2", "1", "Brownie", "d", 10, true, 0, "active", "[]", sql.NullString{}, createdOn)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1 AND lower(name) LIKE $2 ESCAPE '\'`)).
+			WithArgs(tenantID, likePat, limit+1).
+			WillReturnRows(mockRows)
+
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, &likePat)
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, "Brownie", page.Items[0].Name)
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 }

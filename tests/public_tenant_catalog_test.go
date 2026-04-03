@@ -36,11 +36,16 @@ func TestPublicGetAllProductsByTenantSlug(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	var products []map[string]interface{}
-	err := json.Unmarshal(rr.Body.Bytes(), &products)
+	var body struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                  `json:"next_cursor"`
+	}
+	err := json.Unmarshal(rr.Body.Bytes(), &body)
 	require.NoError(t, err)
-	assert.Len(t, products, 2)
-	assert.Equal(t, "Brownie Clásico", products[0]["name"])
+	assert.Len(t, body.Items, 2)
+	assert.Nil(t, body.NextCursor)
+	assert.Equal(t, "Suspiros", body.Items[0]["name"])
+	assert.Equal(t, "Brownie Clásico", body.Items[1]["name"])
 }
 
 func TestPublicGetTenantBrandingBySlug(t *testing.T) {

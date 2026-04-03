@@ -7,8 +7,11 @@ import (
 	"sort"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/logger"
+	"github.com/radamesvaz/bakery-app/internal/pagination"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
@@ -69,11 +72,9 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
         WHERE o.tenant_id = $1
     `
 
-	// Add status filter on top of tenant scope
 	if statusFilter != nil {
 		query += " AND o.status = $2"
 	} else if !ignoreStatus {
-		// Exclude deleted orders by default
 		query += " AND o.status != 'deleted'"
 	}
 
@@ -92,6 +93,146 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
 	}
 	defer rows.Close()
 
+	return ordersFromJoinRows(rows, orderJoinSortIDAsc)
+}
+
+// ListOrdersPageResult is one page of orders (cursor on created_on ASC, id_order ASC).
+type ListOrdersPageResult struct {
+	Items      []oModel.OrderResponse
+	NextCursor *string
+}
+
+// ListOrdersWithFiltersPage returns orders for the tenant with the same status semantics as GetOrdersWithFilters,
+// ordered by creation time ascending (then id_order), paginated with an opaque cursor (see pagination.OrderKeyset).
+func (r *OrderRepository) ListOrdersWithFiltersPage(
+	ctx context.Context,
+	tenantID uint64,
+	ignoreStatus bool,
+	statusFilter *string,
+	limit int,
+	after *pagination.OrderKeyset,
+	filterUserID *uint64,
+) (ListOrdersPageResult, error) {
+	if limit < 1 {
+		return ListOrdersPageResult{}, fmt.Errorf("limit must be at least 1")
+	}
+
+	idQuery, idArgs := buildOrderIDPageQuery(tenantID, ignoreStatus, statusFilter, after, filterUserID, limit+1)
+	idRows, err := r.DB.QueryContext(ctx, idQuery, idArgs...)
+	if err != nil {
+		return ListOrdersPageResult{}, fmt.Errorf("listing order ids: %w", err)
+	}
+	var ids []uint64
+	for idRows.Next() {
+		var id uint64
+		if err := idRows.Scan(&id); err != nil {
+			idRows.Close()
+			return ListOrdersPageResult{}, fmt.Errorf("scan order id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := idRows.Err(); err != nil {
+		idRows.Close()
+		return ListOrdersPageResult{}, err
+	}
+	idRows.Close()
+
+	hasNext := len(ids) > limit
+	if hasNext {
+		ids = ids[:limit]
+	}
+	if len(ids) == 0 {
+		return ListOrdersPageResult{Items: []oModel.OrderResponse{}, NextCursor: nil}, nil
+	}
+
+	detailQuery := `
+        SELECT 
+            o.id_order, 
+            o.tenant_id,
+            o.id_user,
+            o.total_price, 
+            o.status, 
+            o.note, 
+            o.delivery_date, 
+            o.delivery_direction,
+            o.paid,
+            o.created_on,
+            o.expires_at,
+            o.cancellation_reason,
+            u.name AS user_name, 
+            u.phone,
+            oi.id_order_item, 
+            oi.id_product, 
+            oi.product_name_snapshot,
+            oi.unit_price_snapshot,
+            oi.quantity
+        FROM orders o
+        LEFT JOIN users u ON o.id_user = u.id_user
+        INNER JOIN order_items oi ON o.id_order = oi.id_order
+        WHERE o.tenant_id = $1 AND o.id_order = ANY($2::bigint[])
+        ORDER BY o.created_on ASC, o.id_order ASC, oi.id_order_item ASC
+	`
+	rows, err := r.DB.QueryContext(ctx, detailQuery, tenantID, pq.Array(ids))
+	if err != nil {
+		return ListOrdersPageResult{}, fmt.Errorf("fetching order details: %w", err)
+	}
+	defer rows.Close()
+
+	orders, err := ordersFromJoinRows(rows, orderJoinSortCreatedOnAscIDAsc)
+	if err != nil {
+		return ListOrdersPageResult{}, err
+	}
+
+	var next *string
+	if hasNext && len(orders) > 0 {
+		last := orders[len(orders)-1]
+		s, err := pagination.EncodeOrderCursor(last.CreatedOn, last.ID)
+		if err != nil {
+			return ListOrdersPageResult{}, fmt.Errorf("encoding next cursor: %w", err)
+		}
+		next = &s
+	}
+
+	return ListOrdersPageResult{Items: orders, NextCursor: next}, nil
+}
+
+func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *string, after *pagination.OrderKeyset, filterUserID *uint64, limit int) (string, []interface{}) {
+	q := `SELECT o.id_order FROM orders o WHERE o.tenant_id = $1`
+	args := []interface{}{tenantID}
+	idx := 2
+	if statusFilter != nil {
+		q += fmt.Sprintf(" AND o.status = $%d", idx)
+		args = append(args, *statusFilter)
+		idx++
+	} else if !ignoreStatus {
+		q += " AND o.status != 'deleted'"
+	}
+	if filterUserID != nil {
+		q += fmt.Sprintf(" AND o.id_user = $%d", idx)
+		args = append(args, *filterUserID)
+		idx++
+	}
+	if after != nil {
+		tArg := idx
+		idArg := idx + 1
+		q += fmt.Sprintf(" AND (o.created_on > $%d OR (o.created_on = $%d AND o.id_order > $%d))", tArg, tArg, idArg)
+		args = append(args, after.CreatedOn, after.ID)
+		idx += 2
+	}
+	q += fmt.Sprintf(" ORDER BY o.created_on ASC, o.id_order ASC LIMIT $%d", idx)
+	args = append(args, limit)
+	return q, args
+}
+
+type orderJoinSort int
+
+const (
+	orderJoinSortIDAsc orderJoinSort = iota
+	orderJoinSortIDDesc
+	orderJoinSortCreatedOnAscIDAsc
+)
+
+func ordersFromJoinRows(rows *sql.Rows, sortMode orderJoinSort) ([]oModel.OrderResponse, error) {
 	ordersMap := make(map[uint64]*oModel.OrderResponse)
 
 	for rows.Next() {
@@ -144,16 +285,16 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
 
 		if _, exists := ordersMap[idOrder]; !exists {
 			resp := &oModel.OrderResponse{
-				ID:           idOrder,
-				TenantID:     tenantIDRow,
-				Price:        totalPrice,
-				Status:       oModel.OrderStatus(status),
-				Note:         note,
-				DeliveryDate: deliveryDate,
+				ID:                idOrder,
+				TenantID:          tenantIDRow,
+				Price:             totalPrice,
+				Status:            oModel.OrderStatus(status),
+				Note:              note,
+				DeliveryDate:      deliveryDate,
 				DeliveryDirection: deliveryDirection,
-				Paid:         paid,
-				CreatedOn:    createdOn,
-				OrderItems:   []oModel.OrderItems{},
+				Paid:              paid,
+				CreatedOn:         createdOn,
+				OrderItems:        []oModel.OrderItems{},
 			}
 			if idUser.Valid {
 				resp.IdUser = uint64(idUser.Int64)
@@ -188,13 +329,28 @@ func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uin
 	}
 
 	orders := make([]oModel.OrderResponse, 0, len(ordersMap))
-	keys := make([]uint64, 0, len(ordersMap))
-	for id := range ordersMap {
-		keys = append(keys, id)
+	for _, resp := range ordersMap {
+		orders = append(orders, *resp)
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
-	for _, id := range keys {
-		orders = append(orders, *ordersMap[id])
+
+	switch sortMode {
+	case orderJoinSortIDAsc:
+		sort.Slice(orders, func(i, j int) bool { return orders[i].ID < orders[j].ID })
+	case orderJoinSortIDDesc:
+		sort.Slice(orders, func(i, j int) bool { return orders[i].ID > orders[j].ID })
+	case orderJoinSortCreatedOnAscIDAsc:
+		sort.SliceStable(orders, func(i, j int) bool {
+			a, b := orders[i], orders[j]
+			if a.CreatedOn.Before(b.CreatedOn) {
+				return true
+			}
+			if b.CreatedOn.Before(a.CreatedOn) {
+				return false
+			}
+			return a.ID < b.ID
+		})
+	default:
+		sort.Slice(orders, func(i, j int) bool { return orders[i].ID < orders[j].ID })
 	}
 
 	return orders, nil

@@ -40,3 +40,22 @@ func ValidateCreateOrderPayload(payload oModel.CreateOrderPayload) error {
 	}
 	return nil
 }
+
+// ValidateOrderListStatusFilter returns an error if s is not a known order status (for GET list filters).
+func ValidateOrderListStatusFilter(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	switch oModel.OrderStatus(s) {
+	case oModel.StatusPending,
+		oModel.StatusPreparing,
+		oModel.StatusReady,
+		oModel.StatusDelivered,
+		oModel.StatusCancelled,
+		oModel.StatusExpired,
+		oModel.StatusDeleted:
+		return nil
+	default:
+		return errors.NewBadRequest(fmt.Errorf("invalid status filter"))
+	}
+}

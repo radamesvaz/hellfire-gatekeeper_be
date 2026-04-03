@@ -14,148 +14,115 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProductRepository_GetAllProducts(t *testing.T) {
-	// Setting up mock
+func TestProductRepository_ListProductsPage(t *testing.T) {
 	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("Error setting up the mock: %v", err)
-	}
-
+	require.NoError(t, err)
 	defer db.Close()
 
-	repo := &ProductRepository{
-		DB: db,
-	}
+	repo := &ProductRepository{DB: db}
 
-	createdOn := sql.NullTime{
-		Time:  time.Now(),
-		Valid: true,
-	}
-
-	tests := []struct {
-		name          string
-		mockRows      *sqlmock.Rows
-		mockError     error
-		expected      []pModel.Product
-		expectedError bool
-	}{
-		{
-			name: "HAPPY PATH: empty DB",
-			mockRows: sqlmock.NewRows([]string{
-				"id_product",
-				"name",
-				"description",
-				"price",
-				"available",
-				"stock",
-				"status",
-				"image_urls",
-				"thumbnail_url",
-				"created_on",
-			}),
-			mockError: nil,
-			expected:  nil,
-		},
-		{
-			name: "HAPPY PATH: getting all products",
-			mockRows: sqlmock.NewRows([]string{
-				"id_product",
-				"tenant_id",
-				"name",
-				"description",
-				"price",
-				"available",
-				"stock",
-				"status",
-				"image_urls",
-				"thumbnail_url",
-				"created_on",
-			}).AddRow(
-				"1",
-				"1",
-				"Torta de chocolate test",
-				"Test descripcion de la torta test",
-				30,
-				true,
-				5,
-				"active",
-				"[]",
-				sql.NullString{Valid: false},
-				createdOn,
-			).AddRow(
-				"2",
-				"1",
-				"Suspiros",
-				"Suspiros para fiesta desc test",
-				10,
-				false,
-				0,
-				"inactive",
-				"[]",
-				sql.NullString{Valid: false},
-				createdOn,
-			),
-			mockError: nil,
-			expected: []pModel.Product{
-				{
-					ID:           1,
-					TenantID:     1,
-					Name:         "Torta de chocolate test",
-					Description:  "Test descripcion de la torta test",
-					Price:        30,
-					Available:    true,
-					Stock:        5,
-					Status:       "active",
-					ImageURLs:    []string{},
-					ThumbnailURL: "",
-					CreatedOn:    createdOn,
-				},
-				{
-					ID:           2,
-					TenantID:     1,
-					Name:         "Suspiros",
-					Description:  "Suspiros para fiesta desc test",
-					Price:        10,
-					Available:    false,
-					Stock:        0,
-					Status:       "inactive",
-					ImageURLs:    []string{},
-					ThumbnailURL: "",
-					CreatedOn:    createdOn,
-				},
-			},
-		},
-	}
+	createdOn := sql.NullTime{Time: time.Now(), Valid: true}
 	const tenantID = uint64(1)
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.mockRows != nil {
-				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1"),
-				).
-					WithArgs(tenantID).
-					WillReturnRows(tt.mockRows)
-			} else {
-				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1"),
-				).
-					WithArgs(tenantID).
-					WillReturnError(tt.mockError)
-			}
+	limit := 20
 
-			products, err := repo.GetAllProducts(context.Background(), tenantID)
-
-			if tt.expectedError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, products)
-			}
-
-			assert.NoError(t, mock.ExpectationsWereMet())
+	t.Run("empty page", func(t *testing.T) {
+		rows := sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"image_urls", "thumbnail_url", "created_on",
 		})
-	}
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1`)).
+			WithArgs(tenantID, limit+1).
+			WillReturnRows(rows)
 
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil)
+		require.NoError(t, err)
+		assert.Empty(t, page.Items)
+		assert.Nil(t, page.NextCursor)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("first page with rows id desc", func(t *testing.T) {
+		mockRows := sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"image_urls", "thumbnail_url", "created_on",
+		}).AddRow("2", "1", "B", "d", 10, true, 0, "active", "[]", sql.NullString{}, createdOn).
+			AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1`)).
+			WithArgs(tenantID, limit+1).
+			WillReturnRows(mockRows)
+
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, page.Items, 2)
+		assert.Equal(t, uint64(2), page.Items[0].ID)
+		assert.Equal(t, uint64(1), page.Items[1].ID)
+		assert.Nil(t, page.NextCursor)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("has next page", func(t *testing.T) {
+		smallLimit := 1
+		mockRows := sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"image_urls", "thumbnail_url", "created_on",
+		}).AddRow("2", "1", "B", "d", 10, true, 0, "active", "[]", sql.NullString{}, createdOn).
+			AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1`)).
+			WithArgs(tenantID, smallLimit+1).
+			WillReturnRows(mockRows)
+
+		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, nil, nil)
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, uint64(2), page.Items[0].ID)
+		require.NotNil(t, page.NextCursor)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("second page uses cursor id", func(t *testing.T) {
+		smallLimit := 10
+		after := uint64(2)
+		mockRows := sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"image_urls", "thumbnail_url", "created_on",
+		}).AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1 AND id_product < $2`)).
+			WithArgs(tenantID, after, smallLimit+1).
+			WillReturnRows(mockRows)
+
+		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, &after, nil)
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, uint64(1), page.Items[0].ID)
+		assert.Nil(t, page.NextCursor)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("name prefix filter", func(t *testing.T) {
+		likePat := "b%"
+		mockRows := sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"image_urls", "thumbnail_url", "created_on",
+		}).AddRow("2", "1", "Brownie", "d", 10, true, 0, "active", "[]", sql.NullString{}, createdOn)
+
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1 AND lower(name) LIKE $2 ESCAPE '\'`)).
+			WithArgs(tenantID, likePat, limit+1).
+			WillReturnRows(mockRows)
+
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, &likePat)
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, "Brownie", page.Items[0].Name)
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
 }
 
 func TestProductRepository_GetProductByID(t *testing.T) {

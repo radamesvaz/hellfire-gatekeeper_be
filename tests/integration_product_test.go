@@ -157,35 +157,86 @@ func TestGetAllProducts(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// Parse the response to verify structure
-	var products []map[string]interface{}
-	err := json.Unmarshal(rr.Body.Bytes(), &products)
+	var body struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                  `json:"next_cursor"`
+	}
+	err := json.Unmarshal(rr.Body.Bytes(), &body)
 	require.NoError(t, err)
 
-	// Verify we have 2 products
-	assert.Len(t, products, 2)
+	assert.Len(t, body.Items, 2)
+	assert.Nil(t, body.NextCursor)
 
-	// Verify first product structure
-	product1 := products[0]
-	assert.Equal(t, float64(1), product1["id_product"])
-	assert.Equal(t, "Brownie Clásico", product1["name"])
-	assert.Equal(t, "Delicioso brownie de chocolate", product1["description"])
-	assert.Equal(t, 3.5, product1["price"])
+	// id_product DESC: Suspiros (2) then Brownie (1)
+	product1 := body.Items[0]
+	assert.Equal(t, float64(2), product1["id_product"])
+	assert.Equal(t, "Suspiros", product1["name"])
+	assert.Equal(t, "Suspiros tradicionales", product1["description"])
+	assert.Equal(t, float64(5), product1["price"])
 	assert.Equal(t, true, product1["available"])
-	assert.Equal(t, float64(6), product1["stock"])
+	assert.Equal(t, float64(2), product1["stock"])
 	assert.Equal(t, "active", product1["status"])
 	assert.Equal(t, []interface{}{}, product1["image_urls"])
 
-	// Verify second product structure
-	product2 := products[1]
-	assert.Equal(t, float64(2), product2["id_product"])
-	assert.Equal(t, "Suspiros", product2["name"])
-	assert.Equal(t, "Suspiros tradicionales", product2["description"])
-	assert.Equal(t, float64(5), product2["price"])
+	product2 := body.Items[1]
+	assert.Equal(t, float64(1), product2["id_product"])
+	assert.Equal(t, "Brownie Clásico", product2["name"])
+	assert.Equal(t, "Delicioso brownie de chocolate", product2["description"])
+	assert.Equal(t, 3.5, product2["price"])
 	assert.Equal(t, true, product2["available"])
-	assert.Equal(t, float64(2), product2["stock"])
+	assert.Equal(t, float64(6), product2["stock"])
 	assert.Equal(t, "active", product2["status"])
 	assert.Equal(t, []interface{}{}, product2["image_urls"])
+}
+
+func TestGetAllProductsWithQNamePrefix(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/products?q=Su", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var body struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                  `json:"next_cursor"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, "Suspiros", body.Items[0]["name"])
+
+	req = httptest.NewRequest("GET", "/products?q=zzzz", nil)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Len(t, body.Items, 0)
+}
+
+func TestGetAllProductsQNameTooShort(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+
+	req := httptest.NewRequest("GET", "/products?q=x", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestGetProductByID(t *testing.T) {

@@ -24,6 +24,7 @@ import (
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGetAllOrders(t *testing.T) {
@@ -62,102 +63,162 @@ func TestGetAllOrders(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	expected := `[
-    		{
-        "id_order": 1,
-        "id_user": 2,
-        "user_name": "Client",
-        "phone": "66-6666",
-        "status": "delivered",
-        "tenant_id": 1,
-        "total_price": 57,
-        "note": "make it bright",
-        "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
-        "OrderItems": [
-            {
-                "id_order_item": 1,
-                "id_order": 1,
-                "id_product": 1,
-                "name": "Brownie Clásico",
-                "quantity": 2,
-                "unit_price": 3.5
-            },
-            {
-                "id_order_item": 2,
-                "id_order": 1,
-                "id_product": 2,
-                "name": "Suspiros",
-                "quantity": 10,
-                "unit_price": 5
-            }
-        ],
-        "created_on": "2025-04-01T10:00:00Z",
-        "delivery_date": "2025-04-05T00:00:00Z",
-        "expires_at": "0001-01-01T00:00:00Z",
-        "paid": false
-    	},
+	expected := `{
+  "items": [
     {
-        "id_order": 2,
-        "id_user": 2,
-        "user_name": "Client",
-        "phone": "66-6666",
-        "status": "pending",
-        "tenant_id": 1,
-        "total_price": 10,
-        "note": "deliver at the door",
-        "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
-        "OrderItems": [
-            {
-                "id_order_item": 3,
-                "id_order": 2,
-                "id_product": 2,
-                "name": "Suspiros",
-                "quantity": 2,
-                "unit_price": 5
-            }
-        ],
-        "created_on": "2025-04-14T10:00:00Z",
-        "delivery_date": "2025-04-20T00:00:00Z",
-        "expires_at": "2025-04-14T10:30:00Z",
-        "paid": false
+      "id_order": 1,
+      "id_user": 2,
+      "user_name": "Client",
+      "phone": "66-6666",
+      "status": "delivered",
+      "tenant_id": 1,
+      "total_price": 57,
+      "note": "make it bright",
+      "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
+      "OrderItems": [
+        {
+          "id_order_item": 1,
+          "id_order": 1,
+          "id_product": 1,
+          "name": "Brownie Clásico",
+          "quantity": 2,
+          "unit_price": 3.5
+        },
+        {
+          "id_order_item": 2,
+          "id_order": 1,
+          "id_product": 2,
+          "name": "Suspiros",
+          "quantity": 10,
+          "unit_price": 5
+        }
+      ],
+      "created_on": "2025-04-01T10:00:00Z",
+      "delivery_date": "2025-04-05T00:00:00Z",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "paid": false
     },
     {
-        "id_order": 3,
-        "id_user": 2,
-        "user_name": "Client",
-        "phone": "66-6666",
-        "status": "preparing",
-        "tenant_id": 1,
-        "total_price": 12,
-        "note": "not so sweet",
-        "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
-        "OrderItems": [
-            {
-                "id_order_item": 4,
-                "id_order": 3,
-                "id_product": 1,
-                "name": "Brownie Clásico",
-                "quantity": 2,
-                "unit_price": 3.5
-            },
-            {
-                "id_order_item": 5,
-                "id_order": 3,
-                "id_product": 2,
-                "name": "Suspiros",
-                "quantity": 1,
-                "unit_price": 5
-            }
-        ],
-        "created_on": "2025-04-20T10:00:00Z",
-        "delivery_date": "2025-04-25T00:00:00Z",
-        "expires_at": "0001-01-01T00:00:00Z",
-        "paid": false
+      "id_order": 2,
+      "id_user": 2,
+      "user_name": "Client",
+      "phone": "66-6666",
+      "status": "pending",
+      "tenant_id": 1,
+      "total_price": 10,
+      "note": "deliver at the door",
+      "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
+      "OrderItems": [
+        {
+          "id_order_item": 3,
+          "id_order": 2,
+          "id_product": 2,
+          "name": "Suspiros",
+          "quantity": 2,
+          "unit_price": 5
+        }
+      ],
+      "created_on": "2025-04-14T10:00:00Z",
+      "delivery_date": "2025-04-20T00:00:00Z",
+      "expires_at": "2025-04-14T10:30:00Z",
+      "paid": false
+    },
+    {
+      "id_order": 3,
+      "id_user": 2,
+      "user_name": "Client",
+      "phone": "66-6666",
+      "status": "preparing",
+      "tenant_id": 1,
+      "total_price": 12,
+      "note": "not so sweet",
+      "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
+      "OrderItems": [
+        {
+          "id_order_item": 4,
+          "id_order": 3,
+          "id_product": 1,
+          "name": "Brownie Clásico",
+          "quantity": 2,
+          "unit_price": 3.5
+        },
+        {
+          "id_order_item": 5,
+          "id_order": 3,
+          "id_product": 2,
+          "name": "Suspiros",
+          "quantity": 1,
+          "unit_price": 5
+        }
+      ],
+      "created_on": "2025-04-20T10:00:00Z",
+      "delivery_date": "2025-04-25T00:00:00Z",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "paid": false
     }
-]`
+  ],
+  "next_cursor": null
+}`
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestGetAllOrdersFilteredByIDUser(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	secret := "testingsecret"
+	exp := 60
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
+
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/auth/orders?id_user=2", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var env struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                    `json:"next_cursor"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &env))
+	require.Len(t, env.Items, 3)
+
+	req = httptest.NewRequest("GET", "/auth/orders?id_user=1", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &env))
+	assert.Len(t, env.Items, 0)
+
+	req = httptest.NewRequest("GET", "/auth/orders?id_user=0", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	req = httptest.NewRequest("GET", "/auth/orders?id_user=notanumber", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestGetOrderByID(t *testing.T) {
@@ -773,13 +834,14 @@ func TestGetAllOrdersWithIgnoreStatus(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// Parse response to count orders
-	var orders []map[string]interface{}
-	err = json.Unmarshal(rr.Body.Bytes(), &orders)
+	var env struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                    `json:"next_cursor"`
+	}
+	err = json.Unmarshal(rr.Body.Bytes(), &env)
 	assert.NoError(t, err)
 
-	// Should have 3 orders (excluding deleted ones from mock data)
-	assert.Equal(t, 3, len(orders), "Should return 3 orders when ignore_status is not set")
+	assert.Equal(t, 3, len(env.Items), "Should return 3 orders when ignore_status is not set")
 
 	// Test 2: Get orders with ignore_status=true (should include deleted)
 	req = httptest.NewRequest("GET", "/auth/orders?ignore_status=true", nil)
@@ -790,13 +852,10 @@ func TestGetAllOrdersWithIgnoreStatus(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// Parse response to count orders
-	err = json.Unmarshal(rr.Body.Bytes(), &orders)
+	err = json.Unmarshal(rr.Body.Bytes(), &env)
 	assert.NoError(t, err)
 
-	// Should have more orders when including deleted (depends on mock data)
-	// Note: This test assumes there are deleted orders in the mock data
-	assert.GreaterOrEqual(t, len(orders), 3, "Should return at least 3 orders when ignore_status=true")
+	assert.GreaterOrEqual(t, len(env.Items), 3, "Should return at least 3 orders when ignore_status=true")
 }
 
 func TestGetAllOrdersWithStatusFilter(t *testing.T) {
@@ -838,14 +897,15 @@ func TestGetAllOrdersWithStatusFilter(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// Parse response to verify all orders have pending status
-	var orders []map[string]interface{}
-	err = json.Unmarshal(rr.Body.Bytes(), &orders)
+	var env struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                    `json:"next_cursor"`
+	}
+	err = json.Unmarshal(rr.Body.Bytes(), &env)
 	assert.NoError(t, err)
 
-	// Verify all returned orders have pending status
-	for _, order := range orders {
-		assert.Equal(t, "pending", order["status"], "All returned orders should have pending status")
+	for _, o := range env.Items {
+		assert.Equal(t, "pending", o["status"], "All returned orders should have pending status")
 	}
 
 	// Test 2: Filter by status=delivered
@@ -857,40 +917,21 @@ func TestGetAllOrdersWithStatusFilter(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// Parse response to verify all orders have delivered status
-	err = json.Unmarshal(rr.Body.Bytes(), &orders)
+	err = json.Unmarshal(rr.Body.Bytes(), &env)
 	assert.NoError(t, err)
 
-	// Verify all returned orders have delivered status
-	for _, order := range orders {
-		assert.Equal(t, "delivered", order["status"], "All returned orders should have delivered status")
+	for _, o := range env.Items {
+		assert.Equal(t, "delivered", o["status"], "All returned orders should have delivered status")
 	}
 
-	// Test 3: Filter by non-existent status - should return empty array, not error
+	// Test 3: Invalid status filter — rejected before hitting the database (invalid enum)
 	req = httptest.NewRequest("GET", "/auth/orders?status=nonexistent", nil)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+jwt)
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	// Debug: Print response for troubleshooting
-	if rr.Code != http.StatusOK {
-		t.Logf("Response status: %d", rr.Code)
-		t.Logf("Response body: %s", rr.Body.String())
-	}
-
-	// For now, let's just check that we get a response (even if it's an error)
-	// The important thing is that the functionality is implemented
-	if rr.Code == http.StatusOK {
-		// Parse response - should return empty array
-		err = json.Unmarshal(rr.Body.Bytes(), &orders)
-		assert.NoError(t, err)
-		assert.Equal(t, 0, len(orders), "Should return empty array for non-existent status")
-	} else {
-		// If we get an error, that's also acceptable for now
-		// The main functionality (parsing query parameters) is working
-		t.Logf("Got error response, but query parameter parsing is working")
-	}
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestGetAllOrdersWithCombinedFilters(t *testing.T) {
@@ -933,13 +974,14 @@ func TestGetAllOrdersWithCombinedFilters(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// Parse response to verify all orders have pending status
-	var orders []map[string]interface{}
-	err = json.Unmarshal(rr.Body.Bytes(), &orders)
+	var env struct {
+		Items      []map[string]interface{} `json:"items"`
+		NextCursor *string                    `json:"next_cursor"`
+	}
+	err = json.Unmarshal(rr.Body.Bytes(), &env)
 	assert.NoError(t, err)
 
-	// Verify all returned orders have pending status (status filter takes precedence)
-	for _, order := range orders {
-		assert.Equal(t, "pending", order["status"], "All returned orders should have pending status when status filter is applied")
+	for _, o := range env.Items {
+		assert.Equal(t, "pending", o["status"], "All returned orders should have pending status when status filter is applied")
 	}
 }

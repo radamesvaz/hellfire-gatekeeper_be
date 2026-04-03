@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS idx_orders_tenant_id_user_created_id;
+DROP INDEX IF EXISTS idx_products_tenant_lower_name_prefix;

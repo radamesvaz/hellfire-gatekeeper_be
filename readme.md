@@ -86,6 +86,24 @@ docker-compose logs postgres_db
 
 ## 📚 API Endpoints
 
+### OpenAPI (pagination & list search)
+
+Machine-readable contract for **cursor-paginated** list endpoints is in **`docs/openapi.yaml`**: `GET /products`, `GET /t/{tenant_slug}/products`, and `GET /auth/orders` (query params `limit`, `cursor`, product search `q`, order filter `id_user`, envelope `{ "items", "next_cursor" }`, separate cursor formats for products vs orders).
+
+**View the spec**
+
+- [Swagger Editor](https://editor.swagger.io) — *File* → import `docs/openapi.yaml`
+- IDE extensions (OpenAPI / Swagger preview) on that file
+- Local preview: `npx --yes @redocly/cli preview-docs docs/openapi.yaml`
+
+**Lint (optional, Node.js)**
+
+```bash
+npx --yes @redocly/cli lint docs/openapi.yaml
+```
+
+You can generate client types/SDKs with tools such as **openapi-generator** from the same file.
+
 ### Products
 - `GET /products` - Get all products
 - `GET /products/{id}` - Get product by ID

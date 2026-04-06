@@ -105,8 +105,8 @@ FROM products WHERE tenant_id = $1 AND id_product < $2`)).
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
-	t.Run("name prefix filter", func(t *testing.T) {
-		likePat := "b%"
+	t.Run("name contains filter", func(t *testing.T) {
+		likePat := "%own%"
 		mockRows := sqlmock.NewRows([]string{
 			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
 			"image_urls", "thumbnail_url", "created_on",

@@ -200,7 +200,7 @@ components:
       name: q
       in: query
       description: |
-        Prefijo de **nombre** de producto, **insensible a mayúsculas**. Mínimo **2** caracteres si se envía.
+        Coincidencia por **nombre contiene** (substring), **insensible a mayúsculas**. Mínimo **2** caracteres si se envía.
         Omitir o vacío = sin filtro por nombre.
       schema:
         type: string

@@ -25,7 +25,7 @@ type ListProductsPageResult struct {
 
 // ListProductsPage returns up to limit products for the tenant, ordered by id_product descending.
 // If afterID is non-nil, only rows with id_product < *afterID are considered (next page).
-// If namePrefix is non-nil, only rows whose name matches a case-insensitive prefix (see handlers/validators.ProductNamePrefixLikePattern) are included.
+// If namePrefix is non-nil, only rows whose name contains the query text (case-insensitive) are included.
 // Fetches limit+1 rows internally to detect a following page.
 func (r *ProductRepository) ListProductsPage(
 	ctx context.Context,

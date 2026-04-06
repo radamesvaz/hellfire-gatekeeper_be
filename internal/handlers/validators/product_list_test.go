@@ -35,8 +35,8 @@ func TestParseProductSearchQuery(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, he.StatusCode)
 }
 
-func TestProductNamePrefixLikePattern(t *testing.T) {
-	assert.Equal(t, "foo%", ProductNamePrefixLikePattern("foo"))
-	assert.Equal(t, `a\%b%`, ProductNamePrefixLikePattern(`a%b`))
-	assert.Equal(t, `a\_b%`, ProductNamePrefixLikePattern(`a_b`))
+func TestProductNameContainsLikePattern(t *testing.T) {
+	assert.Equal(t, "%foo%", ProductNameContainsLikePattern("foo"))
+	assert.Equal(t, `%a\%b%`, ProductNameContainsLikePattern(`a%b`))
+	assert.Equal(t, `%a\_b%`, ProductNameContainsLikePattern(`a_b`))
 }

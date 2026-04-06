@@ -27,7 +27,7 @@ type productsListResponse struct {
 }
 
 // GetAllProducts lists products with cursor pagination (query: limit, cursor, optional q).
-// q: case-insensitive name prefix; minimum 2 characters; omit or empty for no filter.
+// q: case-insensitive name contains search; minimum 2 characters; omit or empty for no filter.
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
@@ -58,7 +58,7 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 	}
 	var nameLikePattern *string
 	if namePrefixRaw != nil {
-		pat := validators.ProductNamePrefixLikePattern(*namePrefixRaw)
+		pat := validators.ProductNameContainsLikePattern(*namePrefixRaw)
 		nameLikePattern = &pat
 	}
 

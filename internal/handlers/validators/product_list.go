@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	// MinProductSearchQLen is the minimum rune length for the `q` query param (prefix search).
+	// MinProductSearchQLen is the minimum rune length for the `q` query param (contains search).
 	MinProductSearchQLen = 2
 )
 
@@ -26,11 +26,11 @@ func ParseProductSearchQuery(q string) (*string, error) {
 	return &trimmed, nil
 }
 
-// ProductNamePrefixLikePattern builds a LIKE/ILIKE pattern for case-insensitive prefix match,
+// ProductNameContainsLikePattern builds a LIKE/ILIKE pattern for case-insensitive contains match,
 // escaping %, _ and \ in user input.
-func ProductNamePrefixLikePattern(prefix string) string {
-	s := strings.ReplaceAll(prefix, `\`, `\\`)
+func ProductNameContainsLikePattern(query string) string {
+	s := strings.ReplaceAll(query, `\`, `\\`)
 	s = strings.ReplaceAll(s, `%`, `\%`)
 	s = strings.ReplaceAll(s, `_`, `\_`)
-	return strings.ToLower(s) + "%"
+	return "%" + strings.ToLower(s) + "%"
 }

@@ -189,7 +189,7 @@ func TestGetAllProducts(t *testing.T) {
 	assert.Equal(t, []interface{}{}, product2["image_urls"])
 }
 
-func TestGetAllProductsWithQNamePrefix(t *testing.T) {
+func TestGetAllProductsWithQNameContains(t *testing.T) {
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()
 
@@ -201,7 +201,7 @@ func TestGetAllProductsWithQNamePrefix(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/products?q=Su", nil)
+	req := httptest.NewRequest("GET", "/products?q=spi", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)

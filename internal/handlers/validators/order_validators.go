@@ -59,3 +59,16 @@ func ValidateOrderListStatusFilter(s string) error {
 		return errors.NewBadRequest(fmt.Errorf("invalid status filter"))
 	}
 }
+
+// NormalizeAndValidateOrderSearchQuery trims the query and validates min length.
+// Empty query means "no search filter" and is accepted.
+func NormalizeAndValidateOrderSearchQuery(q string) (string, error) {
+	normalized := strings.TrimSpace(q)
+	if normalized == "" {
+		return "", nil
+	}
+	if len([]rune(normalized)) < 2 {
+		return "", errors.NewBadRequest(fmt.Errorf("q must have at least 2 characters"))
+	}
+	return normalized, nil
+}

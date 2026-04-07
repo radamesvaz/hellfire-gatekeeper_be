@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -44,7 +46,12 @@ func (r *OrderRepository) GetOrders(ctx context.Context, tenantID uint64) ([]oMo
 // Returns:
 // - ([]oModel.OrderResponse): A list of orders with their products.
 // - (error): If the query, scan, or row iteration fails.
-func (r *OrderRepository) GetOrdersWithFilters(ctx context.Context, tenantID uint64, ignoreStatus bool, statusFilter *string) ([]oModel.OrderResponse, error) {
+func (r *OrderRepository) GetOrdersWithFilters(
+	ctx context.Context,
+	tenantID uint64,
+	ignoreStatus bool,
+	statusFilter *string,
+) ([]oModel.OrderResponse, error) {
 	query := `
         SELECT 
             o.id_order, 
@@ -112,12 +119,13 @@ func (r *OrderRepository) ListOrdersWithFiltersPage(
 	limit int,
 	after *pagination.OrderKeyset,
 	filterUserID *uint64,
+	searchQuery *string,
 ) (ListOrdersPageResult, error) {
 	if limit < 1 {
 		return ListOrdersPageResult{}, fmt.Errorf("limit must be at least 1")
 	}
 
-	idQuery, idArgs := buildOrderIDPageQuery(tenantID, ignoreStatus, statusFilter, after, filterUserID, limit+1)
+	idQuery, idArgs := buildOrderIDPageQuery(tenantID, ignoreStatus, statusFilter, after, filterUserID, searchQuery, limit+1)
 	idRows, err := r.DB.QueryContext(ctx, idQuery, idArgs...)
 	if err != nil {
 		return ListOrdersPageResult{}, fmt.Errorf("listing order ids: %w", err)
@@ -196,7 +204,7 @@ func (r *OrderRepository) ListOrdersWithFiltersPage(
 	return ListOrdersPageResult{Items: orders, NextCursor: next}, nil
 }
 
-func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *string, after *pagination.OrderKeyset, filterUserID *uint64, limit int) (string, []interface{}) {
+func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *string, after *pagination.OrderKeyset, filterUserID *uint64, searchQuery *string, limit int) (string, []interface{}) {
 	q := `SELECT o.id_order FROM orders o WHERE o.tenant_id = $1`
 	args := []interface{}{tenantID}
 	idx := 2
@@ -211,6 +219,22 @@ func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *str
 		q += fmt.Sprintf(" AND o.id_user = $%d", idx)
 		args = append(args, *filterUserID)
 		idx++
+	}
+	if searchQuery != nil {
+		trimmed := strings.TrimSpace(*searchQuery)
+		if trimmed != "" {
+			pattern := "%" + trimmed + "%"
+			q += fmt.Sprintf(" AND (o.note ILIKE $%d OR EXISTS (SELECT 1 FROM users u WHERE u.id_user = o.id_user AND u.tenant_id = o.tenant_id AND (u.name ILIKE $%d OR u.phone ILIKE $%d))", idx, idx, idx)
+			args = append(args, pattern)
+			idx++
+
+			if numericID, err := strconv.ParseUint(trimmed, 10, 64); err == nil && numericID > 0 {
+				q += fmt.Sprintf(" OR o.id_order = $%d", idx)
+				args = append(args, numericID)
+				idx++
+			}
+			q += ")"
+		}
 	}
 	if after != nil {
 		tArg := idx

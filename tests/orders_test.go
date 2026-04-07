@@ -985,3 +985,105 @@ func TestGetAllOrdersWithCombinedFilters(t *testing.T) {
 		assert.Equal(t, "pending", o["status"], "All returned orders should have pending status when status filter is applied")
 	}
 }
+
+func TestGetAllOrders_WithSearchQuery(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	secret := "testingsecret"
+	exp := 60
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
+
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/auth/orders?q=bright", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var env struct {
+		Items []struct {
+			ID   uint64 `json:"id_order"`
+			Note string `json:"note"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &env))
+	require.Len(t, env.Items, 1)
+	assert.Equal(t, uint64(1), env.Items[0].ID)
+	assert.Contains(t, env.Items[0].Note, "bright")
+
+	req = httptest.NewRequest("GET", "/auth/orders?q=2", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestGetAllOrders_OrderByCreatedOnAndCursor(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	secret := "testingsecret"
+	exp := 60
+	var authService auth.Service = auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
+
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	type orderListEnvelope struct {
+		Items []struct {
+			ID        uint64    `json:"id_order"`
+			CreatedOn time.Time `json:"created_on"`
+		} `json:"items"`
+		NextCursor *string `json:"next_cursor"`
+	}
+
+	req := httptest.NewRequest("GET", "/auth/orders?limit=2", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var firstPage orderListEnvelope
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &firstPage))
+	require.Len(t, firstPage.Items, 2)
+	require.NotNil(t, firstPage.NextCursor)
+	assert.True(t, !firstPage.Items[1].CreatedOn.Before(firstPage.Items[0].CreatedOn))
+
+	req = httptest.NewRequest("GET", "/auth/orders?limit=2&cursor="+*firstPage.NextCursor, nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr = httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var secondPage orderListEnvelope
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &secondPage))
+	require.Len(t, secondPage.Items, 1)
+
+	lastFirst := firstPage.Items[len(firstPage.Items)-1]
+	firstSecond := secondPage.Items[0]
+	assert.True(t, firstSecond.CreatedOn.After(lastFirst.CreatedOn) || firstSecond.CreatedOn.Equal(lastFirst.CreatedOn))
+	if firstSecond.CreatedOn.Equal(lastFirst.CreatedOn) {
+		assert.Greater(t, firstSecond.ID, lastFirst.ID)
+	}
+}

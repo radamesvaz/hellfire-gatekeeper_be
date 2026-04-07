@@ -137,6 +137,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/CursorOrders"
+        - $ref: "#/components/parameters/QueryQOrders"
         - name: ignore_status
           in: query
           description: Si `true`, no se excluyen pedidos con estado `deleted` por defecto.
@@ -206,6 +207,17 @@ components:
         type: string
         minLength: 2
       example: Su
+    QueryQOrders:
+      name: q
+      in: query
+      description: |
+        Búsqueda insensible a mayúsculas en `note`, `user_name` y `phone`.
+        Si `q` es numérico, también intenta coincidencia exacta por `id_order`.
+        Mínimo **2** caracteres si se envía.
+      schema:
+        type: string
+        minLength: 2
+      example: bright
 
   responses:
     BadRequestText:

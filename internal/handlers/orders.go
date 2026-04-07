@@ -48,6 +48,16 @@ func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 
 	ignoreStatus := r.URL.Query().Get("ignore_status") == "true"
 	statusFilter := r.URL.Query().Get("status")
+	searchQuery, err := v.NormalizeAndValidateOrderSearchQuery(r.URL.Query().Get("q"))
+	if err != nil {
+		var he *appErrors.HTTPError
+		if errors.As(err, &he) {
+			http.Error(w, he.Error(), he.StatusCode)
+		} else {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		return
+	}
 
 	if err := v.ValidateOrderListStatusFilter(statusFilter); err != nil {
 		var he *appErrors.HTTPError
@@ -95,7 +105,12 @@ func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 		filterUserID = &uid
 	}
 
-	page, err := h.Repo.ListOrdersWithFiltersPage(ctx, tenantID, ignoreStatus, statusFilterPtr, limit, after, filterUserID)
+	var searchQueryPtr *string
+	if searchQuery != "" {
+		searchQueryPtr = &searchQuery
+	}
+
+	page, err := h.Repo.ListOrdersWithFiltersPage(ctx, tenantID, ignoreStatus, statusFilterPtr, limit, after, filterUserID, searchQueryPtr)
 	if err != nil {
 		http.Error(w, "Error getting orders", http.StatusInternalServerError)
 		return

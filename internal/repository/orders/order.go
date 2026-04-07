@@ -224,7 +224,7 @@ func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *str
 		trimmed := strings.TrimSpace(*searchQuery)
 		if trimmed != "" {
 			pattern := "%" + trimmed + "%"
-			q += fmt.Sprintf(" AND (o.note ILIKE $%d OR EXISTS (SELECT 1 FROM users u WHERE u.id_user = o.id_user AND u.tenant_id = o.tenant_id AND (u.name ILIKE $%d OR u.phone ILIKE $%d))", idx, idx, idx)
+			q += fmt.Sprintf(" AND (EXISTS (SELECT 1 FROM users u WHERE u.id_user = o.id_user AND u.tenant_id = o.tenant_id AND (u.name ILIKE $%d OR u.email ILIKE $%d))", idx, idx)
 			args = append(args, pattern)
 			idx++
 

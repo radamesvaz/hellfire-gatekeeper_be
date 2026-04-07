@@ -844,8 +844,10 @@ func assertHTTPError(t *testing.T, err error, expectedStatus int, expectedMessag
 
 func TestOrderRepository_BuildOrderIDPageQuery_WithSearch(t *testing.T) {
 	q, args := buildOrderIDPageQuery(1, false, nil, nil, nil, ptrString("client"), 21)
-	assert.True(t, strings.Contains(q, "o.note ILIKE"))
+	assert.False(t, strings.Contains(q, "o.note ILIKE"))
 	assert.True(t, strings.Contains(q, "EXISTS (SELECT 1 FROM users u"))
+	assert.True(t, strings.Contains(q, "u.name ILIKE"))
+	assert.True(t, strings.Contains(q, "u.email ILIKE"))
 	assert.True(t, strings.Contains(q, "ORDER BY o.created_on ASC, o.id_order ASC"))
 	require.Len(t, args, 3)
 	assert.Equal(t, uint64(1), args[0])

@@ -166,3 +166,23 @@ func TestValidateOrderListStatusFilter(t *testing.T) {
 	require.ErrorAs(t, err, &he)
 	assert.Equal(t, http.StatusBadRequest, he.StatusCode)
 }
+
+func TestNormalizeAndValidateOrderSearchQuery(t *testing.T) {
+	q, err := NormalizeAndValidateOrderSearchQuery("")
+	require.NoError(t, err)
+	assert.Equal(t, "", q)
+
+	q, err = NormalizeAndValidateOrderSearchQuery("   ")
+	require.NoError(t, err)
+	assert.Equal(t, "", q)
+
+	q, err = NormalizeAndValidateOrderSearchQuery("  abc  ")
+	require.NoError(t, err)
+	assert.Equal(t, "abc", q)
+
+	_, err = NormalizeAndValidateOrderSearchQuery("a")
+	require.Error(t, err)
+	var he *errors.HTTPError
+	require.ErrorAs(t, err, &he)
+	assert.Equal(t, http.StatusBadRequest, he.StatusCode)
+}

@@ -310,6 +310,229 @@ SELECT c4.tenant_id, c4.id_order, p.id_product, p.name, p.price, 3
 FROM c4
 JOIN products p ON p.tenant_id = 3 AND p.name = 'Cupcake Centro';
 
+-- Volumen extra para probar paginación en frontend (limit default 20).
+-- Tenant 1 (default): catálogo y pedidos GET /products y GET /auth/orders.
+-- Tenants 2–3: catálogo GET /t/{slug}/products.
+
+INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+SELECT
+    'seed_pagination_t1_' || lpad(n::text, 3, '0'),
+    'Producto de seed para probar paginación (tenant default)',
+    (1.00 + (n % 18) * 0.25)::numeric,
+    TRUE,
+    NOW(),
+    'active',
+    1,
+    25,
+    NULL,
+    NULL
+FROM generate_series(1, 45) AS n
+WHERE NOT EXISTS (
+    SELECT 1 FROM products p
+    WHERE p.tenant_id = 1 AND p.name = 'seed_pagination_t1_' || lpad(n::text, 3, '0')
+);
+
+INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+SELECT
+    'seed_pagination_t2_' || lpad(n::text, 3, '0'),
+    'Producto de seed para probar paginación (Panadería Norte)',
+    (2.00 + (n % 15) * 0.5)::numeric,
+    TRUE,
+    NOW(),
+    'active',
+    2,
+    30,
+    NULL,
+    NULL
+FROM generate_series(1, 28) AS n
+WHERE NOT EXISTS (
+    SELECT 1 FROM products p
+    WHERE p.tenant_id = 2 AND p.name = 'seed_pagination_t2_' || lpad(n::text, 3, '0')
+);
+
+INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+SELECT
+    'seed_pagination_t3_' || lpad(n::text, 3, '0'),
+    'Producto de seed para probar paginación (Pastelería Centro)',
+    (3.00 + (n % 12) * 0.5)::numeric,
+    TRUE,
+    NOW(),
+    'active',
+    3,
+    20,
+    NULL,
+    NULL
+FROM generate_series(1, 28) AS n
+WHERE NOT EXISTS (
+    SELECT 1 FROM products p
+    WHERE p.tenant_id = 3 AND p.name = 'seed_pagination_t3_' || lpad(n::text, 3, '0')
+);
+
+INSERT INTO products_history (
+    tenant_id, id_product, name, description, price, available, stock, status, image_urls, thumbnail_url, modified_by, action
+)
+SELECT
+    p.tenant_id,
+    p.id_product,
+    p.name,
+    p.description,
+    p.price,
+    p.available,
+    p.stock,
+    p.status,
+    p.image_urls,
+    p.thumbnail_url,
+    u.id_user,
+    'create'::history_action
+FROM products p
+JOIN users u ON u.tenant_id = p.tenant_id AND u.id_role = (SELECT id_role FROM roles WHERE name = 'admin')
+WHERE p.tenant_id IN (1, 2, 3)
+  AND p.name LIKE 'seed_pagination_t%'
+  AND NOT EXISTS (
+      SELECT 1 FROM products_history ph
+      WHERE ph.id_product = p.id_product AND ph.tenant_id = p.tenant_id AND ph.action = 'create'::history_action
+  );
+
+-- Pedidos tenant 1 (cliente client@example.com): notas únicas para idempotencia.
+WITH to_insert AS (
+    SELECT
+        n,
+        'mock_seed_pagination_order_t1_' || lpad(n::text, 3, '0') AS note_key
+    FROM generate_series(1, 35) AS n
+    WHERE NOT EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.tenant_id = 1 AND o.note = 'mock_seed_pagination_order_t1_' || lpad(n::text, 3, '0')
+    )
+)
+INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid, expires_at)
+SELECT
+    1,
+    (SELECT id_user FROM users WHERE tenant_id = 1 AND email = 'client@example.com' LIMIT 1),
+    (ARRAY[
+        'pending'::order_status,
+        'preparing'::order_status,
+        'ready'::order_status,
+        'delivered'::order_status,
+        'cancelled'::order_status
+    ])[1 + (t.n % 5)],
+    (12.00 + (t.n % 20))::numeric,
+    t.note_key,
+    ('2026-06-01 08:00:00+00'::timestamptz + (t.n || ' minutes')::interval),
+    ('2026-06-02'::date + t.n),
+    'https://maps.app.goo.gl/mock-default',
+    (t.n % 3 <> 0),
+    NULL
+FROM to_insert t;
+
+INSERT INTO order_items (tenant_id, id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity)
+SELECT
+    o.tenant_id,
+    o.id_order,
+    p.id_product,
+    p.name,
+    p.price,
+    1 + (o.id_order % 3)
+FROM orders o
+JOIN LATERAL (
+    SELECT id_product, name, price
+    FROM products
+    WHERE tenant_id = 1 AND available = TRUE
+    ORDER BY id_product
+    OFFSET 0
+    LIMIT 1
+) p ON TRUE
+WHERE o.tenant_id = 1
+  AND o.note LIKE 'mock_seed_pagination_order_t1_%'
+  AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.id_order = o.id_order);
+
+WITH to_insert2 AS (
+    SELECT
+        n,
+        'mock_seed_pagination_order_t2_' || lpad(n::text, 3, '0') AS note_key
+    FROM generate_series(1, 28) AS n
+    WHERE NOT EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.tenant_id = 2 AND o.note = 'mock_seed_pagination_order_t2_' || lpad(n::text, 3, '0')
+    )
+)
+INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid, expires_at)
+SELECT
+    2,
+    (SELECT id_user FROM users WHERE tenant_id = 2 AND email = 'shared.client@demo.local' LIMIT 1),
+    (ARRAY['pending'::order_status, 'delivered'::order_status, 'preparing'::order_status])[1 + (t.n % 3)],
+    (8.00 + (t.n % 15))::numeric,
+    t.note_key,
+    ('2026-06-10 09:00:00+00'::timestamptz + (t.n || ' minutes')::interval),
+    ('2026-06-11'::date + t.n),
+    'https://maps.app.goo.gl/mock-norte',
+    TRUE,
+    NULL
+FROM to_insert2 t;
+
+INSERT INTO order_items (tenant_id, id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity)
+SELECT
+    o.tenant_id,
+    o.id_order,
+    p.id_product,
+    p.name,
+    p.price,
+    1
+FROM orders o
+JOIN LATERAL (
+    SELECT id_product, name, price
+    FROM products
+    WHERE tenant_id = 2 AND available = TRUE
+    ORDER BY id_product DESC
+    LIMIT 1
+) p ON TRUE
+WHERE o.tenant_id = 2
+  AND o.note LIKE 'mock_seed_pagination_order_t2_%'
+  AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.id_order = o.id_order);
+
+WITH to_insert3 AS (
+    SELECT
+        n,
+        'mock_seed_pagination_order_t3_' || lpad(n::text, 3, '0') AS note_key
+    FROM generate_series(1, 28) AS n
+    WHERE NOT EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.tenant_id = 3 AND o.note = 'mock_seed_pagination_order_t3_' || lpad(n::text, 3, '0')
+    )
+)
+INSERT INTO orders (tenant_id, id_user, status, total_price, note, created_on, delivery_date, delivery_direction, paid, expires_at)
+SELECT
+    3,
+    (SELECT id_user FROM users WHERE tenant_id = 3 AND email = 'shared.client@demo.local' LIMIT 1),
+    (ARRAY['pending'::order_status, 'ready'::order_status, 'delivered'::order_status])[1 + (t.n % 3)],
+    (10.00 + (t.n % 18))::numeric,
+    t.note_key,
+    ('2026-06-20 10:00:00+00'::timestamptz + (t.n || ' minutes')::interval),
+    ('2026-06-21'::date + t.n),
+    'https://maps.app.goo.gl/mock-centro',
+    (t.n % 2 = 0),
+    NULL
+FROM to_insert3 t;
+
+INSERT INTO order_items (tenant_id, id_order, id_product, product_name_snapshot, unit_price_snapshot, quantity)
+SELECT
+    o.tenant_id,
+    o.id_order,
+    p.id_product,
+    p.name,
+    p.price,
+    2
+FROM orders o
+JOIN LATERAL (
+    SELECT id_product, name, price
+    FROM products
+    WHERE tenant_id = 3 AND available = TRUE
+    ORDER BY id_product ASC
+    LIMIT 1
+) p ON TRUE
+WHERE o.tenant_id = 3
+  AND o.note LIKE 'mock_seed_pagination_order_t3_%'
+  AND NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.id_order = o.id_order);
+
 SELECT setval(pg_get_serial_sequence('tenants', 'id'), (SELECT COALESCE(MAX(id), 1) FROM tenants));
 SELECT setval('users_id_user_seq', (SELECT COALESCE(MAX(id_user), 1) FROM users));
 SELECT setval('products_id_product_seq', (SELECT COALESCE(MAX(id_product), 1) FROM products));

@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	"github.com/stretchr/testify/assert"
@@ -29,8 +31,10 @@ func TestLogin(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
@@ -50,7 +54,10 @@ func TestLogin(t *testing.T) {
 	router.ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusOK, rr.Code)
-	assert.Contains(t, rr.Body.String(), "token")
+	var loginBody auth.LoginResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &loginBody))
+	assert.NotEmpty(t, loginBody.Token)
+	assert.Equal(t, "Default Tenant", loginBody.TenantName)
 }
 
 func TestLogin_SoftDeletedUserCannotLogin(t *testing.T) {
@@ -69,8 +76,10 @@ func TestLogin_SoftDeletedUserCannotLogin(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authSvc,
 	}
 

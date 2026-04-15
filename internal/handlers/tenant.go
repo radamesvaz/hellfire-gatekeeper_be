@@ -7,10 +7,13 @@ import (
 	"regexp"
 	"strings"
 
+	ierrors "github.com/radamesvaz/bakery-app/internal/errors"
+	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 var hexColorRegex = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
@@ -24,6 +27,10 @@ type updateBrandingColorsRequest struct {
 	PrimaryColor   *string `json:"primary_color"`
 	SecondaryColor *string `json:"secondary_color"`
 	AccentColor    *string `json:"accent_color"`
+}
+
+type updateTenantDisplayNameRequest struct {
+	TenantName string `json:"tenant_name"`
 }
 
 // GetBranding returns logo + colors for the tenant resolved by TenantFromPathOrHeader (public, no auth).
@@ -55,6 +62,56 @@ func (h *TenantHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
 		"tenant_id":   tenantID,
 		"tenant_slug": slug,
 		"branding":    branding,
+	})
+}
+
+// UpdateTenantDisplayName sets tenants.name for the tenant in context (admin only). Slug is not modified.
+// PATCH /auth/tenant/branding/name — body: {"tenant_name":"..."}.
+func (h *TenantHandler) UpdateTenantDisplayName(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get tenant from context", http.StatusBadRequest)
+		return
+	}
+
+	roleID, err := middleware.GetUserRoleFromContext(ctx)
+	if err != nil || roleID != uint64(uModel.UserRoleAdmin) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var req updateTenantDisplayNameRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	name, err := v.NormalizeAndValidateTenantDisplayName(req.TenantName)
+	if err != nil {
+		if httpErr, ok := err.(*ierrors.HTTPError); ok {
+			http.Error(w, httpErr.Error(), httpErr.StatusCode)
+			return
+		}
+		http.Error(w, "Invalid tenant name", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Repo.UpdateTenantName(ctx, tenantID, name); err != nil {
+		http.Error(w, "Failed to update tenant name", http.StatusInternalServerError)
+		return
+	}
+
+	slug, _ := middleware.GetTenantSlugFromContext(ctx)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":     "Tenant name updated successfully",
+		"tenant_id":   tenantID,
+		"tenant_slug": slug,
+		"tenant_name": name,
 	})
 }
 

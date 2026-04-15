@@ -11,6 +11,8 @@ var (
 	ErrCreatingUser       = errors.New("error creating user")
 	ErrGettingTheUserID   = errors.New("error getting the user ID")
 	ErrEmailAlreadyExists = errors.New("email already exists")
+	ErrTenantNameRequired = errors.New("Tenant name is required")
+	ErrTenantNameTooLong  = errors.New("Tenant name is too long")
 	ErrWeakPassword       = errors.New("password does not meet security requirements")
 	ErrHashingPassword    = errors.New("error hashing password")
 	// Product Errors

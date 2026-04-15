@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
@@ -30,10 +31,10 @@ func TestTenantHandler_GetBranding_Success(t *testing.T) {
 
 	tenantID := uint64(1)
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
+		regexp.QuoteMeta("SELECT name, logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
 	).WithArgs(tenantID).WillReturnRows(
-		sqlmock.NewRows([]string{"logo_url", "primary_color", "secondary_color", "accent_color"}).
-			AddRow("https://example.com/logo.png", "#111827", "#374151", "#F59E0B"),
+		sqlmock.NewRows([]string{"name", "logo_url", "primary_color", "secondary_color", "accent_color"}).
+			AddRow("Café Demo", "https://example.com/logo.png", "#111827", "#374151", "#F59E0B"),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/t/default/tenant/branding", nil)
@@ -51,6 +52,7 @@ func TestTenantHandler_GetBranding_Success(t *testing.T) {
 	assert.Equal(t, "default", body["tenant_slug"])
 	branding, ok := body["branding"].(map[string]interface{})
 	require.True(t, ok)
+	assert.Equal(t, "Café Demo", branding["tenant_name"])
 	assert.Equal(t, "https://example.com/logo.png", branding["logo_url"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -97,10 +99,10 @@ func TestTenantHandler_UpdateBrandingColors_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
+		regexp.QuoteMeta("SELECT name, logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
 	).WithArgs(tenantID).WillReturnRows(
-		sqlmock.NewRows([]string{"logo_url", "primary_color", "secondary_color", "accent_color"}).
-			AddRow(nil, "#111827", "#374151", "#F59E0B"),
+		sqlmock.NewRows([]string{"name", "logo_url", "primary_color", "secondary_color", "accent_color"}).
+			AddRow("Tenant Two", nil, "#111827", "#374151", "#F59E0B"),
 	)
 
 	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/colors", strings.NewReader(payload))
@@ -159,6 +161,66 @@ func TestTenantHandler_UploadTenantLogo_WrongFieldName(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Contains(t, rr.Body.String(), "Exactly one logo file is required")
+}
+
+func authTenantContext(t *testing.T, tenantID uint64, slug string, roleID float64) context.Context {
+	t.Helper()
+	claims := jwt.MapClaims{
+		"role_id":   roleID,
+		"user_id":   float64(1),
+		"tenant_id": float64(tenantID),
+	}
+	ctx := context.WithValue(context.Background(), middleware.UserClaimsKey, claims)
+	ctx = context.WithValue(ctx, middleware.TenantIDKey, tenantID)
+	ctx = context.WithValue(ctx, middleware.TenantSlugKey, slug)
+	return ctx
+}
+
+func TestTenantHandler_UpdateTenantDisplayName_AdminSuccess(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	mock.ExpectExec(regexp.QuoteMeta(
+		`UPDATE tenants SET name = $1, updated_on = NOW() WHERE id = $2`,
+	)).WithArgs("Nuevo Nombre", tenantID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	payload := `{"tenant_name":"Nuevo Nombre"}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/name", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 1))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantDisplayName(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Nuevo Nombre")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTenantHandler_UpdateTenantDisplayName_ClientForbidden(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	payload := `{"tenant_name":"Nuevo Nombre"}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/name", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 2))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantDisplayName(rr, req)
+
+	require.Equal(t, http.StatusForbidden, rr.Code)
 }
 
 func TestTenantHandler_UpdateBrandingColors_InvalidColor(t *testing.T) {

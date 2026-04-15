@@ -299,16 +299,18 @@ func main() {
 		ImageService: imageService,
 	}
 
+	// Tenant repo (tenant name on register; slug resolution for public routes)
+	tenantRepo := &tenantRepository.Repository{DB: db}
+
 	// Auth setup
 	userRepo := user.UserRepository{DB: db}
 	authService := authService.New(secret, exp)
 	authHandler := &auth.LoginHandler{
 		UserRepo:    userRepo,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
-	// Tenant setup (for path-based public routes)
-	tenantRepo := &tenantRepository.Repository{DB: db}
 	tenantHandler := &h.TenantHandler{
 		Repo:         tenantRepo,
 		ImageService: imageService,
@@ -411,6 +413,7 @@ func main() {
 	// Tenant branding: reads are public (see tPublic); mutations require auth
 	auth.HandleFunc("/tenant/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
 	auth.HandleFunc("/tenant/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
+	auth.HandleFunc("/tenant/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()

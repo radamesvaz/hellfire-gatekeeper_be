@@ -2,10 +2,12 @@ package validators
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidatePassword(t *testing.T) {
@@ -152,4 +154,31 @@ func TestThumbnailURLInImageURLs(t *testing.T) {
 			assert.Equal(t, tt.expectedFound, got)
 		})
 	}
+}
+
+func TestNormalizeAndValidateTenantDisplayName(t *testing.T) {
+	t.Run("HAPPY PATH", func(t *testing.T) {
+		got, err := NormalizeAndValidateTenantDisplayName("  Café Central  ")
+		require.NoError(t, err)
+		assert.Equal(t, "Café Central", got)
+	})
+
+	t.Run("SAD PATH: empty", func(t *testing.T) {
+		_, err := NormalizeAndValidateTenantDisplayName("   ")
+		require.Error(t, err)
+		httpErr, ok := err.(*errors.HTTPError)
+		require.True(t, ok)
+		assert.Equal(t, http.StatusBadRequest, httpErr.StatusCode)
+		assert.Equal(t, errors.ErrTenantNameRequired, httpErr.Err)
+	})
+
+	t.Run("SAD PATH: too long", func(t *testing.T) {
+		long := strings.Repeat("a", MaxTenantDisplayNameRunes+1)
+		_, err := NormalizeAndValidateTenantDisplayName(long)
+		require.Error(t, err)
+		httpErr, ok := err.(*errors.HTTPError)
+		require.True(t, ok)
+		assert.Equal(t, http.StatusBadRequest, httpErr.StatusCode)
+		assert.Equal(t, errors.ErrTenantNameTooLong, httpErr.Err)
+	})
 }

@@ -19,7 +19,9 @@ type BrandingColors struct {
 
 // TenantBranding is the full branding snapshot (logo + palette) for a tenant.
 // Logo pixel dimensions are not stored; layout is fixed in CSS and uploads are validated on the server.
+// TenantName maps tenants.name (JSON key tenant_name for clients).
 type TenantBranding struct {
+	TenantName     string `json:"tenant_name"`
 	LogoURL        string `json:"logo_url"`
 	PrimaryColor   string `json:"primary_color"`
 	SecondaryColor string `json:"secondary_color"`
@@ -101,17 +103,18 @@ func (r *Repository) ListActiveTenantIDs(ctx context.Context) ([]uint64, error) 
 	return ids, nil
 }
 
-// GetBranding returns logo fields and branding colors for a tenant in one read.
+// GetBranding returns tenant display name, logo fields and branding colors for a tenant in one read.
 func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (TenantBranding, error) {
+	var displayName string
 	var logoURL sql.NullString
 	var primaryColor, secondaryColor, accentColor sql.NullString
 
 	err := r.DB.QueryRowContext(ctx,
-		`SELECT logo_url, primary_color, secondary_color, accent_color
+		`SELECT name, logo_url, primary_color, secondary_color, accent_color
 		 FROM tenants
 		 WHERE id = $1`,
 		tenantID,
-	).Scan(&logoURL, &primaryColor, &secondaryColor, &accentColor)
+	).Scan(&displayName, &logoURL, &primaryColor, &secondaryColor, &accentColor)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return TenantBranding{}, fmt.Errorf("tenant not found when reading branding: %d", tenantID)
@@ -120,11 +123,45 @@ func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (TenantBr
 	}
 
 	return TenantBranding{
+		TenantName:     displayName,
 		LogoURL:        nullStringToString(logoURL),
 		PrimaryColor:   nullStringToString(primaryColor),
 		SecondaryColor: nullStringToString(secondaryColor),
 		AccentColor:    nullStringToString(accentColor),
 	}, nil
+}
+
+// GetTenantName returns tenants.name for the given tenant id.
+func (r *Repository) GetTenantName(ctx context.Context, tenantID uint64) (string, error) {
+	var name string
+	err := r.DB.QueryRowContext(ctx, `SELECT name FROM tenants WHERE id = $1`, tenantID).Scan(&name)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("tenant not found when reading name: %d", tenantID)
+		}
+		return "", fmt.Errorf("reading tenant name for %d: %w", tenantID, err)
+	}
+	return name, nil
+}
+
+// UpdateTenantName sets tenants.name (business / display name). Does not change slug.
+func (r *Repository) UpdateTenantName(ctx context.Context, tenantID uint64, name string) error {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants SET name = $1, updated_on = NOW() WHERE id = $2`,
+		name,
+		tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating tenant name for %d: %w", tenantID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected for tenant name update %d: %w", tenantID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("tenant not found when updating name: %d", tenantID)
+	}
+	return nil
 }
 
 // GetBrandingColors returns the branding colors configured for a tenant.

@@ -8,6 +8,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
@@ -15,6 +16,7 @@ import (
 
 type LoginHandler struct {
 	UserRepo    userRepo.UserRepository
+	TenantRepo  *tenantRepo.Repository
 	AuthService authService.AuthService
 }
 
@@ -24,19 +26,22 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token string `json:"token"`
+	Token      string `json:"token"`
+	TenantName string `json:"tenant_name"`
 }
 
 type RegisterRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Phone    string `json:"phone"`
-	Password string `json:"password"`
+	Name       string `json:"name"`
+	TenantName string `json:"tenant_name"`
+	Email      string `json:"email"`
+	Phone      string `json:"phone"`
+	Password   string `json:"password"`
 }
 
 type RegisterResponse struct {
-	Token   string `json:"token"`
-	Message string `json:"message"`
+	Token      string `json:"token"`
+	TenantName string `json:"tenant_name"`
+	Message    string `json:"message"`
 }
 
 func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -80,7 +85,17 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := LoginResponse{Token: token}
+	tenantName := ""
+	if lh.TenantRepo != nil {
+		var errName error
+		tenantName, errName = lh.TenantRepo.GetTenantName(r.Context(), user.TenantID)
+		if errName != nil {
+			http.Error(w, "Could not load tenant name", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	resp := LoginResponse{Token: token, TenantName: tenantName}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
@@ -120,6 +135,20 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "Password does not meet security requirements", http.StatusBadRequest)
+		return
+	}
+
+	tenantDisplayName, err := v.NormalizeAndValidateTenantDisplayName(req.TenantName)
+	if err != nil {
+		if httpErr, ok := err.(*errors.HTTPError); ok {
+			http.Error(w, httpErr.Error(), httpErr.StatusCode)
+			return
+		}
+		http.Error(w, "Invalid tenant name", http.StatusBadRequest)
+		return
+	}
+	if lh.TenantRepo == nil {
+		http.Error(w, "Tenant repository not configured", http.StatusInternalServerError)
 		return
 	}
 
@@ -172,6 +201,11 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := lh.TenantRepo.UpdateTenantName(r.Context(), tenantID, tenantDisplayName); err != nil {
+		http.Error(w, "Error updating tenant name", http.StatusInternalServerError)
+		return
+	}
+
 	// Generate token for the new user
 	tenantIDPtr := func(v uint64) *uint64 { return &v }(tenantID)
 	token, err := lh.AuthService.GenerateJWT(userID, uModel.UserRoleAdmin, req.Email, tenantIDPtr)
@@ -181,8 +215,9 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := RegisterResponse{
-		Token:   token,
-		Message: "Admin user registered successfully",
+		Token:      token,
+		TenantName: tenantDisplayName,
+		Message:    "Admin user registered successfully",
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

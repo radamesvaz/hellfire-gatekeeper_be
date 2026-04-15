@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
@@ -30,8 +31,10 @@ func TestRegister_Success(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
@@ -42,6 +45,7 @@ func TestRegister_Success(t *testing.T) {
 	// Test payload with valid data
 	payload := `{
 		"name": "Test Admin",
+		"tenant_name": "Pastelería Registro OK",
 		"email": "admin@test.com",
 		"phone": "555-1234",
 		"password": "TestPassword123!"
@@ -63,6 +67,7 @@ func TestRegister_Success(t *testing.T) {
 
 	// Verify response contains token and message
 	assert.NotEmpty(t, response.Token)
+	assert.Equal(t, "Pastelería Registro OK", response.TenantName)
 	assert.Equal(t, "Admin user registered successfully", response.Message)
 
 	// Verify user was created in database with admin role
@@ -76,6 +81,11 @@ func TestRegister_Success(t *testing.T) {
 	// Verify password was hashed (not plain text)
 	assert.NotEqual(t, "TestPassword123!", createdUser.Password)
 	assert.NotEmpty(t, createdUser.Password)
+
+	var tenantName string
+	err = db.QueryRow(`SELECT name FROM tenants WHERE id = 1`).Scan(&tenantName)
+	require.NoError(t, err)
+	assert.Equal(t, "Pastelería Registro OK", tenantName)
 }
 
 func TestRegister_EmailAlreadyExists(t *testing.T) {
@@ -89,8 +99,10 @@ func TestRegister_EmailAlreadyExists(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
@@ -101,6 +113,7 @@ func TestRegister_EmailAlreadyExists(t *testing.T) {
 	// First registration
 	payload1 := `{
 		"name": "First Admin",
+		"tenant_name": "First Biz",
 		"email": "duplicate@test.com",
 		"phone": "555-1111",
 		"password": "FirstPassword123!"
@@ -116,6 +129,7 @@ func TestRegister_EmailAlreadyExists(t *testing.T) {
 	// Second registration with same email
 	payload2 := `{
 		"name": "Second Admin",
+		"tenant_name": "Second Biz",
 		"email": "duplicate@test.com",
 		"phone": "555-2222",
 		"password": "SecondPassword123!"
@@ -142,8 +156,10 @@ func TestRegister_WeakPassword(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
@@ -189,6 +205,7 @@ func TestRegister_WeakPassword(t *testing.T) {
 			emailName := strings.ReplaceAll(tc.name, " ", "-")
 			payload := `{
 				"name": "Test Admin",
+				"tenant_name": "Weak Pass Biz",
 				"email": "weak-pass-` + emailName + `@test.com",
 				"phone": "555-1234",
 				"password": "` + tc.password + `"
@@ -216,8 +233,10 @@ func TestRegister_InvalidEmail(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
@@ -255,6 +274,7 @@ func TestRegister_InvalidEmail(t *testing.T) {
 		t.Run("invalid email: "+tc.email, func(t *testing.T) {
 			payload := `{
 				"name": "Test Admin",
+				"tenant_name": "Invalid Email Biz",
 				"email": "` + tc.email + `",
 				"phone": "555-1234",
 				"password": "ValidPassword123!"
@@ -282,8 +302,10 @@ func TestRegister_InvalidJSON(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
@@ -319,8 +341,10 @@ func TestRegister_MissingFields(t *testing.T) {
 	repository := user.UserRepository{
 		DB: db,
 	}
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
+		TenantRepo:  tenantRepo,
 		AuthService: *authService,
 	}
 
@@ -335,6 +359,7 @@ func TestRegister_MissingFields(t *testing.T) {
 		{
 			name: "missing name",
 			payload: `{
+				"tenant_name": "Missing Name Biz",
 				"email": "test@example.com",
 				"phone": "555-1234",
 				"password": "ValidPassword123!"
@@ -344,6 +369,7 @@ func TestRegister_MissingFields(t *testing.T) {
 			name: "missing email",
 			payload: `{
 				"name": "Test Admin",
+				"tenant_name": "Missing Email Biz",
 				"phone": "555-1234",
 				"password": "ValidPassword123!"
 			}`,
@@ -352,8 +378,18 @@ func TestRegister_MissingFields(t *testing.T) {
 			name: "missing password",
 			payload: `{
 				"name": "Test Admin",
+				"tenant_name": "Missing Password Biz",
 				"email": "test@example.com",
 				"phone": "555-1234"
+			}`,
+		},
+		{
+			name: "missing tenant_name",
+			payload: `{
+				"name": "Test Admin",
+				"email": "missingtenant@example.com",
+				"phone": "555-1234",
+				"password": "ValidPassword123!"
 			}`,
 		},
 	}

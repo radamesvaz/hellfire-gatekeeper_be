@@ -104,6 +104,7 @@ func TestIntegrationUploadTenantLogo(t *testing.T) {
 	require.NoError(t, json.Unmarshal(getRR.Body.Bytes(), &getBody))
 	branding, ok := getBody["branding"].(map[string]interface{})
 	require.True(t, ok)
+	assert.Equal(t, "Default Tenant", branding["tenant_name"])
 	assert.Equal(t, logoURL, branding["logo_url"])
 
 	var stored string

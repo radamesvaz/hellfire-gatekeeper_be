@@ -2,7 +2,9 @@ package validators
 
 import (
 	"regexp"
+	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 )
@@ -40,6 +42,20 @@ func ValidatePassword(password string) error {
 	}
 
 	return nil
+}
+
+const MaxTenantDisplayNameRunes = 255
+
+// NormalizeAndValidateTenantDisplayName trims whitespace and validates non-empty length for tenants.name (API: tenant_name).
+func NormalizeAndValidateTenantDisplayName(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", errors.NewBadRequest(errors.ErrTenantNameRequired)
+	}
+	if utf8.RuneCountInString(s) > MaxTenantDisplayNameRunes {
+		return "", errors.NewBadRequest(errors.ErrTenantNameTooLong)
+	}
+	return s, nil
 }
 
 // ThumbnailURLInImageURLs reports whether thumbnailURL is exactly equal to one of the entries in imageURLs.

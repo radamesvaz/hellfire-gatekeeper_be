@@ -75,6 +75,7 @@ func TestPublicGetTenantBrandingBySlug(t *testing.T) {
 	assert.NotNil(t, body["tenant_id"])
 	branding, ok := body["branding"].(map[string]interface{})
 	require.True(t, ok)
+	assert.Equal(t, "Default Tenant", branding["tenant_name"])
 	assert.Contains(t, branding, "logo_url")
 	assert.Contains(t, branding, "primary_color")
 	assert.Contains(t, branding, "secondary_color")

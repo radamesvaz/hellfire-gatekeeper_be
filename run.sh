@@ -16,6 +16,34 @@ else
   echo -e "${YELLOW}⚠️  No .env file found. Make sure environment variables are set.${NC}"
 fi
 
+# DB helpers (shared by seed commands)
+configure_pg_env() {
+  export PGHOST="${DB_HOST:-localhost}"
+  export PGPORT="${DB_PORT:-5432}"
+  export PGUSER="${DB_USER:-${POSTGRES_USER:-}}"
+  export PGPASSWORD="${DB_PASSWORD:-${POSTGRES_PASSWORD:-}}"
+  export PGDATABASE="${DB_NAME:-${POSTGRES_DB:-}}"
+
+  if [ -z "$PGUSER" ] || [ -z "$PGDATABASE" ]; then
+    echo -e "${RED}❌ Set DB_USER and DB_NAME (or POSTGRES_USER and POSTGRES_DB) in .env${NC}"
+    exit 1
+  fi
+}
+
+apply_sql_file() {
+  local f="$1"
+  if command -v psql >/dev/null 2>&1; then
+    psql -v ON_ERROR_STOP=1 -f "$f"
+  else
+    if [ -z "${POSTGRES_USER:-}" ] || [ -z "${POSTGRES_DB:-}" ]; then
+      echo -e "${RED}❌ psql not found; for Docker fallback set POSTGRES_USER and POSTGRES_DB in .env${NC}"
+      exit 1
+    fi
+    echo -e "${YELLOW}   (using docker-compose exec postgres_db — install psql for direct use)${NC}"
+    docker-compose exec -T postgres_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 < "$f"
+  fi
+}
+
 # Run all unit tests
 unit() {
   echo -e "${YELLOW}🧪 Running unit tests...${NC}"
@@ -103,37 +131,33 @@ seed() {
     exit 1
   fi
 
-  export PGHOST="${DB_HOST:-localhost}"
-  export PGPORT="${DB_PORT:-5432}"
-  export PGUSER="${DB_USER:-${POSTGRES_USER:-}}"
-  export PGPASSWORD="${DB_PASSWORD:-${POSTGRES_PASSWORD:-}}"
-  export PGDATABASE="${DB_NAME:-${POSTGRES_DB:-}}"
-
-  if [ -z "$PGUSER" ] || [ -z "$PGDATABASE" ]; then
-    echo -e "${RED}❌ Set DB_USER and DB_NAME (or POSTGRES_USER and POSTGRES_DB) in .env${NC}"
-    exit 1
-  fi
-
-  apply_sql() {
-    local f="$1"
-    if command -v psql >/dev/null 2>&1; then
-      psql -v ON_ERROR_STOP=1 -f "$f"
-    else
-      if [ -z "${POSTGRES_USER:-}" ] || [ -z "${POSTGRES_DB:-}" ]; then
-        echo -e "${RED}❌ psql not found; for Docker fallback set POSTGRES_USER and POSTGRES_DB in .env${NC}"
-        exit 1
-      fi
-      echo -e "${YELLOW}   (using docker-compose exec postgres_db — install psql for direct use)${NC}"
-      docker-compose exec -T postgres_db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 < "$f"
-    fi
-  }
+  configure_pg_env
 
   for f in "${sql_files[@]}"; do
+    if [[ "$f" == "seeds/002_disable_pagination_mock.sql" ]]; then
+      continue
+    fi
     echo -e "${YELLOW}   → $f${NC}"
-    apply_sql "$f"
+    apply_sql_file "$f"
   done
 
   echo -e "${GREEN}✅ Seeds applied.${NC}"
+}
+
+# Enable extra pagination demo data (for frontend/client testing)
+seed_demo_on() {
+  echo -e "${YELLOW}🌱 Enabling pagination demo data...${NC}"
+  configure_pg_env
+  apply_sql_file "seeds/001_multi_tenant_mock.sql"
+  echo -e "${GREEN}✅ Pagination demo data enabled.${NC}"
+}
+
+# Disable/remove extra pagination demo data (keeps base schema intact)
+seed_demo_off() {
+  echo -e "${YELLOW}🧹 Disabling pagination demo data...${NC}"
+  configure_pg_env
+  apply_sql_file "seeds/002_disable_pagination_mock.sql"
+  echo -e "${GREEN}✅ Pagination demo data disabled.${NC}"
 }
 
 # Reset project: full rebuild
@@ -172,6 +196,12 @@ case "$1" in
   seed)
     seed
     ;;
+  seed-demo-on)
+    seed_demo_on
+    ;;
+  seed-demo-off)
+    seed_demo_off
+    ;;
   reset)
     reset
     ;;
@@ -182,6 +212,8 @@ case "$1" in
     echo -e "${YELLOW}   app        - Start the application${NC}"
     echo -e "${YELLOW}   migrate    - Run migrations only${NC}"
     echo -e "${YELLOW}   seed       - Apply seeds/*.sql to local DB (dev only)${NC}"
+    echo -e "${YELLOW}   seed-demo-on  - Enable pagination/order demo seed data${NC}"
+    echo -e "${YELLOW}   seed-demo-off - Disable pagination/order demo seed data${NC}"
     echo -e "${YELLOW}   unit       - Run unit tests${NC}"
     echo -e "${YELLOW}   integration - Run integration tests${NC}"
     echo -e "${YELLOW}   tests      - Run all tests${NC}"

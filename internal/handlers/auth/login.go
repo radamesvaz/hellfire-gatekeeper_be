@@ -18,6 +18,9 @@ type LoginHandler struct {
 	UserRepo    userRepo.UserRepository
 	TenantRepo  *tenantRepo.Repository
 	AuthService authService.AuthService
+	// TenantRegisterEnabled controls whether Register endpoint is available.
+	// Nil means enabled (backwards-compatible default for tests/local wiring).
+	TenantRegisterEnabled *bool
 }
 
 type LoginRequest struct {
@@ -101,6 +104,11 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
+	if !lh.isTenantRegisterEnabled() {
+		http.Error(w, "Tenant register is disabled", http.StatusForbidden)
+		return
+	}
+
 	req := RegisterRequest{}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -222,4 +230,11 @@ func (lh *LoginHandler) Register(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (lh *LoginHandler) isTenantRegisterEnabled() bool {
+	if lh.TenantRegisterEnabled == nil {
+		return true
+	}
+	return *lh.TenantRegisterEnabled
 }

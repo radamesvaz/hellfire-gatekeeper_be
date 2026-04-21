@@ -23,11 +23,15 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
+	bootstrapRepository "github.com/radamesvaz/bakery-app/internal/repository/bootstrap"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
+	tenantSignupRepository "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	bootstrapService "github.com/radamesvaz/bakery-app/internal/services/bootstrap"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
+	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -305,10 +309,28 @@ func main() {
 	// Auth setup
 	userRepo := user.UserRepository{DB: db}
 	authService := authService.New(secret, exp)
+	enableTenantRegister := parseBoolWithDefault(os.Getenv("ENABLE_TENANT_REGISTER"), true)
 	authHandler := &auth.LoginHandler{
-		UserRepo:    userRepo,
-		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		UserRepo:              userRepo,
+		TenantRepo:            tenantRepo,
+		AuthService:           *authService,
+		TenantRegisterEnabled: &enableTenantRegister,
+	}
+	bootstrapRepo := &bootstrapRepository.Repository{DB: db}
+	bootstrapSvc := &bootstrapService.BootstrapService{
+		Repo:        bootstrapRepo,
+		AuthService: authService,
+	}
+	bootstrapHandler := &auth.BootstrapHandler{
+		Service: bootstrapSvc,
+	}
+	tenantSignupRepo := &tenantSignupRepository.Repository{DB: db}
+	tenantSignupSvc := &tenantSignupService.TenantSignupService{
+		Repo:        tenantSignupRepo,
+		AuthService: authService,
+	}
+	tenantSignupHandler := &auth.TenantSignupHandler{
+		Service: tenantSignupSvc,
 	}
 
 	tenantHandler := &h.TenantHandler{
@@ -375,6 +397,8 @@ func main() {
 
 	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
 	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
+	r.HandleFunc("/setup/bootstrap/tenant", bootstrapHandler.BootstrapTenant).Methods("POST")
+	r.HandleFunc("/public/tenant-register", tenantSignupHandler.RegisterTenantWithCode).Methods("POST")
 	// Auth endpoints (legacy single-tenant)
 	r.HandleFunc("/login", authHandler.Login).Methods("POST")
 	r.HandleFunc("/register", authHandler.Register).Methods("POST")
@@ -414,6 +438,7 @@ func main() {
 	auth.HandleFunc("/tenant/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
 	auth.HandleFunc("/tenant/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/tenant/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
+	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()
@@ -493,6 +518,18 @@ func parseIntWithDefault(value string, defaultValue int) int {
 		return defaultValue
 	}
 	v, err := strconv.Atoi(value)
+	if err != nil {
+		return defaultValue
+	}
+	return v
+}
+
+// parseBoolWithDefault converts a string to bool, returning defaultValue on error/empty.
+func parseBoolWithDefault(value string, defaultValue bool) bool {
+	if strings.TrimSpace(value) == "" {
+		return defaultValue
+	}
+	v, err := strconv.ParseBool(value)
 	if err != nil {
 		return defaultValue
 	}

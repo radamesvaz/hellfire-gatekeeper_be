@@ -12,6 +12,7 @@ import (
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
+	"github.com/radamesvaz/bakery-app/internal/middleware"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
@@ -405,4 +406,82 @@ func TestRegister_MissingFields(t *testing.T) {
 			assert.Equal(t, http.StatusBadRequest, rr.Code)
 		})
 	}
+}
+
+func TestRegister_DisabledByFeatureFlag(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	authSvc := authService.New("testingsecret", 60)
+	repository := user.UserRepository{DB: db}
+	tenantRepo := &tenantRepository.Repository{DB: db}
+	registerEnabled := false
+
+	handler := auth.LoginHandler{
+		UserRepo:              repository,
+		TenantRepo:            tenantRepo,
+		AuthService:           *authSvc,
+		TenantRegisterEnabled: &registerEnabled,
+	}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/register", handler.Register).Methods("POST")
+
+	payload := `{
+		"name": "Test Admin",
+		"tenant_name": "Flag Off Biz",
+		"email": "admin@test.com",
+		"phone": "555-1234",
+		"password": "TestPassword123!"
+	}`
+
+	req := httptest.NewRequest("POST", "/register", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Tenant register is disabled")
+}
+
+func TestTenantRegister_DisabledByFeatureFlag_PathBased(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	authSvc := authService.New("testingsecret", 60)
+	repository := user.UserRepository{DB: db}
+	tenantRepo := &tenantRepository.Repository{DB: db}
+	registerEnabled := false
+
+	handler := auth.LoginHandler{
+		UserRepo:              repository,
+		TenantRepo:            tenantRepo,
+		AuthService:           *authSvc,
+		TenantRegisterEnabled: &registerEnabled,
+	}
+
+	router := mux.NewRouter()
+	tAuth := router.PathPrefix("/t/{tenant_slug}/auth").Subrouter()
+	tAuth.Use(middleware.TenantFromPathOrHeader(tenantRepo))
+	tAuth.HandleFunc("/register", handler.Register).Methods("POST")
+
+	payload := `{
+		"name": "Test Admin",
+		"tenant_name": "Flag Off Biz",
+		"email": "admin@test.com",
+		"phone": "555-1234",
+		"password": "TestPassword123!"
+	}`
+
+	req := httptest.NewRequest("POST", "/t/default/auth/register", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Tenant register is disabled")
 }

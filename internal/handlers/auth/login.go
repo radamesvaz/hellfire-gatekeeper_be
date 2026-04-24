@@ -17,7 +17,8 @@ import (
 type LoginHandler struct {
 	UserRepo    userRepo.UserRepository
 	TenantRepo  *tenantRepo.Repository
-	AuthService authService.AuthService
+	// AuthService issues session JWTs and one-time tokens via the shared implementation wired in cmd/api/main.go.
+	AuthService authService.Service
 	// TenantRegisterEnabled controls whether Register endpoint is available.
 	// Nil means enabled (backwards-compatible default for tests/local wiring).
 	TenantRegisterEnabled *bool

@@ -21,9 +21,9 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	bootstrapRepository "github.com/radamesvaz/bakery-app/internal/repository/bootstrap"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
-	bootstrapRepository "github.com/radamesvaz/bakery-app/internal/repository/bootstrap"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	tenantSignupRepository "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
@@ -32,6 +32,7 @@ import (
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
+	tokensService "github.com/radamesvaz/bakery-app/internal/services/tokens"
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -306,20 +307,25 @@ func main() {
 	// Tenant repo (tenant name on register; slug resolution for public routes)
 	tenantRepo := &tenantRepository.Repository{DB: db}
 
-	// Auth setup
+	// Auth setup: construct token managers once and share the same OneTimeTokenManager instance
+	// across AuthService and future flows (tenant OTC, invitations, etc.).
+	sessionTokenManager := tokensService.NewJWTSessionTokenManager(secret, exp)
+	oneTimeTokenManager := tokensService.NewSHA256OneTimeTokenManager(32)
+	authSvc := authService.NewWithManagers(sessionTokenManager, oneTimeTokenManager)
+
 	userRepo := user.UserRepository{DB: db}
-	authService := authService.New(secret, exp)
 	enableTenantRegister := parseBoolWithDefault(os.Getenv("ENABLE_TENANT_REGISTER"), true)
+	// Login + /register use authSvc for session JWT; same instance backs tenant signup OTC via TenantSignupService.
 	authHandler := &auth.LoginHandler{
 		UserRepo:              userRepo,
 		TenantRepo:            tenantRepo,
-		AuthService:           *authService,
+		AuthService:           authSvc,
 		TenantRegisterEnabled: &enableTenantRegister,
 	}
 	bootstrapRepo := &bootstrapRepository.Repository{DB: db}
 	bootstrapSvc := &bootstrapService.BootstrapService{
 		Repo:        bootstrapRepo,
-		AuthService: authService,
+		AuthService: authSvc,
 	}
 	bootstrapHandler := &auth.BootstrapHandler{
 		Service: bootstrapSvc,
@@ -327,7 +333,7 @@ func main() {
 	tenantSignupRepo := &tenantSignupRepository.Repository{DB: db}
 	tenantSignupSvc := &tenantSignupService.TenantSignupService{
 		Repo:        tenantSignupRepo,
-		AuthService: authService,
+		AuthService: authSvc,
 	}
 	tenantSignupHandler := &auth.TenantSignupHandler{
 		Service: tenantSignupSvc,
@@ -411,7 +417,7 @@ func main() {
 
 	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()
-	auth.Use(middleware.AuthMiddleware(authService))
+	auth.Use(middleware.AuthMiddleware(authSvc))
 	auth.Use(middleware.TenantMiddleware())
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")

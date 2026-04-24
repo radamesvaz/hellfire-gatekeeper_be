@@ -35,7 +35,7 @@ func TestLogin(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		AuthService: authService,
 	}
 
 	// Setup the router
@@ -80,7 +80,7 @@ func TestLogin_SoftDeletedUserCannotLogin(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authSvc,
+		AuthService: authSvc,
 	}
 
 	// Setup the router

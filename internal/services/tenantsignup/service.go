@@ -2,9 +2,6 @@ package tenantsignup
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"strings"
 	"time"
@@ -45,12 +42,12 @@ func (s *TenantSignupService) CreateSignupCode(
 	}
 	expiresAt := time.Now().UTC().Add(time.Duration(ttlMinutes) * time.Minute)
 
-	code, err := generateOneTimeCode()
+	code, codeHash, err := s.AuthService.GenerateOneTimeToken()
 	if err != nil {
 		return authModel.CreateSignupCodeResponse{}, err
 	}
 
-	id, err := s.Repo.CreateSignupCode(ctx, hashOneTimeCode(code), expiresAt, createdByUserID, req.Notes)
+	id, err := s.Repo.CreateSignupCode(ctx, codeHash, expiresAt, createdByUserID, req.Notes)
 	if err != nil {
 		return authModel.CreateSignupCodeResponse{}, err
 	}
@@ -70,7 +67,7 @@ func (s *TenantSignupService) RegisterTenantWithCode(ctx context.Context, req au
 	}
 
 	result, err := s.Repo.RegisterTenantWithCode(ctx, repo.RegisterTenantWithCodeInput{
-		CodeHash:     hashOneTimeCode(req.OneTimeCode),
+		CodeHash:     s.AuthService.HashOneTimeToken(req.OneTimeCode),
 		TenantName:   req.TenantName,
 		TenantSlug:   req.TenantSlug,
 		AdminName:    strings.TrimSpace(req.AdminName),
@@ -96,18 +93,4 @@ func (s *TenantSignupService) RegisterTenantWithCode(ctx context.Context, req au
 		AdminID:    result.AdminID,
 		AdminEmail: adminEmail,
 	}, nil
-}
-
-func generateOneTimeCode() (string, error) {
-	raw := make([]byte, 8)
-	if _, err := rand.Read(raw); err != nil {
-		return "", err
-	}
-	encoded := strings.ToUpper(hex.EncodeToString(raw))
-	return encoded[:8] + "-" + encoded[8:], nil
-}
-
-func hashOneTimeCode(code string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(strings.ToUpper(code))))
-	return hex.EncodeToString(sum[:])
 }

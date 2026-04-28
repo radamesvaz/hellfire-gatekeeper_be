@@ -19,8 +19,6 @@ const (
 	DefaultPasswordResetTTLMinutes = 60
 )
 
-var ()
-
 type ActionTokenService struct {
 	DB          *sql.DB
 	Repo        repo.Repository

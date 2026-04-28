@@ -109,3 +109,20 @@ func (r *UserRepository) EmailExists(tenantID uint64, email string) (bool, error
 		Msg("Email existence checked")
 	return exists, nil
 }
+
+func (r *UserRepository) UpdatePasswordHash(ctx context.Context, tenantID uint64, userID uint64, passwordHash string) error {
+	_, err := r.DB.ExecContext(
+		ctx,
+		`UPDATE users
+		 SET password_hash = $1
+		 WHERE tenant_id = $2 AND id_user = $3 AND deleted_at IS NULL`,
+		passwordHash,
+		tenantID,
+		userID,
+	)
+	if err != nil {
+		logger.Err(err).Uint64("tenant_id", tenantID).Uint64("user_id", userID).Msg("Could not update user password hash")
+		return errors.NewInternalServerError(errors.ErrDatabaseOperation)
+	}
+	return nil
+}

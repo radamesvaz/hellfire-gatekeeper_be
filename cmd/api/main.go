@@ -21,6 +21,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	authTokensRepository "github.com/radamesvaz/bakery-app/internal/repository/auth_tokens"
 	bootstrapRepository "github.com/radamesvaz/bakery-app/internal/repository/bootstrap"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
@@ -28,9 +29,12 @@ import (
 	tenantSignupRepository "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	authTokensService "github.com/radamesvaz/bakery-app/internal/services/auth_tokens"
 	bootstrapService "github.com/radamesvaz/bakery-app/internal/services/bootstrap"
+	emailService "github.com/radamesvaz/bakery-app/internal/services/email"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
+	passwordResetService "github.com/radamesvaz/bakery-app/internal/services/passwordreset"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
 	tokensService "github.com/radamesvaz/bakery-app/internal/services/tokens"
 
@@ -338,6 +342,22 @@ func main() {
 	tenantSignupHandler := &auth.TenantSignupHandler{
 		Service: tenantSignupSvc,
 	}
+	authTokensRepo := &authTokensRepository.SQLRepository{DB: db}
+	authTokensSvc := &authTokensService.ActionTokenService{
+		DB:          db,
+		Repo:        authTokensRepo,
+		AuthService: authSvc,
+	}
+	passwordResetSvc := &passwordResetService.PasswordResetService{
+		Users:        &userRepo,
+		AuthService:  authSvc,
+		TokenService: authTokensSvc,
+		EmailSender:  resolveEmailSender(),
+		AppBaseURL:   strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+	}
+	passwordResetHandler := &auth.PasswordResetHandler{
+		Service: passwordResetSvc,
+	}
 
 	tenantHandler := &h.TenantHandler{
 		Repo:         tenantRepo,
@@ -414,6 +434,8 @@ func main() {
 	tAuth.Use(middleware.TenantFromPathOrHeader(tenantRepo))
 	tAuth.HandleFunc("/login", authHandler.Login).Methods("POST")
 	tAuth.HandleFunc("/register", authHandler.Register).Methods("POST")
+	tAuth.HandleFunc("/password/forgot", passwordResetHandler.ForgotPassword).Methods("POST")
+	tAuth.HandleFunc("/password/reset", passwordResetHandler.ResetPassword).Methods("POST")
 
 	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()
@@ -540,4 +562,20 @@ func parseBoolWithDefault(value string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return v
+}
+
+func resolveEmailSender() emailService.Sender {
+	apiKey := strings.TrimSpace(os.Getenv("BREVO_API_KEY"))
+	fromEmail := strings.TrimSpace(os.Getenv("BREVO_FROM_EMAIL"))
+	fromName := strings.TrimSpace(os.Getenv("BREVO_FROM_NAME"))
+
+	if apiKey == "" || fromEmail == "" {
+		logger.Warn().Msg("Brevo sender not configured, using noop email sender")
+		return emailService.NoopSender{}
+	}
+	if fromName == "" {
+		fromName = "Hellfire Gatekeeper"
+	}
+	logger.Info().Msg("Brevo setup successfully")
+	return emailService.NewBrevoSender(apiKey, fromEmail, fromName)
 }

@@ -35,6 +35,7 @@ type TokenRecord struct {
 	Email         string
 	Purpose       authModel.ActionTokenPurpose
 	SubjectUserID *uint64
+	MetadataJSON  []byte
 	ExpiresAt     time.Time
 	UsedAt        *time.Time
 	RevokedAt     *time.Time
@@ -71,7 +72,7 @@ func (r *SQLRepository) GetTokenForUpdate(ctx context.Context, tx *sql.Tx, tenan
 	)
 
 	err := tx.QueryRowContext(ctx,
-		`SELECT id, tenant_id, email, purpose, subject_user_id, expires_at, used_at, revoked_at
+		`SELECT id, tenant_id, email, purpose, subject_user_id, metadata_json, expires_at, used_at, revoked_at
          FROM auth_action_tokens
          WHERE tenant_id = $1 AND purpose = $2 AND token_hash = $3
          FOR UPDATE`,
@@ -84,6 +85,7 @@ func (r *SQLRepository) GetTokenForUpdate(ctx context.Context, tx *sql.Tx, tenan
 		&rec.Email,
 		&rec.Purpose,
 		&subjectUserIDRaw,
+		&rec.MetadataJSON,
 		&rec.ExpiresAt,
 		&usedAtRaw,
 		&revokedAtRaw,

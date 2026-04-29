@@ -69,3 +69,46 @@ func (s *BrevoSender) SendPasswordReset(ctx context.Context, payload PasswordRes
 
 	return nil
 }
+
+func (s *BrevoSender) SendTenantInvitation(ctx context.Context, payload TenantInvitationPayload) error {
+	reqBody := map[string]interface{}{
+		"sender": map[string]string{
+			"email": s.FromEmail,
+			"name":  s.FromName,
+		},
+		"to": []map[string]string{
+			{"email": payload.ToEmail},
+		},
+		"subject": "You are invited to join a tenant",
+		"htmlContent": fmt.Sprintf(
+			"<p>You have been invited to join a tenant.</p><p><a href=\"%s\">Accept invitation</a></p>",
+			payload.InviteURL,
+		),
+		"textContent": "You have been invited to join a tenant. Open this link: " + payload.InviteURL,
+	}
+
+	raw, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("marshal brevo request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.brevo.com/v3/smtp/email", bytes.NewReader(raw))
+	if err != nil {
+		return fmt.Errorf("create brevo request: %w", err)
+	}
+	req.Header.Set("accept", "application/json")
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("api-key", s.APIKey)
+
+	resp, err := s.Client.Do(req)
+	if err != nil {
+		return fmt.Errorf("brevo http request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("brevo returned unexpected status: %d", resp.StatusCode)
+	}
+
+	return nil
+}

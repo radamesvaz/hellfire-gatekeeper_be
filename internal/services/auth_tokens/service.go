@@ -25,7 +25,10 @@ type ActionTokenService struct {
 	AuthService authService.Service
 }
 
-func (s *ActionTokenService) CreateToken(ctx context.Context, req authModel.CreateActionTokenRequest) (authModel.CreateActionTokenResponse, error) {
+func (s *ActionTokenService) CreateToken(
+	ctx context.Context,
+	req authModel.CreateActionTokenRequest,
+) (authModel.CreateActionTokenResponse, error) {
 	purpose := normalizePurpose(req.Purpose)
 	if !isAllowedPurpose(purpose) {
 		return authModel.CreateActionTokenResponse{}, appErrors.ErrInvalidTokenPurpose
@@ -149,6 +152,7 @@ func (s *ActionTokenService) loadValidatedToken(ctx context.Context, tx *sql.Tx,
 		Email:         row.Email,
 		Purpose:       row.Purpose,
 		SubjectUserID: row.SubjectUserID,
+		MetadataJSON:  row.MetadataJSON,
 		ExpiresAt:     row.ExpiresAt,
 		UsedAt:        row.UsedAt,
 		RevokedAt:     row.RevokedAt,

@@ -7,6 +7,12 @@ type PasswordResetPayload struct {
 	ResetURL string
 }
 
+type TenantInvitationPayload struct {
+	ToEmail   string
+	InviteURL string
+}
+
 type Sender interface {
 	SendPasswordReset(ctx context.Context, payload PasswordResetPayload) error
+	SendTenantInvitation(ctx context.Context, payload TenantInvitationPayload) error
 }

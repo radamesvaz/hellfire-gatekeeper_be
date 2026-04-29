@@ -33,6 +33,7 @@ import (
 	bootstrapService "github.com/radamesvaz/bakery-app/internal/services/bootstrap"
 	emailService "github.com/radamesvaz/bakery-app/internal/services/email"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
+	invitationService "github.com/radamesvaz/bakery-app/internal/services/invitations"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	passwordResetService "github.com/radamesvaz/bakery-app/internal/services/passwordreset"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
@@ -358,6 +359,16 @@ func main() {
 	passwordResetHandler := &auth.PasswordResetHandler{
 		Service: passwordResetSvc,
 	}
+	invitationSvc := &invitationService.InvitationService{
+		Users:        &userRepo,
+		AuthService:  authSvc,
+		TokenService: authTokensSvc,
+		EmailSender:  resolveEmailSender(),
+		AppBaseURL:   strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+	}
+	invitationHandler := &auth.InvitationHandler{
+		Service: invitationSvc,
+	}
 
 	tenantHandler := &h.TenantHandler{
 		Repo:         tenantRepo,
@@ -436,6 +447,7 @@ func main() {
 	tAuth.HandleFunc("/register", authHandler.Register).Methods("POST")
 	tAuth.HandleFunc("/password/forgot", passwordResetHandler.ForgotPassword).Methods("POST")
 	tAuth.HandleFunc("/password/reset", passwordResetHandler.ResetPassword).Methods("POST")
+	tAuth.HandleFunc("/invitations/accept", invitationHandler.AcceptInvitation).Methods("POST")
 
 	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()
@@ -467,6 +479,7 @@ func main() {
 	auth.HandleFunc("/tenant/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/tenant/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
+	auth.HandleFunc("/invitations", invitationHandler.CreateInvitation).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()

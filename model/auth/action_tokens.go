@@ -34,6 +34,7 @@ type ActionTokenRecord struct {
 	Email         string
 	Purpose       ActionTokenPurpose
 	SubjectUserID *uint64
+	MetadataJSON  json.RawMessage
 	ExpiresAt     time.Time
 	UsedAt        *time.Time
 	RevokedAt     *time.Time

@@ -43,4 +43,5 @@ var (
 	ErrTokenAlreadyConsumed = errors.New("token already consumed")
 	ErrTokenRevoked         = errors.New("token revoked")
 	ErrInvalidTokenPurpose  = errors.New("invalid token purpose")
+	ErrForbidden            = errors.New("forbidden")
 )

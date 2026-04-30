@@ -134,6 +134,13 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, tenantID uint6
 	}, nil
 }
 
+func (s *InvitationService) RevokeInvitation(ctx context.Context, tenantID uint64, roleID uint64, invitationID uint64) error {
+	if roleID != uint64(uModel.UserRoleAdmin) {
+		return appErrors.ErrForbidden
+	}
+	return s.TokenService.RevokeTokenScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID)
+}
+
 func buildInviteURL(baseURL string, tenantSlug string, token string) (string, error) {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {

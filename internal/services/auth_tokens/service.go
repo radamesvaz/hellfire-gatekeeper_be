@@ -107,6 +107,44 @@ func (s *ActionTokenService) RevokeToken(ctx context.Context, tokenID uint64) er
 	return nil
 }
 
+func (s *ActionTokenService) RevokeTokenScoped(ctx context.Context, tenantID uint64, purpose authModel.ActionTokenPurpose, tokenID uint64) error {
+	purpose = normalizePurpose(purpose)
+	if !isAllowedPurpose(purpose) {
+		return appErrors.ErrInvalidTokenPurpose
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx scoped revoke action token: %w", err)
+	}
+	defer tx.Rollback()
+
+	row, err := s.Repo.GetTokenByIDForUpdate(ctx, tx, tokenID)
+	if err != nil {
+		if stdErrors.Is(err, repo.ErrTokenNotFound) {
+			return appErrors.ErrInvalidToken
+		}
+		return err
+	}
+	if row.TenantID != tenantID || row.Purpose != purpose {
+		return appErrors.ErrInvalidToken
+	}
+	if row.UsedAt != nil {
+		return appErrors.ErrTokenAlreadyConsumed
+	}
+	if row.RevokedAt != nil {
+		return nil
+	}
+
+	if err := s.Repo.RevokeToken(ctx, tx, tokenID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit scoped revoke action token: %w", err)
+	}
+	return nil
+}
+
 func (s *ActionTokenService) loadValidatedToken(ctx context.Context, tx *sql.Tx, tenantID uint64, purpose authModel.ActionTokenPurpose, plainToken string) (authModel.ActionTokenRecord, error) {
 	purpose = normalizePurpose(purpose)
 	if !isAllowedPurpose(purpose) {

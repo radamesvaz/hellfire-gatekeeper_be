@@ -104,6 +104,45 @@ func (r *SQLRepository) GetTokenForUpdate(ctx context.Context, tx *sql.Tx, tenan
 	return rec, nil
 }
 
+func (r *SQLRepository) GetTokenByIDForUpdate(ctx context.Context, tx *sql.Tx, id uint64) (TokenRecord, error) {
+	var (
+		rec              TokenRecord
+		subjectUserIDRaw sql.NullInt64
+		usedAtRaw        sql.NullTime
+		revokedAtRaw     sql.NullTime
+	)
+
+	err := tx.QueryRowContext(ctx,
+		`SELECT id, tenant_id, email, purpose, subject_user_id, metadata_json, expires_at, used_at, revoked_at
+         FROM auth_action_tokens
+         WHERE id = $1
+         FOR UPDATE`,
+		id,
+	).Scan(
+		&rec.ID,
+		&rec.TenantID,
+		&rec.Email,
+		&rec.Purpose,
+		&subjectUserIDRaw,
+		&rec.MetadataJSON,
+		&rec.ExpiresAt,
+		&usedAtRaw,
+		&revokedAtRaw,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return TokenRecord{}, ErrTokenNotFound
+		}
+		return TokenRecord{}, fmt.Errorf("get action token by id for update: %w", err)
+	}
+
+	rec.SubjectUserID = fromNullUint64(subjectUserIDRaw)
+	rec.UsedAt = fromNullTime(usedAtRaw)
+	rec.RevokedAt = fromNullTime(revokedAtRaw)
+
+	return rec, nil
+}
+
 func (r *SQLRepository) ConsumeToken(ctx context.Context, tx *sql.Tx, id uint64) error {
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE auth_action_tokens SET used_at = NOW(), updated_on = NOW() WHERE id = $1`,

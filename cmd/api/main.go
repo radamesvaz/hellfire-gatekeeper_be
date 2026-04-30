@@ -480,6 +480,7 @@ func main() {
 	auth.HandleFunc("/tenant/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
 	auth.HandleFunc("/invitations", invitationHandler.CreateInvitation).Methods("POST")
+	auth.HandleFunc("/invitations/{id}/revoke", invitationHandler.RevokeInvitation).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()

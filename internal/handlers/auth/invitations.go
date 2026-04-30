@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/gorilla/mux"
 	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
@@ -128,4 +130,53 @@ func (h *InvitationHandler) AcceptInvitation(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (h *InvitationHandler) RevokeInvitation(w http.ResponseWriter, r *http.Request) {
+	if h.Service == nil {
+		http.Error(w, "Invitation service not configured", http.StatusInternalServerError)
+		return
+	}
+
+	tenantID, err := middleware.GetTenantIDFromContext(r.Context())
+	if err != nil || tenantID == 0 {
+		http.Error(w, "tenant context missing", http.StatusBadRequest)
+		return
+	}
+	roleID, err := middleware.GetUserRoleFromContext(r.Context())
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	idRaw := strings.TrimSpace(mux.Vars(r)["id"])
+	invitationID, err := strconv.ParseUint(idRaw, 10, 64)
+	if err != nil || invitationID == 0 {
+		http.Error(w, "invalid invitation id", http.StatusBadRequest)
+		return
+	}
+
+	err = h.Service.RevokeInvitation(r.Context(), tenantID, roleID, invitationID)
+	if err != nil {
+		switch err {
+		case appErrors.ErrForbidden:
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		case appErrors.ErrInvalidToken, appErrors.ErrTokenAlreadyConsumed:
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		default:
+			var httpErr *appErrors.HTTPError
+			if errors.As(err, &httpErr) {
+				http.Error(w, httpErr.Error(), httpErr.StatusCode)
+				return
+			}
+			http.Error(w, "Could not revoke invitation", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{"message": "Invitation revoked successfully"})
 }

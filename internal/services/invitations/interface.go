@@ -10,4 +10,5 @@ type Service interface {
 	CreateInvitation(ctx context.Context, tenantID uint64, tenantSlug string, roleID uint64, createdByUserID uint64, req authModel.CreateTenantInvitationRequest) (authModel.CreateTenantInvitationResponse, error)
 	AcceptInvitation(ctx context.Context, tenantID uint64, req authModel.AcceptTenantInvitationRequest) (authModel.AcceptTenantInvitationResponse, error)
 	RevokeInvitation(ctx context.Context, tenantID uint64, roleID uint64, invitationID uint64) error
+	ResendInvitation(ctx context.Context, tenantID uint64, tenantSlug string, roleID uint64, createdByUserID uint64, invitationID uint64) (authModel.CreateTenantInvitationResponse, error)
 }

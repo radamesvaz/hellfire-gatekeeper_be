@@ -145,6 +145,46 @@ func (s *ActionTokenService) RevokeTokenScoped(ctx context.Context, tenantID uin
 	return nil
 }
 
+func (s *ActionTokenService) GetTokenByIDScoped(ctx context.Context, tenantID uint64, purpose authModel.ActionTokenPurpose, tokenID uint64) (authModel.ActionTokenRecord, error) {
+	purpose = normalizePurpose(purpose)
+	if !isAllowedPurpose(purpose) {
+		return authModel.ActionTokenRecord{}, appErrors.ErrInvalidTokenPurpose
+	}
+
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return authModel.ActionTokenRecord{}, fmt.Errorf("begin tx scoped get action token: %w", err)
+	}
+	defer tx.Rollback()
+
+	row, err := s.Repo.GetTokenByIDForUpdate(ctx, tx, tokenID)
+	if err != nil {
+		if stdErrors.Is(err, repo.ErrTokenNotFound) {
+			return authModel.ActionTokenRecord{}, appErrors.ErrInvalidToken
+		}
+		return authModel.ActionTokenRecord{}, err
+	}
+	if row.TenantID != tenantID || row.Purpose != purpose {
+		return authModel.ActionTokenRecord{}, appErrors.ErrInvalidToken
+	}
+
+	if err := tx.Commit(); err != nil {
+		return authModel.ActionTokenRecord{}, fmt.Errorf("commit scoped get action token: %w", err)
+	}
+
+	return authModel.ActionTokenRecord{
+		ID:            row.ID,
+		TenantID:      row.TenantID,
+		Email:         row.Email,
+		Purpose:       row.Purpose,
+		SubjectUserID: row.SubjectUserID,
+		MetadataJSON:  row.MetadataJSON,
+		ExpiresAt:     row.ExpiresAt,
+		UsedAt:        row.UsedAt,
+		RevokedAt:     row.RevokedAt,
+	}, nil
+}
+
 func (s *ActionTokenService) loadValidatedToken(ctx context.Context, tx *sql.Tx, tenantID uint64, purpose authModel.ActionTokenPurpose, plainToken string) (authModel.ActionTokenRecord, error) {
 	purpose = normalizePurpose(purpose)
 	if !isAllowedPurpose(purpose) {

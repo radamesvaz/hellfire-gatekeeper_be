@@ -141,6 +141,41 @@ func (s *InvitationService) RevokeInvitation(ctx context.Context, tenantID uint6
 	return s.TokenService.RevokeTokenScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID)
 }
 
+func (s *InvitationService) ResendInvitation(
+	ctx context.Context,
+	tenantID uint64,
+	tenantSlug string,
+	roleID uint64,
+	createdByUserID uint64,
+	invitationID uint64,
+) (authModel.CreateTenantInvitationResponse, error) {
+	if roleID != uint64(uModel.UserRoleAdmin) {
+		return authModel.CreateTenantInvitationResponse{}, appErrors.ErrForbidden
+	}
+
+	current, err := s.TokenService.GetTokenByIDScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID)
+	if err != nil {
+		return authModel.CreateTenantInvitationResponse{}, err
+	}
+	if current.UsedAt != nil {
+		return authModel.CreateTenantInvitationResponse{}, appErrors.ErrTokenAlreadyConsumed
+	}
+	if current.RevokedAt != nil {
+		return authModel.CreateTenantInvitationResponse{}, appErrors.ErrTokenRevoked
+	}
+
+	resp, err := s.CreateInvitation(ctx, tenantID, tenantSlug, roleID, createdByUserID, authModel.CreateTenantInvitationRequest{
+		Email: current.Email,
+	})
+	if err != nil {
+		return authModel.CreateTenantInvitationResponse{}, err
+	}
+	if err := s.TokenService.RevokeTokenScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID); err != nil {
+		return authModel.CreateTenantInvitationResponse{}, err
+	}
+	return resp, nil
+}
+
 func buildInviteURL(baseURL string, tenantSlug string, token string) (string, error) {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if base == "" {

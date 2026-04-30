@@ -12,4 +12,5 @@ type Service interface {
 	ConsumeToken(ctx context.Context, tenantID uint64, purpose authModel.ActionTokenPurpose, plainToken string) (authModel.ActionTokenRecord, error)
 	RevokeToken(ctx context.Context, tokenID uint64) error
 	RevokeTokenScoped(ctx context.Context, tenantID uint64, purpose authModel.ActionTokenPurpose, tokenID uint64) error
+	GetTokenByIDScoped(ctx context.Context, tenantID uint64, purpose authModel.ActionTokenPurpose, tokenID uint64) (authModel.ActionTokenRecord, error)
 }

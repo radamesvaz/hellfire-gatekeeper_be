@@ -60,3 +60,26 @@ func TestActionTokenService_RevokeTokenScoped_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestActionTokenService_GetTokenByIDScoped_TenantMismatch_ReturnsInvalidToken(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	svc := &ActionTokenService{
+		DB:   db,
+		Repo: &repo.SQLRepository{DB: db},
+	}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id, tenant_id, email, purpose, subject_user_id, metadata_json, expires_at, used_at, revoked_at\s+FROM auth_action_tokens\s+WHERE id = \$1\s+FOR UPDATE`).
+		WithArgs(uint64(70)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "tenant_id", "email", "purpose", "subject_user_id", "metadata_json", "expires_at", "used_at", "revoked_at"}).
+			AddRow(uint64(70), uint64(55), "invitee@example.com", "invite", nil, nil, time.Now().UTC().Add(time.Hour), nil, nil))
+	mock.ExpectRollback()
+
+	_, err = svc.GetTokenByIDScoped(context.Background(), 5, authModel.ActionTokenPurposeInvite, 70)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, appErrors.ErrInvalidToken)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}

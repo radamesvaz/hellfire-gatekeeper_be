@@ -17,6 +17,7 @@ import (
 
 type mockInvitationService struct {
 	revokeFn func(ctx context.Context, tenantID uint64, roleID uint64, invitationID uint64) error
+	resendFn func(ctx context.Context, tenantID uint64, tenantSlug string, roleID uint64, createdByUserID uint64, invitationID uint64) (authModel.CreateTenantInvitationResponse, error)
 }
 
 func (m *mockInvitationService) CreateInvitation(_ context.Context, _ uint64, _ string, _ uint64, _ uint64, _ authModel.CreateTenantInvitationRequest) (authModel.CreateTenantInvitationResponse, error) {
@@ -32,6 +33,13 @@ func (m *mockInvitationService) RevokeInvitation(ctx context.Context, tenantID u
 		return nil
 	}
 	return m.revokeFn(ctx, tenantID, roleID, invitationID)
+}
+
+func (m *mockInvitationService) ResendInvitation(ctx context.Context, tenantID uint64, tenantSlug string, roleID uint64, createdByUserID uint64, invitationID uint64) (authModel.CreateTenantInvitationResponse, error) {
+	if m.resendFn == nil {
+		return authModel.CreateTenantInvitationResponse{}, nil
+	}
+	return m.resendFn(ctx, tenantID, tenantSlug, roleID, createdByUserID, invitationID)
 }
 
 func TestInvitationHandler_RevokeInvitation_Success(t *testing.T) {
@@ -91,4 +99,47 @@ func TestInvitationHandler_RevokeInvitation_Forbidden(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
 	assert.Contains(t, rr.Body.String(), "Forbidden")
+}
+
+func TestInvitationHandler_ResendInvitation_Success(t *testing.T) {
+	var gotTenantID, gotRoleID, gotCreatedBy, gotInvitationID uint64
+	var gotTenantSlug string
+	handler := &InvitationHandler{
+		Service: &mockInvitationService{
+			resendFn: func(_ context.Context, tenantID uint64, tenantSlug string, roleID uint64, createdByUserID uint64, invitationID uint64) (authModel.CreateTenantInvitationResponse, error) {
+				gotTenantID = tenantID
+				gotTenantSlug = tenantSlug
+				gotRoleID = roleID
+				gotCreatedBy = createdByUserID
+				gotInvitationID = invitationID
+				return authModel.CreateTenantInvitationResponse{
+					ID:      99,
+					Email:   "invitee@example.com",
+					Message: "Invitation sent successfully",
+				}, nil
+			},
+		},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/invitations/17/resend", nil)
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(9))
+	ctx = context.WithValue(ctx, middleware.TenantSlugKey, "acme")
+	ctx = context.WithValue(ctx, middleware.UserClaimsKey, jwt.MapClaims{
+		"user_id": float64(33),
+		"role_id": float64(1),
+	})
+	req = req.WithContext(ctx)
+
+	rr := httptest.NewRecorder()
+	router := mux.NewRouter()
+	router.HandleFunc("/auth/invitations/{id}/resend", handler.ResendInvitation).Methods(http.MethodPost)
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	assert.Equal(t, uint64(9), gotTenantID)
+	assert.Equal(t, "acme", gotTenantSlug)
+	assert.Equal(t, uint64(1), gotRoleID)
+	assert.Equal(t, uint64(33), gotCreatedBy)
+	assert.Equal(t, uint64(17), gotInvitationID)
+	assert.Contains(t, rr.Body.String(), "Invitation sent successfully")
 }

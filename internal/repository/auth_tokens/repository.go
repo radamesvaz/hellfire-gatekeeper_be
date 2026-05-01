@@ -42,12 +42,16 @@ type TokenRecord struct {
 }
 
 func (r *SQLRepository) CreateToken(ctx context.Context, in CreateTokenInput) (uint64, error) {
+	return r.CreateTokenTx(ctx, nil, in)
+}
+
+func (r *SQLRepository) CreateTokenTx(ctx context.Context, tx *sql.Tx, in CreateTokenInput) (uint64, error) {
 	var id uint64
-	err := r.DB.QueryRowContext(ctx,
-		`INSERT INTO auth_action_tokens (
+	q := `INSERT INTO auth_action_tokens (
             tenant_id, email, purpose, token_hash, subject_user_id, expires_at, used_at, revoked_at, created_by_user_id, metadata_json
         ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7, $8)
-        RETURNING id`,
+        RETURNING id`
+	args := []any{
 		in.TenantID,
 		in.Email,
 		string(in.Purpose),
@@ -56,11 +60,43 @@ func (r *SQLRepository) CreateToken(ctx context.Context, in CreateTokenInput) (u
 		in.ExpiresAt,
 		toNullUint64(in.CreatedByUserID),
 		toNullBytes(in.MetadataJSON),
-	).Scan(&id)
-	if err != nil {
+	}
+	var row *sql.Row
+	if tx != nil {
+		row = tx.QueryRowContext(ctx, q, args...)
+	} else {
+		row = r.DB.QueryRowContext(ctx, q, args...)
+	}
+	if err := row.Scan(&id); err != nil {
 		return 0, fmt.Errorf("create action token: %w", err)
 	}
 	return id, nil
+}
+
+// InsertHistory appends auth_action_tokens_history. tx nil uses DB.
+func (r *SQLRepository) InsertHistory(ctx context.Context, tx *sql.Tx, in InsertHistoryInput) error {
+	q := `INSERT INTO auth_action_tokens_history (
+	    tenant_id, auth_action_token_id, purpose, action, modified_by_user_id, subject_user_id, metadata_json
+	) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	args := []any{
+		in.TenantID,
+		in.AuthActionTokenID,
+		string(in.Purpose),
+		string(in.Action),
+		toNullUint64(in.ModifiedByUserID),
+		toNullUint64(in.SubjectUserID),
+		toNullBytes(in.MetadataJSON),
+	}
+	var err error
+	if tx != nil {
+		_, err = tx.ExecContext(ctx, q, args...)
+	} else {
+		_, err = r.DB.ExecContext(ctx, q, args...)
+	}
+	if err != nil {
+		return fmt.Errorf("insert auth action token history: %w", err)
+	}
+	return nil
 }
 
 func (r *SQLRepository) GetTokenForUpdate(ctx context.Context, tx *sql.Tx, tenantID uint64, purpose authModel.ActionTokenPurpose, tokenHash string) (TokenRecord, error) {

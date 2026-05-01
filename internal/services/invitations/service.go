@@ -2,6 +2,7 @@ package invitations
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -33,11 +34,22 @@ func (s *InvitationService) CreateInvitation(
 	createdByUserID uint64,
 	req authModel.CreateTenantInvitationRequest,
 ) (authModel.CreateTenantInvitationResponse, error) {
+	return s.createInvitationWithMetadata(ctx, tenantID, tenantSlug, roleID, createdByUserID, strings.TrimSpace(strings.ToLower(req.Email)), nil)
+}
+
+func (s *InvitationService) createInvitationWithMetadata(
+	ctx context.Context,
+	tenantID uint64,
+	tenantSlug string,
+	roleID uint64,
+	createdByUserID uint64,
+	emailAddr string,
+	metadataJSON []byte,
+) (authModel.CreateTenantInvitationResponse, error) {
 	if roleID != uint64(uModel.UserRoleAdmin) {
 		return authModel.CreateTenantInvitationResponse{}, appErrors.ErrForbidden
 	}
 
-	emailAddr := strings.TrimSpace(strings.ToLower(req.Email))
 	exists, err := s.Users.EmailExists(tenantID, emailAddr)
 	if err != nil {
 		return authModel.CreateTenantInvitationResponse{}, err
@@ -46,12 +58,16 @@ func (s *InvitationService) CreateInvitation(
 		return authModel.CreateTenantInvitationResponse{}, appErrors.ErrEmailAlreadyExists
 	}
 
-	tokenResp, err := s.TokenService.CreateToken(ctx, authModel.CreateActionTokenRequest{
+	tokenReq := authModel.CreateActionTokenRequest{
 		TenantID:        tenantID,
 		Email:           emailAddr,
 		Purpose:         authModel.ActionTokenPurposeInvite,
 		CreatedByUserID: &createdByUserID,
-	})
+	}
+	if len(metadataJSON) > 0 {
+		tokenReq.MetadataJSON = json.RawMessage(metadataJSON)
+	}
+	tokenResp, err := s.TokenService.CreateToken(ctx, tokenReq)
 	if err != nil {
 		return authModel.CreateTenantInvitationResponse{}, err
 	}
@@ -119,6 +135,10 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, tenantID uint6
 		return authModel.AcceptTenantInvitationResponse{}, err
 	}
 
+	if err := s.TokenService.RecordInvitationAccepted(ctx, tenantID, rec.ID, createdID); err != nil {
+		return authModel.AcceptTenantInvitationResponse{}, err
+	}
+
 	tenantIDPtr := tenantID
 	jwtToken, err := s.AuthService.GenerateJWT(createdID, uModel.UserRoleClient, rec.Email, &tenantIDPtr)
 	if err != nil {
@@ -133,11 +153,11 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, tenantID uint6
 	}, nil
 }
 
-func (s *InvitationService) RevokeInvitation(ctx context.Context, tenantID uint64, roleID uint64, invitationID uint64) error {
+func (s *InvitationService) RevokeInvitation(ctx context.Context, tenantID uint64, roleID uint64, revokedByUserID uint64, invitationID uint64) error {
 	if roleID != uint64(uModel.UserRoleAdmin) {
 		return appErrors.ErrForbidden
 	}
-	return s.TokenService.RevokeTokenScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID)
+	return s.TokenService.RevokeTokenScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID, &revokedByUserID)
 }
 
 func (s *InvitationService) ResendInvitation(
@@ -163,13 +183,18 @@ func (s *InvitationService) ResendInvitation(
 		return authModel.CreateTenantInvitationResponse{}, appErrors.ErrTokenRevoked
 	}
 
-	resp, err := s.CreateInvitation(ctx, tenantID, tenantSlug, roleID, createdByUserID, authModel.CreateTenantInvitationRequest{
-		Email: current.Email,
-	})
+	meta, err := json.Marshal(struct {
+		ReplacesTokenID uint64 `json:"replaces_token_id"`
+	}{ReplacesTokenID: invitationID})
 	if err != nil {
 		return authModel.CreateTenantInvitationResponse{}, err
 	}
-	if err := s.TokenService.RevokeTokenScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID); err != nil {
+
+	resp, err := s.createInvitationWithMetadata(ctx, tenantID, tenantSlug, roleID, createdByUserID, current.Email, meta)
+	if err != nil {
+		return authModel.CreateTenantInvitationResponse{}, err
+	}
+	if err := s.TokenService.RevokeTokenScoped(ctx, tenantID, authModel.ActionTokenPurposeInvite, invitationID, &createdByUserID); err != nil {
 		return authModel.CreateTenantInvitationResponse{}, err
 	}
 	return resp, nil

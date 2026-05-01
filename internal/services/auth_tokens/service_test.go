@@ -30,7 +30,7 @@ func TestActionTokenService_RevokeTokenScoped_TenantMismatch_ReturnsInvalidToken
 			AddRow(uint64(11), uint64(999), "invitee@example.com", "invite", nil, nil, time.Now().UTC().Add(time.Hour), nil, nil))
 	mock.ExpectRollback()
 
-	err = svc.RevokeTokenScoped(context.Background(), 10, authModel.ActionTokenPurposeInvite, 11)
+	err = svc.RevokeTokenScoped(context.Background(), 10, authModel.ActionTokenPurposeInvite, 11, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, appErrors.ErrInvalidToken)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -54,9 +54,13 @@ func TestActionTokenService_RevokeTokenScoped_Success(t *testing.T) {
 	mock.ExpectExec(`UPDATE auth_action_tokens SET revoked_at = NOW\(\), updated_on = NOW\(\) WHERE id = \$1`).
 		WithArgs(uint64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO auth_action_tokens_history`).
+		WithArgs(uint64(5), uint64(42), string(authModel.ActionTokenPurposeInvite), string(authModel.ActionTokenInviteRevoked), uint64(7), nil, nil).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	err = svc.RevokeTokenScoped(context.Background(), 5, authModel.ActionTokenPurposeInvite, 42)
+	revokedBy := uint64(7)
+	err = svc.RevokeTokenScoped(context.Background(), 5, authModel.ActionTokenPurposeInvite, 42, &revokedBy)
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

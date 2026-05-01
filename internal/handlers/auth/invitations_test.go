@@ -16,7 +16,7 @@ import (
 )
 
 type mockInvitationService struct {
-	revokeFn func(ctx context.Context, tenantID uint64, roleID uint64, invitationID uint64) error
+	revokeFn func(ctx context.Context, tenantID uint64, roleID uint64, revokedByUserID uint64, invitationID uint64) error
 	resendFn func(ctx context.Context, tenantID uint64, tenantSlug string, roleID uint64, createdByUserID uint64, invitationID uint64) (authModel.CreateTenantInvitationResponse, error)
 }
 
@@ -28,11 +28,11 @@ func (m *mockInvitationService) AcceptInvitation(_ context.Context, _ uint64, _ 
 	return authModel.AcceptTenantInvitationResponse{}, nil
 }
 
-func (m *mockInvitationService) RevokeInvitation(ctx context.Context, tenantID uint64, roleID uint64, invitationID uint64) error {
+func (m *mockInvitationService) RevokeInvitation(ctx context.Context, tenantID uint64, roleID uint64, revokedByUserID uint64, invitationID uint64) error {
 	if m.revokeFn == nil {
 		return nil
 	}
-	return m.revokeFn(ctx, tenantID, roleID, invitationID)
+	return m.revokeFn(ctx, tenantID, roleID, revokedByUserID, invitationID)
 }
 
 func (m *mockInvitationService) ResendInvitation(ctx context.Context, tenantID uint64, tenantSlug string, roleID uint64, createdByUserID uint64, invitationID uint64) (authModel.CreateTenantInvitationResponse, error) {
@@ -43,12 +43,13 @@ func (m *mockInvitationService) ResendInvitation(ctx context.Context, tenantID u
 }
 
 func TestInvitationHandler_RevokeInvitation_Success(t *testing.T) {
-	var gotTenantID, gotRoleID, gotInvitationID uint64
+	var gotTenantID, gotRoleID, gotRevokedBy, gotInvitationID uint64
 	handler := &InvitationHandler{
 		Service: &mockInvitationService{
-			revokeFn: func(_ context.Context, tenantID uint64, roleID uint64, invitationID uint64) error {
+			revokeFn: func(_ context.Context, tenantID uint64, roleID uint64, revokedByUserID uint64, invitationID uint64) error {
 				gotTenantID = tenantID
 				gotRoleID = roleID
+				gotRevokedBy = revokedByUserID
 				gotInvitationID = invitationID
 				return nil
 			},
@@ -71,6 +72,7 @@ func TestInvitationHandler_RevokeInvitation_Success(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 	assert.Equal(t, uint64(9), gotTenantID)
 	assert.Equal(t, uint64(1), gotRoleID)
+	assert.Equal(t, uint64(33), gotRevokedBy)
 	assert.Equal(t, uint64(17), gotInvitationID)
 	assert.Contains(t, rr.Body.String(), "Invitation revoked successfully")
 }
@@ -78,7 +80,7 @@ func TestInvitationHandler_RevokeInvitation_Success(t *testing.T) {
 func TestInvitationHandler_RevokeInvitation_Forbidden(t *testing.T) {
 	handler := &InvitationHandler{
 		Service: &mockInvitationService{
-			revokeFn: func(_ context.Context, _ uint64, _ uint64, _ uint64) error {
+			revokeFn: func(_ context.Context, _ uint64, _ uint64, _ uint64, _ uint64) error {
 				return appErrors.ErrForbidden
 			},
 		},

@@ -44,7 +44,13 @@ func (s *ActionTokenService) CreateToken(
 		return authModel.CreateActionTokenResponse{}, fmt.Errorf("generate action token: %w", err)
 	}
 
-	id, err := s.Repo.CreateToken(ctx, repo.CreateTokenInput{
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return authModel.CreateActionTokenResponse{}, fmt.Errorf("begin tx create action token: %w", err)
+	}
+	defer tx.Rollback()
+
+	id, err := s.Repo.CreateTokenTx(ctx, tx, repo.CreateTokenInput{
 		TenantID:        req.TenantID,
 		Email:           strings.TrimSpace(req.Email),
 		Purpose:         purpose,
@@ -56,6 +62,27 @@ func (s *ActionTokenService) CreateToken(
 	})
 	if err != nil {
 		return authModel.CreateActionTokenResponse{}, err
+	}
+
+	hist := repo.InsertHistoryInput{
+		TenantID:          req.TenantID,
+		AuthActionTokenID: id,
+		Purpose:           purpose,
+	}
+	switch purpose {
+	case authModel.ActionTokenPurposeInvite:
+		hist.Action = authModel.ActionTokenInviteCreated
+		hist.ModifiedByUserID = req.CreatedByUserID
+	case authModel.ActionTokenPurposePasswordReset:
+		hist.Action = authModel.ActionTokenPasswordResetIssued
+		hist.SubjectUserID = req.SubjectUserID
+	}
+	if err := s.Repo.InsertHistory(ctx, tx, hist); err != nil {
+		return authModel.CreateActionTokenResponse{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return authModel.CreateActionTokenResponse{}, fmt.Errorf("commit create action token: %w", err)
 	}
 
 	return authModel.CreateActionTokenResponse{
@@ -83,6 +110,19 @@ func (s *ActionTokenService) ConsumeToken(ctx context.Context, tenantID uint64, 
 	if err := s.Repo.ConsumeToken(ctx, tx, rec.ID); err != nil {
 		return authModel.ActionTokenRecord{}, err
 	}
+	if normalizePurpose(purpose) == authModel.ActionTokenPurposePasswordReset {
+		if err := s.Repo.InsertHistory(ctx, tx, repo.InsertHistoryInput{
+			TenantID:           rec.TenantID,
+			AuthActionTokenID:  rec.ID,
+			Purpose:            authModel.ActionTokenPurposePasswordReset,
+			Action:             authModel.ActionTokenPasswordResetCompleted,
+			SubjectUserID:      rec.SubjectUserID,
+			ModifiedByUserID:   nil,
+			MetadataJSON:       nil,
+		}); err != nil {
+			return authModel.ActionTokenRecord{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return authModel.ActionTokenRecord{}, fmt.Errorf("commit consume action token: %w", err)
 	}
@@ -107,7 +147,22 @@ func (s *ActionTokenService) RevokeToken(ctx context.Context, tokenID uint64) er
 	return nil
 }
 
-func (s *ActionTokenService) RevokeTokenScoped(ctx context.Context, tenantID uint64, purpose authModel.ActionTokenPurpose, tokenID uint64) error {
+func (s *ActionTokenService) RecordInvitationAccepted(ctx context.Context, tenantID uint64, tokenID uint64, newUserID uint64) error {
+	if tenantID == 0 || tokenID == 0 || newUserID == 0 {
+		return fmt.Errorf("record invitation accepted: invalid ids")
+	}
+	return s.Repo.InsertHistory(ctx, nil, repo.InsertHistoryInput{
+		TenantID:           tenantID,
+		AuthActionTokenID:  tokenID,
+		Purpose:            authModel.ActionTokenPurposeInvite,
+		Action:             authModel.ActionTokenInviteAccepted,
+		SubjectUserID:      &newUserID,
+		ModifiedByUserID:   nil,
+		MetadataJSON:       nil,
+	})
+}
+
+func (s *ActionTokenService) RevokeTokenScoped(ctx context.Context, tenantID uint64, purpose authModel.ActionTokenPurpose, tokenID uint64, revokedByUserID *uint64) error {
 	purpose = normalizePurpose(purpose)
 	if !isAllowedPurpose(purpose) {
 		return appErrors.ErrInvalidTokenPurpose
@@ -138,6 +193,19 @@ func (s *ActionTokenService) RevokeTokenScoped(ctx context.Context, tenantID uin
 
 	if err := s.Repo.RevokeToken(ctx, tx, tokenID); err != nil {
 		return err
+	}
+	if revokedByUserID != nil && purpose == authModel.ActionTokenPurposeInvite {
+		if err := s.Repo.InsertHistory(ctx, tx, repo.InsertHistoryInput{
+			TenantID:           row.TenantID,
+			AuthActionTokenID:  tokenID,
+			Purpose:            authModel.ActionTokenPurposeInvite,
+			Action:             authModel.ActionTokenInviteRevoked,
+			ModifiedByUserID:   revokedByUserID,
+			SubjectUserID:      nil,
+			MetadataJSON:       nil,
+		}); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit scoped revoke action token: %w", err)

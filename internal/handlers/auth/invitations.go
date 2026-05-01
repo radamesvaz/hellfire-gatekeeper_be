@@ -149,6 +149,12 @@ func (h *InvitationHandler) RevokeInvitation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	revokedByUserID, err := middleware.GetUserIDFromContext(r.Context())
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	idRaw := strings.TrimSpace(mux.Vars(r)["id"])
 	invitationID, err := strconv.ParseUint(idRaw, 10, 64)
 	if err != nil || invitationID == 0 {
@@ -156,7 +162,7 @@ func (h *InvitationHandler) RevokeInvitation(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	err = h.Service.RevokeInvitation(r.Context(), tenantID, roleID, invitationID)
+	err = h.Service.RevokeInvitation(r.Context(), tenantID, roleID, revokedByUserID, invitationID)
 	if err != nil {
 		switch err {
 		case appErrors.ErrForbidden:

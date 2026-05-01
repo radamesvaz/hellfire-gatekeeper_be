@@ -21,7 +21,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
-	authTokensRepository "github.com/radamesvaz/bakery-app/internal/repository/auth_tokens"
+	authActionTokensRepo "github.com/radamesvaz/bakery-app/internal/repository/auth_action_tokens"
 	bootstrapRepository "github.com/radamesvaz/bakery-app/internal/repository/bootstrap"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
@@ -29,7 +29,7 @@ import (
 	tenantSignupRepository "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
-	authTokensService "github.com/radamesvaz/bakery-app/internal/services/auth_tokens"
+	authActionTokensService "github.com/radamesvaz/bakery-app/internal/services/auth_action_tokens"
 	bootstrapService "github.com/radamesvaz/bakery-app/internal/services/bootstrap"
 	emailService "github.com/radamesvaz/bakery-app/internal/services/email"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
@@ -343,16 +343,16 @@ func main() {
 	tenantSignupHandler := &auth.TenantSignupHandler{
 		Service: tenantSignupSvc,
 	}
-	authTokensRepo := &authTokensRepository.SQLRepository{DB: db}
-	authTokensSvc := &authTokensService.ActionTokenService{
+	actionTokensRepoInst := &authActionTokensRepo.SQLRepository{DB: db}
+	authActionTokensSvc := &authActionTokensService.ActionTokenService{
 		DB:          db,
-		Repo:        authTokensRepo,
+		Repo:        actionTokensRepoInst,
 		AuthService: authSvc,
 	}
 	passwordResetSvc := &passwordResetService.PasswordResetService{
 		Users:        &userRepo,
 		AuthService:  authSvc,
-		TokenService: authTokensSvc,
+		TokenService: authActionTokensSvc,
 		EmailSender:  resolveEmailSender(),
 		AppBaseURL:   strings.TrimSpace(os.Getenv("APP_BASE_URL")),
 	}
@@ -362,7 +362,7 @@ func main() {
 	invitationSvc := &invitationService.InvitationService{
 		Users:        &userRepo,
 		AuthService:  authSvc,
-		TokenService: authTokensSvc,
+		TokenService: authActionTokensSvc,
 		EmailSender:  resolveEmailSender(),
 		AppBaseURL:   strings.TrimSpace(os.Getenv("APP_BASE_URL")),
 	}

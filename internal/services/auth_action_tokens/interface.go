@@ -1,4 +1,4 @@
-package auth_tokens
+package auth_action_tokens
 
 import (
 	"context"

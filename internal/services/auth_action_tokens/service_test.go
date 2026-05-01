@@ -1,4 +1,4 @@
-package auth_tokens
+package auth_action_tokens
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
-	repo "github.com/radamesvaz/bakery-app/internal/repository/auth_tokens"
+	repo "github.com/radamesvaz/bakery-app/internal/repository/auth_action_tokens"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

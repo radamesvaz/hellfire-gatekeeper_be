@@ -12,7 +12,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
-	authTokensService "github.com/radamesvaz/bakery-app/internal/services/auth_tokens"
+	authActionTokens "github.com/radamesvaz/bakery-app/internal/services/auth_action_tokens"
 	"github.com/radamesvaz/bakery-app/internal/services/email"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
@@ -21,7 +21,7 @@ import (
 type InvitationService struct {
 	Users        *user.UserRepository
 	AuthService  authService.Service
-	TokenService authTokensService.Service
+	TokenService authActionTokens.Service
 	EmailSender  email.Sender
 	AppBaseURL   string
 }

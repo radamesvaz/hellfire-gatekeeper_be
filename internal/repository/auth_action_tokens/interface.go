@@ -1,4 +1,4 @@
-package auth_tokens
+package auth_action_tokens
 
 import (
 	"context"
@@ -19,11 +19,11 @@ type Repository interface {
 
 // InsertHistoryInput appends auth_action_tokens_history; tx nil uses DB directly.
 type InsertHistoryInput struct {
-	TenantID           uint64
-	AuthActionTokenID  uint64
-	Purpose            authModel.ActionTokenPurpose
-	Action             authModel.ActionTokenHistoryAction
-	ModifiedByUserID   *uint64
-	SubjectUserID      *uint64
-	MetadataJSON       []byte
+	TenantID          uint64
+	AuthActionTokenID uint64
+	Purpose           authModel.ActionTokenPurpose
+	Action            authModel.ActionTokenHistoryAction
+	ModifiedByUserID  *uint64
+	SubjectUserID     *uint64
+	MetadataJSON      []byte
 }

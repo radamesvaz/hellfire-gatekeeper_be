@@ -1,4 +1,4 @@
-package auth_tokens
+package auth_action_tokens
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"time"
 
 	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
-	repo "github.com/radamesvaz/bakery-app/internal/repository/auth_tokens"
+	repo "github.com/radamesvaz/bakery-app/internal/repository/auth_action_tokens"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
 )

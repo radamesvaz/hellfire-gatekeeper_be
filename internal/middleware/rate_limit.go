@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net"
@@ -52,7 +53,12 @@ func (rl *InMemoryRateLimiter) Middleware(opts RateLimitOptions) func(http.Handl
 				if retryAfter > 0 {
 					w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(retryAfter.Seconds()))))
 				}
-				http.Error(w, "Too many requests", http.StatusTooManyRequests)
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.WriteHeader(http.StatusTooManyRequests)
+				_ = json.NewEncoder(w).Encode(struct {
+					Error   string `json:"error"`
+					Message string `json:"message"`
+				}{Error: "too_many_requests", Message: "Too many requests"})
 				return
 			}
 

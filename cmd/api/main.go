@@ -396,6 +396,40 @@ func main() {
 	}()
 
 	r := mux.NewRouter()
+	rateLimiter := middleware.NewInMemoryRateLimiter()
+	rateLimitWindow := time.Duration(parseIntWithDefault(os.Getenv("RATE_LIMIT_WINDOW_SECONDS"), 60)) * time.Second
+	forgotRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "password_forgot",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_FORGOT_MAX"), 5),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+	})
+	resetRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "password_reset",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_RESET_MAX"), 10),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+	})
+	inviteAcceptRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "invite_accept",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_INVITE_ACCEPT_MAX"), 10),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+	})
+	inviteCreateRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "invite_create",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_INVITE_CREATE_MAX"), 10),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+		ScopeUser:   true,
+	})
+	inviteResendRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "invite_resend",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_INVITE_RESEND_MAX"), 5),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+		ScopeUser:   true,
+	})
 
 	// CORS configuration (allowlist + credentials)
 	allowedOrigins := handlers.AllowedOrigins([]string{
@@ -445,9 +479,9 @@ func main() {
 	tAuth.Use(middleware.TenantFromPathOrHeader(tenantRepo))
 	tAuth.HandleFunc("/login", authHandler.Login).Methods("POST")
 	tAuth.HandleFunc("/register", authHandler.Register).Methods("POST")
-	tAuth.HandleFunc("/password/forgot", passwordResetHandler.ForgotPassword).Methods("POST")
-	tAuth.HandleFunc("/password/reset", passwordResetHandler.ResetPassword).Methods("POST")
-	tAuth.HandleFunc("/invitations/accept", invitationHandler.AcceptInvitation).Methods("POST")
+	tAuth.Handle("/password/forgot", forgotRateLimit(http.HandlerFunc(passwordResetHandler.ForgotPassword))).Methods("POST")
+	tAuth.Handle("/password/reset", resetRateLimit(http.HandlerFunc(passwordResetHandler.ResetPassword))).Methods("POST")
+	tAuth.Handle("/invitations/accept", inviteAcceptRateLimit(http.HandlerFunc(invitationHandler.AcceptInvitation))).Methods("POST")
 
 	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()
@@ -479,9 +513,9 @@ func main() {
 	auth.HandleFunc("/tenant/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/tenant/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
-	auth.HandleFunc("/invitations", invitationHandler.CreateInvitation).Methods("POST")
+	auth.Handle("/invitations", inviteCreateRateLimit(http.HandlerFunc(invitationHandler.CreateInvitation))).Methods("POST")
 	auth.HandleFunc("/invitations/{id}/revoke", invitationHandler.RevokeInvitation).Methods("POST")
-	auth.HandleFunc("/invitations/{id}/resend", invitationHandler.ResendInvitation).Methods("POST")
+	auth.Handle("/invitations/{id}/resend", inviteResendRateLimit(http.HandlerFunc(invitationHandler.ResendInvitation))).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()

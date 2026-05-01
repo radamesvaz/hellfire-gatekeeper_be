@@ -64,7 +64,6 @@ func (s *InvitationService) CreateInvitation(
 	if s.EmailSender == nil {
 		logger.Error().
 			Uint64("tenant_id", tenantID).
-			Str("email", emailAddr).
 			Msg("Brevo sender is not running/configured for invitations")
 		return authModel.CreateTenantInvitationResponse{}, appErrors.NewInternalServerError(errors.New("email sender not configured"))
 	}

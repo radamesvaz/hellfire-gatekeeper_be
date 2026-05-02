@@ -21,17 +21,23 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	authActionTokensRepo "github.com/radamesvaz/bakery-app/internal/repository/auth_action_tokens"
+	bootstrapRepository "github.com/radamesvaz/bakery-app/internal/repository/bootstrap"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productsRepository "github.com/radamesvaz/bakery-app/internal/repository/products"
-	bootstrapRepository "github.com/radamesvaz/bakery-app/internal/repository/bootstrap"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	tenantSignupRepository "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	authActionTokensService "github.com/radamesvaz/bakery-app/internal/services/auth_action_tokens"
 	bootstrapService "github.com/radamesvaz/bakery-app/internal/services/bootstrap"
+	emailService "github.com/radamesvaz/bakery-app/internal/services/email"
 	imagesService "github.com/radamesvaz/bakery-app/internal/services/images"
+	invitationService "github.com/radamesvaz/bakery-app/internal/services/invitations"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
+	passwordResetService "github.com/radamesvaz/bakery-app/internal/services/passwordreset"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
+	tokensService "github.com/radamesvaz/bakery-app/internal/services/tokens"
 
 	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
@@ -306,20 +312,25 @@ func main() {
 	// Tenant repo (tenant name on register; slug resolution for public routes)
 	tenantRepo := &tenantRepository.Repository{DB: db}
 
-	// Auth setup
+	// Auth setup: construct token managers once and share the same OneTimeTokenManager instance
+	// across AuthService and future flows (tenant OTC, invitations, etc.).
+	sessionTokenManager := tokensService.NewJWTSessionTokenManager(secret, exp)
+	oneTimeTokenManager := tokensService.NewSHA256OneTimeTokenManager(32)
+	authSvc := authService.NewWithManagers(sessionTokenManager, oneTimeTokenManager)
+
 	userRepo := user.UserRepository{DB: db}
-	authService := authService.New(secret, exp)
 	enableTenantRegister := parseBoolWithDefault(os.Getenv("ENABLE_TENANT_REGISTER"), true)
+	// Login + /register use authSvc for session JWT; same instance backs tenant signup OTC via TenantSignupService.
 	authHandler := &auth.LoginHandler{
 		UserRepo:              userRepo,
 		TenantRepo:            tenantRepo,
-		AuthService:           *authService,
+		AuthService:           authSvc,
 		TenantRegisterEnabled: &enableTenantRegister,
 	}
 	bootstrapRepo := &bootstrapRepository.Repository{DB: db}
 	bootstrapSvc := &bootstrapService.BootstrapService{
 		Repo:        bootstrapRepo,
-		AuthService: authService,
+		AuthService: authSvc,
 	}
 	bootstrapHandler := &auth.BootstrapHandler{
 		Service: bootstrapSvc,
@@ -327,10 +338,36 @@ func main() {
 	tenantSignupRepo := &tenantSignupRepository.Repository{DB: db}
 	tenantSignupSvc := &tenantSignupService.TenantSignupService{
 		Repo:        tenantSignupRepo,
-		AuthService: authService,
+		AuthService: authSvc,
 	}
 	tenantSignupHandler := &auth.TenantSignupHandler{
 		Service: tenantSignupSvc,
+	}
+	actionTokensRepoInst := &authActionTokensRepo.SQLRepository{DB: db}
+	authActionTokensSvc := &authActionTokensService.ActionTokenService{
+		DB:          db,
+		Repo:        actionTokensRepoInst,
+		AuthService: authSvc,
+	}
+	passwordResetSvc := &passwordResetService.PasswordResetService{
+		Users:        &userRepo,
+		AuthService:  authSvc,
+		TokenService: authActionTokensSvc,
+		EmailSender:  resolveEmailSender(),
+		AppBaseURL:   strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+	}
+	passwordResetHandler := &auth.PasswordResetHandler{
+		Service: passwordResetSvc,
+	}
+	invitationSvc := &invitationService.InvitationService{
+		Users:        &userRepo,
+		AuthService:  authSvc,
+		TokenService: authActionTokensSvc,
+		EmailSender:  resolveEmailSender(),
+		AppBaseURL:   strings.TrimSpace(os.Getenv("APP_BASE_URL")),
+	}
+	invitationHandler := &auth.InvitationHandler{
+		Service: invitationSvc,
 	}
 
 	tenantHandler := &h.TenantHandler{
@@ -359,6 +396,40 @@ func main() {
 	}()
 
 	r := mux.NewRouter()
+	rateLimiter := middleware.NewInMemoryRateLimiter()
+	rateLimitWindow := time.Duration(parseIntWithDefault(os.Getenv("RATE_LIMIT_WINDOW_SECONDS"), 60)) * time.Second
+	forgotRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "password_forgot",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_FORGOT_MAX"), 5),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+	})
+	resetRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "password_reset",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_RESET_MAX"), 10),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+	})
+	inviteAcceptRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "invite_accept",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_INVITE_ACCEPT_MAX"), 10),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+	})
+	inviteCreateRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "invite_create",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_INVITE_CREATE_MAX"), 10),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+		ScopeUser:   true,
+	})
+	inviteResendRateLimit := rateLimiter.Middleware(middleware.RateLimitOptions{
+		Name:        "invite_resend",
+		MaxRequests: parseIntWithDefault(os.Getenv("RATE_LIMIT_INVITE_RESEND_MAX"), 5),
+		Window:      rateLimitWindow,
+		ScopeTenant: true,
+		ScopeUser:   true,
+	})
 
 	// CORS configuration (allowlist + credentials)
 	allowedOrigins := handlers.AllowedOrigins([]string{
@@ -408,10 +479,13 @@ func main() {
 	tAuth.Use(middleware.TenantFromPathOrHeader(tenantRepo))
 	tAuth.HandleFunc("/login", authHandler.Login).Methods("POST")
 	tAuth.HandleFunc("/register", authHandler.Register).Methods("POST")
+	tAuth.Handle("/password/forgot", forgotRateLimit(http.HandlerFunc(passwordResetHandler.ForgotPassword))).Methods("POST")
+	tAuth.Handle("/password/reset", resetRateLimit(http.HandlerFunc(passwordResetHandler.ResetPassword))).Methods("POST")
+	tAuth.Handle("/invitations/accept", inviteAcceptRateLimit(http.HandlerFunc(invitationHandler.AcceptInvitation))).Methods("POST")
 
 	// Authenticated API (scoped by user + tenant)
 	auth := r.PathPrefix("/auth").Subrouter()
-	auth.Use(middleware.AuthMiddleware(authService))
+	auth.Use(middleware.AuthMiddleware(authSvc))
 	auth.Use(middleware.TenantMiddleware())
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
@@ -439,6 +513,9 @@ func main() {
 	auth.HandleFunc("/tenant/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/tenant/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
+	auth.Handle("/invitations", inviteCreateRateLimit(http.HandlerFunc(invitationHandler.CreateInvitation))).Methods("POST")
+	auth.HandleFunc("/invitations/{id}/revoke", invitationHandler.RevokeInvitation).Methods("POST")
+	auth.Handle("/invitations/{id}/resend", inviteResendRateLimit(http.HandlerFunc(invitationHandler.ResendInvitation))).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()
@@ -534,4 +611,20 @@ func parseBoolWithDefault(value string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return v
+}
+
+func resolveEmailSender() emailService.Sender {
+	apiKey := strings.TrimSpace(os.Getenv("BREVO_API_KEY"))
+	fromEmail := strings.TrimSpace(os.Getenv("BREVO_FROM_EMAIL"))
+	fromName := strings.TrimSpace(os.Getenv("BREVO_FROM_NAME"))
+
+	if apiKey == "" || fromEmail == "" {
+		logger.Warn().Msg("Brevo sender not configured, using noop email sender")
+		return emailService.NoopSender{}
+	}
+	if fromName == "" {
+		fromName = "Hellfire Gatekeeper"
+	}
+	logger.Info().Msg("Brevo setup successfully")
+	return emailService.NewBrevoSender(apiKey, fromEmail, fromName)
 }

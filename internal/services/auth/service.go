@@ -1,23 +1,28 @@
 package auth
 
 import (
-	"fmt"
-	"time"
-
 	jwt "github.com/golang-jwt/jwt/v5"
+	"github.com/radamesvaz/bakery-app/internal/services/tokens"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthService struct {
-	secret     string
-	expiration int
+	sessionTokenManager tokens.SessionTokenManager
+	oneTimeTokenManager tokens.OneTimeTokenManager
 }
 
 func New(secret string, expiration int) *AuthService {
+	return NewWithManagers(
+		tokens.NewJWTSessionTokenManager(secret, expiration),
+		tokens.NewSHA256OneTimeTokenManager(32),
+	)
+}
+
+func NewWithManagers(sessionManager tokens.SessionTokenManager, oneTimeManager tokens.OneTimeTokenManager) *AuthService {
 	return &AuthService{
-		secret:     secret,
-		expiration: expiration,
+		sessionTokenManager: sessionManager,
+		oneTimeTokenManager: oneTimeManager,
 	}
 }
 
@@ -38,27 +43,25 @@ func (s *AuthService) ComparePasswords(hashedPwd string, plainPwd string) error 
 // Generate a new JWT
 // tenantID is optional: nil means "no tenant" (e.g. superadmin/global user).
 func (s *AuthService) GenerateJWT(userID uint64, roleID uModel.UserRole, email string, tenantID *uint64) (string, error) {
-	claims := jwt.MapClaims{
-		"user_id": userID,
-		"role_id": roleID,
-		"email":   email,
-		"exp":     time.Now().Add(time.Minute * time.Duration(s.expiration)).Unix(),
-	}
-
-	if tenantID != nil {
-		claims["tenant_id"] = *tenantID
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.secret))
+	return s.sessionTokenManager.Generate(tokens.SessionClaims{
+		UserID:   userID,
+		RoleID:   roleID,
+		Email:    email,
+		TenantID: tenantID,
+	})
 }
 
 // Validates the token
 func (s *AuthService) ValidateToken(tokenStr string) (*jwt.Token, error) {
-	return jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return []byte(s.secret), nil
-	})
+	return s.sessionTokenManager.Validate(tokenStr)
+}
+
+// GenerateOneTimeToken returns a plain token and its hash.
+func (s *AuthService) GenerateOneTimeToken() (plain string, hash string, err error) {
+	return s.oneTimeTokenManager.Generate()
+}
+
+// HashOneTimeToken normalizes and hashes a one-time token.
+func (s *AuthService) HashOneTimeToken(rawToken string) string {
+	return s.oneTimeTokenManager.Hash(rawToken)
 }

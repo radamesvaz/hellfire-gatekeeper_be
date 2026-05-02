@@ -10,4 +10,6 @@ type Service interface {
 	ComparePasswords(hashPwd string, plainPwd string) error
 	GenerateJWT(userID uint64, roleID uModel.UserRole, email string, tenantID *uint64) (string, error)
 	ValidateToken(token string) (*jwt.Token, error)
+	GenerateOneTimeToken() (plain string, hash string, err error)
+	HashOneTimeToken(rawToken string) string
 }

@@ -36,7 +36,7 @@ func TestRegister_Success(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		AuthService: authService,
 	}
 
 	// Setup the router
@@ -104,7 +104,7 @@ func TestRegister_EmailAlreadyExists(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		AuthService: authService,
 	}
 
 	// Setup the router
@@ -161,7 +161,7 @@ func TestRegister_WeakPassword(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		AuthService: authService,
 	}
 
 	// Setup the router
@@ -238,7 +238,7 @@ func TestRegister_InvalidEmail(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		AuthService: authService,
 	}
 
 	// Setup the router
@@ -307,7 +307,7 @@ func TestRegister_InvalidJSON(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		AuthService: authService,
 	}
 
 	// Setup the router
@@ -346,7 +346,7 @@ func TestRegister_MissingFields(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:    repository,
 		TenantRepo:  tenantRepo,
-		AuthService: *authService,
+		AuthService: authService,
 	}
 
 	// Setup the router
@@ -422,7 +422,7 @@ func TestRegister_DisabledByFeatureFlag(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:              repository,
 		TenantRepo:            tenantRepo,
-		AuthService:           *authSvc,
+		AuthService:           authSvc,
 		TenantRegisterEnabled: &registerEnabled,
 	}
 
@@ -460,7 +460,7 @@ func TestTenantRegister_DisabledByFeatureFlag_PathBased(t *testing.T) {
 	handler := auth.LoginHandler{
 		UserRepo:              repository,
 		TenantRepo:            tenantRepo,
-		AuthService:           *authSvc,
+		AuthService:           authSvc,
 		TenantRegisterEnabled: &registerEnabled,
 	}
 

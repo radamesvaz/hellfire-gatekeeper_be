@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	hErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	v "github.com/radamesvaz/bakery-app/internal/handlers/validators"
 	bootstrapService "github.com/radamesvaz/bakery-app/internal/services/bootstrap"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
@@ -20,35 +19,35 @@ type BootstrapHandler struct {
 // This endpoint is intended for controlled/internal onboarding only.
 func (h *BootstrapHandler) BootstrapTenant(w http.ResponseWriter, r *http.Request) {
 	if h.Service == nil {
-		http.Error(w, "Bootstrap service not configured", http.StatusInternalServerError)
+		writeJSONAPIError(w, http.StatusInternalServerError, "service_unconfigured", "Bootstrap service not configured")
 		return
 	}
 	var req authModel.BootstrapTenantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		writeJSONAPIError(w, http.StatusBadRequest, "bad_request", "Invalid request body")
 		return
 	}
 
 	tenantName, err := v.NormalizeAndValidateTenantDisplayName(req.TenantName)
 	if err != nil {
-		writeValidatorError(w, err, "Invalid tenant name")
+		writeValidatorJSONError(w, err, "Invalid tenant name")
 		return
 	}
 	tenantSlug := strings.TrimSpace(strings.ToLower(req.TenantSlug))
 	if tenantSlug == "" {
-		http.Error(w, "Tenant slug is required", http.StatusBadRequest)
+		writeJSONAPIError(w, http.StatusBadRequest, "bad_request", "Tenant slug is required")
 		return
 	}
 	if strings.TrimSpace(req.AdminName) == "" {
-		http.Error(w, "Admin name is required", http.StatusBadRequest)
+		writeJSONAPIError(w, http.StatusBadRequest, "bad_request", "Admin name is required")
 		return
 	}
 	if !v.IsValidEmail(req.Email) {
-		http.Error(w, "Invalid Email", http.StatusBadRequest)
+		writeJSONAPIError(w, http.StatusBadRequest, "invalid_email", "Invalid Email")
 		return
 	}
 	if err := v.ValidatePassword(req.Password); err != nil {
-		writeValidatorError(w, err, "Password does not meet security requirements")
+		writeValidatorJSONError(w, err, "Password does not meet security requirements")
 		return
 	}
 
@@ -58,13 +57,13 @@ func (h *BootstrapHandler) BootstrapTenant(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		switch {
 		case errors.Is(err, bootstrapService.ErrTenantSlugExists):
-			http.Error(w, "Tenant slug already exists", http.StatusConflict)
+			writeJSONAPIError(w, http.StatusConflict, "tenant_slug_exists", "Tenant slug already exists")
 			return
 		case errors.Is(err, bootstrapService.ErrAdminEmailExists):
-			http.Error(w, "Admin email already exists in tenant", http.StatusConflict)
+			writeJSONAPIError(w, http.StatusConflict, "admin_email_exists", "Admin email already exists in tenant")
 			return
 		default:
-			http.Error(w, "Failed to create tenant", http.StatusInternalServerError)
+			writeJSONAPIError(w, http.StatusInternalServerError, "internal_error", "Failed to create tenant")
 			return
 		}
 	}
@@ -73,14 +72,4 @@ func (h *BootstrapHandler) BootstrapTenant(w http.ResponseWriter, r *http.Reques
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
 }
-
-func writeValidatorError(w http.ResponseWriter, err error, fallback string) {
-	var httpErr *hErrors.HTTPError
-	if errors.As(err, &httpErr) {
-		http.Error(w, httpErr.Error(), httpErr.StatusCode)
-		return
-	}
-	http.Error(w, fallback, http.StatusBadRequest)
-}
-
 

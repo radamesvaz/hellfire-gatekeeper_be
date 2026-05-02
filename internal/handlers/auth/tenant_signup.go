@@ -69,7 +69,7 @@ func (h *TenantSignupHandler) RegisterTenantWithCode(w http.ResponseWriter, r *h
 
 	tenantName, err := v.NormalizeAndValidateTenantDisplayName(req.TenantName)
 	if err != nil {
-		writeValidatorError(w, err, "Invalid tenant name")
+		writeValidatorJSONError(w, err, "Invalid tenant name")
 		return
 	}
 	tenantSlug := strings.TrimSpace(strings.ToLower(req.TenantSlug))
@@ -86,7 +86,7 @@ func (h *TenantSignupHandler) RegisterTenantWithCode(w http.ResponseWriter, r *h
 		return
 	}
 	if err := v.ValidatePassword(req.Password); err != nil {
-		writeValidatorError(w, err, "Password does not meet security requirements")
+		writeValidatorJSONError(w, err, "Password does not meet security requirements")
 		return
 	}
 	if strings.TrimSpace(req.OneTimeCode) == "" {

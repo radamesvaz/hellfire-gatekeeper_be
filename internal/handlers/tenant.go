@@ -34,7 +34,7 @@ type updateTenantDisplayNameRequest struct {
 }
 
 // GetBranding returns logo + colors for the tenant resolved by TenantFromPathOrHeader (public, no auth).
-// Use GET /t/{tenant_slug}/tenant/branding (or X-Tenant-Slug). Response includes tenant_slug for clients.
+// Use GET /t/{tenant_slug}/branding (or X-Tenant-Slug). Response includes tenant_slug for clients.
 func (h *TenantHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -66,7 +66,7 @@ func (h *TenantHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
 }
 
 // UpdateTenantDisplayName sets tenants.name for the tenant in context (admin only). Slug is not modified.
-// PATCH /auth/tenant/branding/name — body: {"tenant_name":"..."}.
+// PATCH /auth/branding/name — body: {"tenant_name":"..."}.
 func (h *TenantHandler) UpdateTenantDisplayName(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

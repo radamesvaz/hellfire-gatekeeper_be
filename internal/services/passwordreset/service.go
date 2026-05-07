@@ -88,5 +88,5 @@ func buildResetURL(baseURL string, tenantSlug string, token string) (string, err
 		return "", appErrors.NewInternalServerError(errors.New("APP_BASE_URL is required for password reset links"))
 	}
 	slug := strings.TrimSpace(tenantSlug)
-	return fmt.Sprintf("%s/t/%s/reset-password?token=%s", base, url.PathEscape(slug), url.QueryEscape(strings.TrimSpace(token))), nil
+	return fmt.Sprintf("%s/t/%s/auth/password/reset?token=%s", base, url.PathEscape(slug), url.QueryEscape(strings.TrimSpace(token))), nil
 }

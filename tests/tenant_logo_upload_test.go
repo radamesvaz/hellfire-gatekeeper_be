@@ -61,12 +61,12 @@ func TestIntegrationUploadTenantLogo(t *testing.T) {
 	exp := 60
 	authSvc := auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authSvc))
-	authRouter.Use(middleware.TenantMiddleware())
-	authRouter.HandleFunc("/tenant/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
+	authRouter.Use(middleware.TenantMiddleware(&tenantRepo))
+	authRouter.HandleFunc("/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
 
 	tPublic := router.PathPrefix("/t/{tenant_slug}").Subrouter()
 	tPublic.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
-	tPublic.HandleFunc("/tenant/branding", tenantHandler.GetBranding).Methods("GET")
+	tPublic.HandleFunc("/branding", tenantHandler.GetBranding).Methods("GET")
 
 	tenantID := uint64(1)
 	jwt, err := authSvc.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
@@ -80,7 +80,7 @@ func TestIntegrationUploadTenantLogo(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, mw.Close())
 
-	uploadReq := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/logo", &b)
+	uploadReq := httptest.NewRequest(http.MethodPatch, "/auth/branding/logo", &b)
 	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
 	uploadReq.Header.Set("Authorization", "Bearer "+jwt)
 	uploadRR := httptest.NewRecorder()
@@ -95,7 +95,7 @@ func TestIntegrationUploadTenantLogo(t *testing.T) {
 	assert.Contains(t, logoURL, "/uploads/tenants/1/")
 	assert.Contains(t, logoURL, "logo_")
 
-	getReq := httptest.NewRequest(http.MethodGet, "/t/default/tenant/branding", nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/t/default/branding", nil)
 	getRR := httptest.NewRecorder()
 	router.ServeHTTP(getRR, getReq)
 	require.Equal(t, http.StatusOK, getRR.Code)

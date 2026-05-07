@@ -205,5 +205,5 @@ func buildInviteURL(baseURL string, tenantSlug string, token string) (string, er
 	if base == "" {
 		return "", appErrors.NewInternalServerError(errors.New("APP_BASE_URL is required for invitation links"))
 	}
-	return fmt.Sprintf("%s/t/%s/invite/accept?token=%s", base, url.PathEscape(strings.TrimSpace(tenantSlug)), url.QueryEscape(strings.TrimSpace(token))), nil
+	return fmt.Sprintf("%s/t/%s/auth/invitations/accept?token=%s", base, url.PathEscape(strings.TrimSpace(tenantSlug)), url.QueryEscape(strings.TrimSpace(token))), nil
 }

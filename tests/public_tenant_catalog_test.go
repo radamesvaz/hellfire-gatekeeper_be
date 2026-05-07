@@ -60,9 +60,9 @@ func TestPublicGetTenantBrandingBySlug(t *testing.T) {
 	router := mux.NewRouter()
 	tPublic := router.PathPrefix("/t/{tenant_slug}").Subrouter()
 	tPublic.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
-	tPublic.HandleFunc("/tenant/branding", handler.GetBranding).Methods("GET")
+	tPublic.HandleFunc("/branding", handler.GetBranding).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/t/default/tenant/branding", nil)
+	req := httptest.NewRequest("GET", "/t/default/branding", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -94,9 +94,9 @@ func TestPublicTenantBrandingUnknownTenantReturns404(t *testing.T) {
 	router := mux.NewRouter()
 	tPublic := router.PathPrefix("/t/{tenant_slug}").Subrouter()
 	tPublic.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
-	tPublic.HandleFunc("/tenant/branding", handler.GetBranding).Methods("GET")
+	tPublic.HandleFunc("/branding", handler.GetBranding).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/t/no-such-tenant/tenant/branding", nil)
+	req := httptest.NewRequest("GET", "/t/no-such-tenant/branding", nil)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 

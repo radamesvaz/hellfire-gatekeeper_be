@@ -37,7 +37,7 @@ func TestTenantHandler_GetBranding_Success(t *testing.T) {
 			AddRow("Café Demo", "https://example.com/logo.png", "#111827", "#374151", "#F59E0B"),
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/t/default/tenant/branding", nil)
+	req := httptest.NewRequest(http.MethodGet, "/t/default/branding", nil)
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
 	ctx = context.WithValue(ctx, middleware.TenantSlugKey, "default")
 	req = req.WithContext(ctx)
@@ -66,7 +66,7 @@ func TestTenantHandler_GetBranding_MissingSlug(t *testing.T) {
 		Repo: &tenantRepository.Repository{DB: db},
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/t/default/tenant/branding", nil)
+	req := httptest.NewRequest(http.MethodGet, "/t/default/branding", nil)
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -105,7 +105,7 @@ func TestTenantHandler_UpdateBrandingColors_Success(t *testing.T) {
 			AddRow("Tenant Two", nil, "#111827", "#374151", "#F59E0B"),
 	)
 
-	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/colors", strings.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/colors", strings.NewReader(payload))
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -123,7 +123,7 @@ func TestTenantHandler_UploadTenantLogo_NoImageService(t *testing.T) {
 		ImageService: nil,
 	}
 
-	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/logo", nil)
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/logo", nil)
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -151,7 +151,7 @@ func TestTenantHandler_UploadTenantLogo_WrongFieldName(t *testing.T) {
 		ImageService: imagesService.New(t.TempDir()),
 	}
 
-	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/logo", &b)
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/logo", &b)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
 	req = req.WithContext(ctx)
@@ -192,7 +192,7 @@ func TestTenantHandler_UpdateTenantDisplayName_AdminSuccess(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	payload := `{"tenant_name":"Nuevo Nombre"}`
-	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/name", strings.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/name", strings.NewReader(payload))
 	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 1))
 	rr := httptest.NewRecorder()
 
@@ -214,7 +214,7 @@ func TestTenantHandler_UpdateTenantDisplayName_ClientForbidden(t *testing.T) {
 
 	tenantID := uint64(2)
 	payload := `{"tenant_name":"Nuevo Nombre"}`
-	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/name", strings.NewReader(payload))
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/name", strings.NewReader(payload))
 	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 2))
 	rr := httptest.NewRecorder()
 
@@ -233,7 +233,7 @@ func TestTenantHandler_UpdateBrandingColors_InvalidColor(t *testing.T) {
 	}
 
 	tenantID := uint64(2)
-	req := httptest.NewRequest(http.MethodPatch, "/auth/tenant/branding/colors", strings.NewReader(`{"primary_color":"blue"}`))
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/colors", strings.NewReader(`{"primary_color":"blue"}`))
 	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()

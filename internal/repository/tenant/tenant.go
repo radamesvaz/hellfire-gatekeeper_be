@@ -34,6 +34,20 @@ type UpdateBrandingColorsRequest struct {
 	AccentColor    *string `json:"accent_color"`
 }
 
+// GetSlugByTenantID returns the canonical slug for an existing tenant row.
+// Used by authenticated /auth/* routes where the path does not include {tenant_slug}.
+func (r *Repository) GetSlugByTenantID(ctx context.Context, tenantID uint64) (string, error) {
+	var slug string
+	err := r.DB.QueryRowContext(ctx, `SELECT slug FROM tenants WHERE id = $1`, tenantID).Scan(&slug)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("tenant not found when reading slug: %d", tenantID)
+		}
+		return "", fmt.Errorf("reading tenant slug for %d: %w", tenantID, err)
+	}
+	return slug, nil
+}
+
 // GetBySlug returns the tenant id and active status for the given slug.
 // Only returns a tenant when it is active, subscription_status is 'active', and the current period has not ended.
 // Implements middleware.TenantResolver. Returns (0, false, err) when not found, inactive, or subscription expired.

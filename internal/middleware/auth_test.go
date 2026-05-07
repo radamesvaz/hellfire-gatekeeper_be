@@ -2,11 +2,143 @@ package middleware
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type stubTenantSlugResolver struct {
+	slug  string
+	err   error
+	gotID uint64
+}
+
+func (s *stubTenantSlugResolver) GetSlugByTenantID(ctx context.Context, tenantID uint64) (string, error) {
+	s.gotID = tenantID
+	if s.err != nil {
+		return "", s.err
+	}
+	return s.slug, nil
+}
+
+func TestTenantMiddleware_ResolvesSlugFromResolverWhenPathHasNoSlug(t *testing.T) {
+	res := &stubTenantSlugResolver{slug: "ratiarius"}
+	mw := TenantMiddleware(res)
+
+	var gotSlug string
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		gotSlug, err = GetTenantSlugFromContext(r.Context())
+		require.NoError(t, err)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/invitations", nil)
+	req = req.WithContext(context.WithValue(req.Context(), UserClaimsKey, jwt.MapClaims{
+		"user_id":   float64(1),
+		"role_id":   float64(1),
+		"tenant_id": float64(42),
+	}))
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "ratiarius", gotSlug)
+	assert.Equal(t, uint64(42), res.gotID)
+}
+
+func TestTenantMiddleware_PathSlugWinsOverResolver(t *testing.T) {
+	res := &stubTenantSlugResolver{slug: "from-db"}
+	mw := TenantMiddleware(res)
+
+	var gotSlug string
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		gotSlug, err = GetTenantSlugFromContext(r.Context())
+		require.NoError(t, err)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/t/acme/auth/ping", nil)
+	req = mux.SetURLVars(req, map[string]string{"tenant_slug": "acme"})
+	req = req.WithContext(context.WithValue(req.Context(), UserClaimsKey, jwt.MapClaims{
+		"user_id":   float64(1),
+		"role_id":   float64(1),
+		"tenant_id": float64(99),
+	}))
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "acme", gotSlug)
+	assert.Equal(t, uint64(0), res.gotID, "resolver must not run when path provides slug")
+}
+
+func TestRequireJWTTenantMatchesContext_AllowsWhenIDsMatch(t *testing.T) {
+	mw := RequireJWTTenantMatchesContext()
+	called := false
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+
+	ctx := context.WithValue(context.Background(), TenantIDKey, uint64(7))
+	ctx = context.WithValue(ctx, UserClaimsKey, jwt.MapClaims{
+		"tenant_id": float64(7),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/t/acme/auth/invitations", nil).WithContext(ctx)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.True(t, called)
+}
+
+func TestRequireJWTTenantMatchesContext_ForbiddenOnMismatch(t *testing.T) {
+	mw := RequireJWTTenantMatchesContext()
+	called := false
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+
+	ctx := context.WithValue(context.Background(), TenantIDKey, uint64(1))
+	ctx = context.WithValue(ctx, UserClaimsKey, jwt.MapClaims{
+		"tenant_id": float64(2),
+	})
+	req := httptest.NewRequest(http.MethodPost, "/t/other/auth/invitations", nil).WithContext(ctx)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.False(t, called)
+}
+
+func TestTenantMiddleware_ResolverErrorReturns500(t *testing.T) {
+	res := &stubTenantSlugResolver{err: assert.AnError}
+	mw := TenantMiddleware(res)
+
+	called := false
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/invitations", nil)
+	req = req.WithContext(context.WithValue(req.Context(), UserClaimsKey, jwt.MapClaims{
+		"user_id":   float64(1),
+		"role_id":   float64(1),
+		"tenant_id": float64(1),
+	}))
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusInternalServerError, rr.Code)
+	assert.False(t, called)
+}
 
 func TestGetUserRoleFromContext(t *testing.T) {
 	tests := []struct {

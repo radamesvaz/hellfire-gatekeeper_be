@@ -17,6 +17,7 @@ import (
 	"github.com/gorilla/mux"
 	authHandler "github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	tenantSignupRepo "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
@@ -47,9 +48,10 @@ func setupTenantSignupIntegrationEnv(t *testing.T) (*tenantSignupIntegrationEnv,
 
 	router := mux.NewRouter()
 	router.HandleFunc("/public/tenant-register", handler.RegisterTenantWithCode).Methods("POST")
+	tenantRepo := &tenantRepository.Repository{DB: db}
 	authRouter := router.PathPrefix("/auth").Subrouter()
 	authRouter.Use(middleware.AuthMiddleware(authSvc))
-	authRouter.Use(middleware.TenantMiddleware())
+	authRouter.Use(middleware.TenantMiddleware(tenantRepo))
 	authRouter.HandleFunc("/internal/tenant-signup-codes", handler.CreateSignupCode).Methods("POST")
 
 	defaultTenantID := uint64(1)

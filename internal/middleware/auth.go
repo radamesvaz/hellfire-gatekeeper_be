@@ -11,6 +11,12 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
 )
 
+// TenantSlugResolver resolves slug from tenant id when the route has no {tenant_slug}
+// (for example POST /auth/invitations).
+type TenantSlugResolver interface {
+	GetSlugByTenantID(ctx context.Context, tenantID uint64) (string, error)
+}
+
 type contextKey string
 
 const (
@@ -52,17 +58,18 @@ func AuthMiddleware(authService auth.Service) func(http.Handler) http.Handler {
 // TenantMiddleware enriches the context with tenant information derived from
 // the authenticated user's claims and the current request path.
 //
-// Current behavior (incremental, backwards compatible):
 // - tenantSlug:
 //   - If the route defines "{tenant_slug}" (e.g. "/t/{tenant_slug}/..."), it is
 //     read from mux.Vars.
-//   - Otherwise, it falls back to "default".
+//   - Otherwise, when slugResolver is non-nil, slug is loaded from the database
+//     using tenant_id from the JWT (canonical slug for that tenant). Lookup errors
+//     yield 500.
+//   - If slugResolver is nil, falls back to "default" (legacy unit tests).
 // - tenantID:
-//   - For now we always assume 1 (default tenant). In later phases this
-//     middleware will resolve tenantSlug -> tenant.id from the database.
+//   - From the "tenant_id" JWT claim when present; otherwise 1 for backwards compatibility.
 // - isSuperadmin:
 //   - Derived from the "role_id" claim (UserRoleAdmin is treated as superadmin).
-func TenantMiddleware() func(http.Handler) http.Handler {
+func TenantMiddleware(slugResolver TenantSlugResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
@@ -84,12 +91,6 @@ func TenantMiddleware() func(http.Handler) http.Handler {
 				}
 			}
 
-			vars := mux.Vars(r)
-			tenantSlug := vars["tenant_slug"]
-			if tenantSlug == "" {
-				tenantSlug = "default"
-			}
-
 			// Prefer tenant_id from token claims when present; otherwise fall back
 			// to the default tenant (1) for backwards compatibility.
 			var tenantID uint64 = 1
@@ -97,11 +98,56 @@ func TenantMiddleware() func(http.Handler) http.Handler {
 				tenantID = uint64(tenantIDFloat)
 			}
 
+			vars := mux.Vars(r)
+			tenantSlug := strings.TrimSpace(vars["tenant_slug"])
+			if tenantSlug == "" {
+				if slugResolver != nil {
+					s, err := slugResolver.GetSlugByTenantID(r.Context(), tenantID)
+					if err != nil || strings.TrimSpace(s) == "" {
+						http.Error(w, "could not resolve tenant slug", http.StatusInternalServerError)
+						return
+					}
+					tenantSlug = strings.TrimSpace(s)
+				} else {
+					tenantSlug = "default"
+				}
+			}
+
 			ctx = context.WithValue(ctx, TenantSlugKey, tenantSlug)
 			ctx = context.WithValue(ctx, TenantIDKey, tenantID)
 			ctx = context.WithValue(ctx, IsSuperAdminKey, isSuperadmin)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// RequireJWTTenantMatchesContext ensures the session JWT tenant_id matches the
+// tenant already resolved into context (for example by TenantFromPathOrHeader
+// on /t/{tenant_slug}/auth/...). Call after tenant resolution and AuthMiddleware.
+func RequireJWTTenantMatchesContext() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctxTenantID, err := GetTenantIDFromContext(r.Context())
+			if err != nil || ctxTenantID == 0 {
+				http.Error(w, "tenant context missing", http.StatusBadRequest)
+				return
+			}
+			claims, ok := r.Context().Value(UserClaimsKey).(jwt.MapClaims)
+			if !ok {
+				http.Error(w, "missing user claims in context", http.StatusUnauthorized)
+				return
+			}
+			jwtTenantFloat, ok := claims["tenant_id"].(float64)
+			if !ok || jwtTenantFloat <= 0 {
+				http.Error(w, "token not scoped to a tenant", http.StatusForbidden)
+				return
+			}
+			if uint64(jwtTenantFloat) != ctxTenantID {
+				http.Error(w, "token tenant does not match path tenant", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }

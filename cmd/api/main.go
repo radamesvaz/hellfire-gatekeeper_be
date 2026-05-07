@@ -483,10 +483,18 @@ func main() {
 	tAuth.Handle("/password/reset", resetRateLimit(http.HandlerFunc(passwordResetHandler.ResetPassword))).Methods("POST")
 	tAuth.Handle("/invitations/accept", inviteAcceptRateLimit(http.HandlerFunc(invitationHandler.AcceptInvitation))).Methods("POST")
 
-	// Authenticated API (scoped by user + tenant)
+	// Invitation admin under path tenant (slug from URL). Inherits TenantFromPathOrHeader from tAuth; JWT must match path tenant.
+	tAuthInv := tAuth.PathPrefix("/invitations").Subrouter()
+	tAuthInv.Use(middleware.AuthMiddleware(authSvc))
+	tAuthInv.Use(middleware.RequireJWTTenantMatchesContext())
+	tAuthInv.Handle("", inviteCreateRateLimit(http.HandlerFunc(invitationHandler.CreateInvitation))).Methods("POST")
+	tAuthInv.Handle("/{id}/revoke", http.HandlerFunc(invitationHandler.RevokeInvitation)).Methods("POST")
+	tAuthInv.Handle("/{id}/resend", inviteResendRateLimit(http.HandlerFunc(invitationHandler.ResendInvitation))).Methods("POST")
+
+	// Authenticated API: JWT + tenant context (path slug if present, else slug from DB via tenant_id claim).
 	auth := r.PathPrefix("/auth").Subrouter()
 	auth.Use(middleware.AuthMiddleware(authSvc))
-	auth.Use(middleware.TenantMiddleware())
+	auth.Use(middleware.TenantMiddleware(tenantRepo))
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
@@ -509,20 +517,22 @@ func main() {
 	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Tenant branding: reads are public (see tPublic); mutations require auth
-	auth.HandleFunc("/tenant/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
-	auth.HandleFunc("/tenant/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
-	auth.HandleFunc("/tenant/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
+	auth.HandleFunc("/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
+	auth.HandleFunc("/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
+	auth.HandleFunc("/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
-	auth.Handle("/invitations", inviteCreateRateLimit(http.HandlerFunc(invitationHandler.CreateInvitation))).Methods("POST")
-	auth.HandleFunc("/invitations/{id}/revoke", invitationHandler.RevokeInvitation).Methods("POST")
-	auth.Handle("/invitations/{id}/resend", inviteResendRateLimit(http.HandlerFunc(invitationHandler.ResendInvitation))).Methods("POST")
+
+	authInv := auth.PathPrefix("/invitations").Subrouter()
+	authInv.Handle("", inviteCreateRateLimit(http.HandlerFunc(invitationHandler.CreateInvitation))).Methods("POST")
+	authInv.Handle("/{id}/revoke", http.HandlerFunc(invitationHandler.RevokeInvitation)).Methods("POST")
+	authInv.Handle("/{id}/resend", inviteResendRateLimit(http.HandlerFunc(invitationHandler.ResendInvitation))).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()
 	tPublic.Use(middleware.TenantFromPathOrHeader(tenantRepo))
 	tPublic.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
 	tPublic.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
-	tPublic.HandleFunc("/tenant/branding", tenantHandler.GetBranding).Methods("GET")
+	tPublic.HandleFunc("/branding", tenantHandler.GetBranding).Methods("GET")
 	tPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// Legacy: POST /orders (no tenant in path; handler falls back to tenant 1)

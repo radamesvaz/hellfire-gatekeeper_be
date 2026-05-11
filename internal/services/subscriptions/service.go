@@ -36,7 +36,8 @@ func NewService(repo Repository, graceDays int) *Service {
 	return &Service{Repo: repo, GraceDays: graceDays}
 }
 
-func (s *Service) GetContext(ctx context.Context, tenantID uint64, tenantSlug string, now time.Time) (authModel.SubscriptionContextResponse, error) {
+func (s *Service) GetSubscriptionForTenant(ctx context.Context, tenantID uint64, tenantSlug string, now time.Time) (authModel.SubscriptionContextResponse, error) {
+
 	snapshot, err := s.Repo.GetSubscriptionSnapshot(ctx, tenantID)
 	if err != nil {
 		return authModel.SubscriptionContextResponse{}, err

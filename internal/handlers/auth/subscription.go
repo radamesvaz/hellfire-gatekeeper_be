@@ -11,7 +11,7 @@ import (
 )
 
 type SubscriptionService interface {
-	GetContext(ctx context.Context, tenantID uint64, tenantSlug string, now time.Time) (authModel.SubscriptionContextResponse, error)
+	GetSubscriptionForTenant(ctx context.Context, tenantID uint64, tenantSlug string, now time.Time) (authModel.SubscriptionContextResponse, error)
 }
 
 type SubscriptionHandler struct {
@@ -36,7 +36,7 @@ func (h *SubscriptionHandler) GetSubscription(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	payload, err := h.Service.GetContext(ctx, tenantID, tenantSlug, time.Now().UTC())
+	payload, err := h.Service.GetSubscriptionForTenant(ctx, tenantID, tenantSlug, time.Now().UTC())
 	if err != nil {
 		http.Error(w, "Failed to get subscription context", http.StatusInternalServerError)
 		return

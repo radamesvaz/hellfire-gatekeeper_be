@@ -34,7 +34,7 @@ func (f *fakeRepo) MarkExpiredPendingAsCanceled(ctx context.Context, now time.Ti
 	return f.canceledCount, f.canceledErr
 }
 
-func TestService_GetContext_PendingIncludesGraceFields(t *testing.T) {
+func TestService_GetSubscriptionForTenant_PendingIncludesGraceFields(t *testing.T) {
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	periodEnd := now.AddDate(0, 0, -2)
 	repo := &fakeRepo{
@@ -46,7 +46,7 @@ func TestService_GetContext_PendingIncludesGraceFields(t *testing.T) {
 	}
 	svc := NewService(repo, 5)
 
-	response, err := svc.GetContext(context.Background(), 10, "acme", now)
+	response, err := svc.GetSubscriptionForTenant(context.Background(), 10, "acme", now)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(10), response.TenantID)
 	assert.Equal(t, "acme", response.TenantSlug)

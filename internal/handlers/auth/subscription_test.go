@@ -19,7 +19,7 @@ type mockSubscriptionService struct {
 	err      error
 }
 
-func (m *mockSubscriptionService) GetContext(ctx context.Context, tenantID uint64, tenantSlug string, now time.Time) (authModel.SubscriptionContextResponse, error) {
+func (m *mockSubscriptionService) GetSubscriptionForTenant(ctx context.Context, tenantID uint64, tenantSlug string, now time.Time) (authModel.SubscriptionContextResponse, error) {
 	return m.response, m.err
 }
 

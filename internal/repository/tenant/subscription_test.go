@@ -78,6 +78,27 @@ func TestRepository_MarkExpiredPendingAsCanceled_UsesGraceDays(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestRepository_UpdateTenantSubscription_UpdatesStatusAndPeriodEnd(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &Repository{DB: db}
+	periodEnd := time.Now().UTC().AddDate(0, 0, 30)
+
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE tenants
+		 SET subscription_status = $1,
+		     current_period_end = CASE WHEN $4::boolean THEN $2 ELSE current_period_end END,
+		     updated_on = NOW()
+		 WHERE id = $3`)).
+		WithArgs("active", sql.NullTime{Time: periodEnd, Valid: true}, uint64(3), true).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = repo.UpdateTenantSubscription(context.Background(), 3, "active", sql.NullTime{Time: periodEnd, Valid: true}, true)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestRepository_GetSubscriptionSnapshot_NotFound(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)

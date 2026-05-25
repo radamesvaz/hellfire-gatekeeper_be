@@ -7,22 +7,51 @@ import (
 	"time"
 
 	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
+	authModel "github.com/radamesvaz/bakery-app/model/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 type fakeRepo struct {
-	snapshot      tenantRepo.SubscriptionSnapshot
-	pendingCount  int64
-	canceledCount int64
-	snapshotErr   error
-	pendingErr    error
-	canceledErr   error
-	lastGraceDays int
+	snapshot          tenantRepo.SubscriptionSnapshot
+	pendingCount      int64
+	canceledCount     int64
+	snapshotErr       error
+	pendingErr        error
+	canceledErr       error
+	lastGraceDays     int
+	slug              string
+	updateStatus      string
+	updatePeriodEnd   sql.NullTime
+	updatePeriodEndOK bool
 }
 
 func (f *fakeRepo) GetSubscriptionSnapshot(ctx context.Context, tenantID uint64) (tenantRepo.SubscriptionSnapshot, error) {
 	return f.snapshot, f.snapshotErr
+}
+
+func (f *fakeRepo) GetSlugByTenantID(ctx context.Context, tenantID uint64) (string, error) {
+	if f.slug == "" {
+		return "acme", nil
+	}
+	return f.slug, nil
+}
+
+func (f *fakeRepo) UpdateTenantSubscription(
+	ctx context.Context,
+	tenantID uint64,
+	status string,
+	periodEnd sql.NullTime,
+	updatePeriodEnd bool,
+) error {
+	f.updateStatus = status
+	f.updatePeriodEnd = periodEnd
+	f.updatePeriodEndOK = updatePeriodEnd
+	f.snapshot.Status = status
+	if updatePeriodEnd {
+		f.snapshot.CurrentPeriodEnd = periodEnd
+	}
+	return nil
 }
 
 func (f *fakeRepo) MarkExpiredActiveAsPending(ctx context.Context, now time.Time) (int64, error) {
@@ -66,4 +95,39 @@ func TestService_ProcessTransitions_ReturnsCounts(t *testing.T) {
 	assert.Equal(t, int64(4), result.MarkedPending)
 	assert.Equal(t, int64(2), result.MarkedCanceled)
 	assert.Equal(t, 7, repo.lastGraceDays)
+}
+
+func TestService_AdminUpdateSubscription_ForbiddenForNonAdmin(t *testing.T) {
+	svc := NewService(&fakeRepo{}, 5)
+	_, err := svc.AdminUpdateSubscription(
+		context.Background(),
+		2,
+		10,
+		authModel.UpdateTenantSubscriptionRequest{SubscriptionStatus: "active"},
+		time.Now().UTC(),
+	)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrForbidden)
+}
+
+func TestService_AdminUpdateSubscription_ActiveSetsDefault30DayPeriod(t *testing.T) {
+	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{
+		snapshot: tenantRepo.SubscriptionSnapshot{Status: "canceled", PlanCode: "basic"},
+	}
+	svc := NewService(repo, 5)
+
+	resp, err := svc.AdminUpdateSubscription(
+		context.Background(),
+		1,
+		10,
+		authModel.UpdateTenantSubscriptionRequest{SubscriptionStatus: "active"},
+		now,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "active", repo.updateStatus)
+	assert.True(t, repo.updatePeriodEndOK)
+	assert.True(t, repo.updatePeriodEnd.Valid)
+	assert.Equal(t, now.AddDate(0, 0, DefaultPeriodDays), repo.updatePeriodEnd.Time)
+	assert.Equal(t, "active", resp.Subscription.Status)
 }

@@ -163,6 +163,39 @@ func (r *Repository) MarkExpiredActiveAsPending(ctx context.Context, now time.Ti
 	return affected, nil
 }
 
+// UpdateTenantSubscription sets subscription_status and optionally current_period_end for a tenant.
+// When updatePeriodEnd is false, current_period_end is left unchanged.
+func (r *Repository) UpdateTenantSubscription(
+	ctx context.Context,
+	tenantID uint64,
+	status string,
+	periodEnd sql.NullTime,
+	updatePeriodEnd bool,
+) error {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants
+		 SET subscription_status = $1,
+		     current_period_end = CASE WHEN $4::boolean THEN $2 ELSE current_period_end END,
+		     updated_on = NOW()
+		 WHERE id = $3`,
+		status,
+		periodEnd,
+		tenantID,
+		updatePeriodEnd,
+	)
+	if err != nil {
+		return fmt.Errorf("updating tenant subscription for %d: %w", tenantID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected for tenant subscription update %d: %w", tenantID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("tenant not found when updating subscription: %d", tenantID)
+	}
+	return nil
+}
+
 func (r *Repository) MarkExpiredPendingAsCanceled(ctx context.Context, now time.Time, graceDays int) (int64, error) {
 	if graceDays < 0 {
 		graceDays = 0

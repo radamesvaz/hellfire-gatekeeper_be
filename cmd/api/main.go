@@ -533,6 +533,7 @@ func main() {
 	auth.HandleFunc("/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 	auth.HandleFunc("/subscription", subscriptionHandler.GetSubscription).Methods("GET")
+	auth.HandleFunc("/internal/tenants/{tenant_id}/subscription", subscriptionHandler.UpdateTenantSubscriptionInternal).Methods("PATCH")
 	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
 
 	authInv := auth.PathPrefix("/invitations").Subrouter()

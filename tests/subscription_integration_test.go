@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/radamesvaz/bakery-app/internal/handlers"
 	authHandlers "github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
@@ -98,7 +99,11 @@ func TestSubscription_GetSubscriptionEndpoint_Integration(t *testing.T) {
 	authRouter := router.PathPrefix("/auth").Subrouter()
 	authRouter.Use(middleware.AuthMiddleware(authSvc))
 	authRouter.Use(middleware.TenantMiddleware(tenantRepo))
+	authRouter.Use(middleware.RequireOperableSubscription(tenantRepo))
 	authRouter.HandleFunc("/subscription", handler.GetSubscription).Methods("GET")
+	authRouter.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("GET")
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/subscription", nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
@@ -116,4 +121,97 @@ func TestSubscription_GetSubscriptionEndpoint_Integration(t *testing.T) {
 	assert.Equal(t, "basic", subscription["plan_code"])
 	assert.NotNil(t, subscription["grace_period_end"])
 	assert.NotNil(t, subscription["days_until_cancel"])
+}
+
+func TestSubscription_CanceledTenant_PublicRoute404_Integration(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, `
+		UPDATE tenants SET subscription_status = 'canceled' WHERE slug = 'default'`)
+	require.NoError(t, err)
+
+	tenantRepo := &tenantRepository.Repository{DB: db}
+	handler := handlers.TenantHandler{Repo: tenantRepo}
+
+	router := mux.NewRouter()
+	tPublic := router.PathPrefix("/t/{tenant_slug}").Subrouter()
+	tPublic.Use(middleware.TenantFromPathOrHeader(tenantRepo))
+	tPublic.HandleFunc("/branding", handler.GetBranding).Methods("GET")
+
+	req := httptest.NewRequest(http.MethodGet, "/t/default/branding", nil)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func TestSubscription_CanceledTenant_AuthRoute403_Integration(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, `
+		UPDATE tenants SET subscription_status = 'canceled' WHERE id = 1`)
+	require.NoError(t, err)
+
+	tenantRepo := &tenantRepository.Repository{DB: db}
+	secret := "testingsecret"
+	authSvc := authService.New(secret, 60)
+	tenantID := uint64(1)
+	jwt, err := authSvc.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	authRouter.Use(middleware.AuthMiddleware(authSvc))
+	authRouter.Use(middleware.TenantMiddleware(tenantRepo))
+	authRouter.Use(middleware.RequireOperableSubscription(tenantRepo))
+	authRouter.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("GET")
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/ping", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestSubscription_PendingTenant_AuthPing200_Integration(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, `
+		UPDATE tenants
+		SET subscription_status = 'pending',
+		    current_period_end = NOW() - INTERVAL '1 day'
+		WHERE id = 1`)
+	require.NoError(t, err)
+
+	tenantRepo := &tenantRepository.Repository{DB: db}
+	secret := "testingsecret"
+	authSvc := authService.New(secret, 60)
+	tenantID := uint64(1)
+	jwt, err := authSvc.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	authRouter.Use(middleware.AuthMiddleware(authSvc))
+	authRouter.Use(middleware.TenantMiddleware(tenantRepo))
+	authRouter.Use(middleware.RequireOperableSubscription(tenantRepo))
+	authRouter.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}).Methods("GET")
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/ping", nil)
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusOK, rr.Code)
 }

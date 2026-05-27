@@ -507,6 +507,7 @@ func main() {
 	auth := r.PathPrefix("/auth").Subrouter()
 	auth.Use(middleware.AuthMiddleware(authSvc))
 	auth.Use(middleware.TenantMiddleware(tenantRepo))
+	auth.Use(middleware.RequireOperableSubscription(tenantRepo))
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
@@ -533,13 +534,19 @@ func main() {
 	auth.HandleFunc("/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
 	auth.HandleFunc("/subscription", subscriptionHandler.GetSubscription).Methods("GET")
-	auth.HandleFunc("/internal/tenants/{tenant_id}/subscription", subscriptionHandler.UpdateTenantSubscriptionInternal).Methods("PATCH")
-	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
 
 	authInv := auth.PathPrefix("/invitations").Subrouter()
 	authInv.Handle("", inviteCreateRateLimit(http.HandlerFunc(invitationHandler.CreateInvitation))).Methods("POST")
 	authInv.Handle("/{id}/revoke", http.HandlerFunc(invitationHandler.RevokeInvitation)).Methods("POST")
 	authInv.Handle("/{id}/resend", inviteResendRateLimit(http.HandlerFunc(invitationHandler.ResendInvitation))).Methods("POST")
+
+	// Internal auth API: superadmin operations. Intentionally not gated by RequireOperableSubscription
+	// so canceled tenants can be reactivated.
+	authInternal := r.PathPrefix("/auth/internal").Subrouter()
+	authInternal.Use(middleware.AuthMiddleware(authSvc))
+	authInternal.Use(middleware.TenantMiddleware(tenantRepo))
+	authInternal.HandleFunc("/tenants/{tenant_id}/subscription", subscriptionHandler.UpdateTenantSubscriptionInternal).Methods("PATCH")
+	authInternal.HandleFunc("/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()

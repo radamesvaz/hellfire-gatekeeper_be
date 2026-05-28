@@ -36,6 +36,7 @@ import (
 	invitationService "github.com/radamesvaz/bakery-app/internal/services/invitations"
 	orderService "github.com/radamesvaz/bakery-app/internal/services/orders"
 	passwordResetService "github.com/radamesvaz/bakery-app/internal/services/passwordreset"
+	subscriptionService "github.com/radamesvaz/bakery-app/internal/services/subscriptions"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
 	tokensService "github.com/radamesvaz/bakery-app/internal/services/tokens"
 
@@ -343,6 +344,11 @@ func main() {
 	tenantSignupHandler := &auth.TenantSignupHandler{
 		Service: tenantSignupSvc,
 	}
+	subscriptionGraceDays := parseIntWithDefault(os.Getenv("SUBSCRIPTION_GRACE_DAYS"), subscriptionService.DefaultGraceDays)
+	subscriptionSvc := subscriptionService.NewService(tenantRepo, subscriptionGraceDays)
+	subscriptionHandler := &auth.SubscriptionHandler{
+		Service: subscriptionSvc,
+	}
 	actionTokensRepoInst := &authActionTokensRepo.SQLRepository{DB: db}
 	authActionTokensSvc := &authActionTokensService.ActionTokenService{
 		DB:          db,
@@ -387,12 +393,18 @@ func main() {
 	// Ghost order worker: cancel expired pending orders on an interval
 	ghostOrderIntervalMin := parseIntWithDefault(os.Getenv("GHOST_ORDER_CRON_INTERVAL_MINUTES"), 5)
 	ghostCanceller := orderService.NewExpiredOrderCanceller(orderRepo, productRepo, tenantRepo)
+	subscriptionIntervalHours := parseIntWithDefault(os.Getenv("SUBSCRIPTION_CRON_INTERVAL_HOURS"), 24)
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 	var workerWg sync.WaitGroup
 	workerWg.Add(1)
 	go func() {
 		defer workerWg.Done()
 		orderService.RunGhostOrderWorker(workerCtx, ghostCanceller, ghostOrderIntervalMin)
+	}()
+	workerWg.Add(1)
+	go func() {
+		defer workerWg.Done()
+		subscriptionService.RunWorker(workerCtx, subscriptionSvc, subscriptionIntervalHours)
 	}()
 
 	r := mux.NewRouter()
@@ -495,6 +507,7 @@ func main() {
 	auth := r.PathPrefix("/auth").Subrouter()
 	auth.Use(middleware.AuthMiddleware(authSvc))
 	auth.Use(middleware.TenantMiddleware(tenantRepo))
+	auth.Use(middleware.RequireOperableSubscription(tenantRepo))
 	auth.HandleFunc("/ping", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
@@ -520,12 +533,20 @@ func main() {
 	auth.HandleFunc("/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
 	auth.HandleFunc("/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
-	auth.HandleFunc("/internal/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
+	auth.HandleFunc("/subscription", subscriptionHandler.GetSubscription).Methods("GET")
 
 	authInv := auth.PathPrefix("/invitations").Subrouter()
 	authInv.Handle("", inviteCreateRateLimit(http.HandlerFunc(invitationHandler.CreateInvitation))).Methods("POST")
 	authInv.Handle("/{id}/revoke", http.HandlerFunc(invitationHandler.RevokeInvitation)).Methods("POST")
 	authInv.Handle("/{id}/resend", inviteResendRateLimit(http.HandlerFunc(invitationHandler.ResendInvitation))).Methods("POST")
+
+	// Internal auth API: superadmin operations. Intentionally not gated by RequireOperableSubscription
+	// so canceled tenants can be reactivated.
+	authInternal := r.PathPrefix("/auth/internal").Subrouter()
+	authInternal.Use(middleware.AuthMiddleware(authSvc))
+	authInternal.Use(middleware.TenantMiddleware(tenantRepo))
+	authInternal.HandleFunc("/tenants/{tenant_id}/subscription", subscriptionHandler.UpdateTenantSubscriptionInternal).Methods("PATCH")
+	authInternal.HandleFunc("/tenant-signup-codes", tenantSignupHandler.CreateSignupCode).Methods("POST")
 
 	// Public catalog + orders: tenant from path or X-Tenant-Slug header
 	tPublic := r.PathPrefix("/t/{tenant_slug}").Subrouter()
@@ -567,7 +588,7 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
 
-	logger.Info().Msg("Shutting down: stopping ghost order worker")
+	logger.Info().Msg("Shutting down: stopping background workers")
 	workerCancel()
 	workerWg.Wait()
 

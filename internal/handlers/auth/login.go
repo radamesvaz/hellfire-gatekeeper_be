@@ -15,8 +15,8 @@ import (
 )
 
 type LoginHandler struct {
-	UserRepo    userRepo.UserRepository
-	TenantRepo  *tenantRepo.Repository
+	UserRepo   userRepo.UserRepository
+	TenantRepo *tenantRepo.Repository
 	// AuthService issues session JWTs and one-time tokens via the shared implementation wired in cmd/api/main.go.
 	AuthService authService.Service
 	// TenantRegisterEnabled controls whether Register endpoint is available.
@@ -79,6 +79,18 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if err := lh.AuthService.ComparePasswords(user.Password, req.Password); err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
+	}
+
+	if lh.TenantRepo != nil {
+		snapshot, snapErr := lh.TenantRepo.GetSubscriptionSnapshot(r.Context(), tenantID)
+		if snapErr != nil {
+			http.Error(w, "Could not verify tenant subscription", http.StatusInternalServerError)
+			return
+		}
+		if strings.EqualFold(strings.TrimSpace(snapshot.Status), "canceled") {
+			http.Error(w, "Tenant subscription is canceled", http.StatusForbidden)
+			return
+		}
 	}
 
 	idRole := uModel.UserRole(user.IDRole)

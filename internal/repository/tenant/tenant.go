@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 )
 
 // Repository provides tenant lookup by slug for path/header resolution.
@@ -34,6 +35,12 @@ type UpdateBrandingColorsRequest struct {
 	AccentColor    *string `json:"accent_color"`
 }
 
+type SubscriptionSnapshot struct {
+	Status           string
+	PlanCode         string
+	CurrentPeriodEnd sql.NullTime
+}
+
 // GetSlugByTenantID returns the canonical slug for an existing tenant row.
 // Used by authenticated /auth/* routes where the path does not include {tenant_slug}.
 func (r *Repository) GetSlugByTenantID(ctx context.Context, tenantID uint64) (string, error) {
@@ -49,14 +56,15 @@ func (r *Repository) GetSlugByTenantID(ctx context.Context, tenantID uint64) (st
 }
 
 // GetBySlug returns the tenant id and active status for the given slug.
-// Only returns a tenant when it is active, subscription_status is 'active', and the current period has not ended.
+// Only returns a tenant when it is active, subscription_status is in ('active','pending'),
+// and the current period has not ended.
 // Implements middleware.TenantResolver. Returns (0, false, err) when not found, inactive, or subscription expired.
 func (r *Repository) GetBySlug(ctx context.Context, slug string) (id uint64, isActive bool, err error) {
 	err = r.DB.QueryRowContext(ctx,
 		`SELECT id, is_active FROM tenants
 		 WHERE slug = $1
 		   AND is_active = true
-		   AND subscription_status = 'active'
+		   AND subscription_status IN ('active', 'pending')
 		   AND (current_period_end IS NULL OR current_period_end > NOW())`,
 		slug,
 	).Scan(&id, &isActive)
@@ -95,7 +103,7 @@ func (r *Repository) ListActiveTenantIDs(ctx context.Context) ([]uint64, error) 
 	rows, err := r.DB.QueryContext(ctx,
 		`SELECT id FROM tenants
 		 WHERE is_active = true
-		   AND subscription_status = 'active'
+		   AND subscription_status IN ('active', 'pending')
 		   AND (current_period_end IS NULL OR current_period_end > NOW())`,
 	)
 	if err != nil {
@@ -115,6 +123,103 @@ func (r *Repository) ListActiveTenantIDs(ctx context.Context) ([]uint64, error) 
 		return nil, fmt.Errorf("iterate active tenant ids: %w", err)
 	}
 	return ids, nil
+}
+
+func (r *Repository) GetSubscriptionSnapshot(ctx context.Context, tenantID uint64) (SubscriptionSnapshot, error) {
+	var snapshot SubscriptionSnapshot
+	err := r.DB.QueryRowContext(ctx,
+		`SELECT subscription_status, COALESCE(plan_code, ''), current_period_end
+		 FROM tenants
+		 WHERE id = $1`,
+		tenantID,
+	).Scan(&snapshot.Status, &snapshot.PlanCode, &snapshot.CurrentPeriodEnd)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return SubscriptionSnapshot{}, fmt.Errorf("tenant not found when reading subscription snapshot: %d", tenantID)
+		}
+		return SubscriptionSnapshot{}, fmt.Errorf("reading subscription snapshot for tenant %d: %w", tenantID, err)
+	}
+	return snapshot, nil
+}
+
+func (r *Repository) MarkExpiredActiveAsPending(ctx context.Context, now time.Time) (int64, error) {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants
+		 SET subscription_status = 'pending',
+		     updated_on = NOW()
+		 WHERE is_active = true
+		   AND subscription_status = 'active'
+		   AND current_period_end IS NOT NULL
+		   AND current_period_end <= $1`,
+		now.UTC(),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("mark expired active subscriptions as pending: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("reading rows affected when marking pending subscriptions: %w", err)
+	}
+	return affected, nil
+}
+
+// UpdateTenantSubscription sets subscription_status and optionally current_period_end for a tenant.
+// When updatePeriodEnd is false, current_period_end is left unchanged.
+func (r *Repository) UpdateTenantSubscription(
+	ctx context.Context,
+	tenantID uint64,
+	status string,
+	periodEnd sql.NullTime,
+	updatePeriodEnd bool,
+) error {
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants
+		 SET subscription_status = $1,
+		     current_period_end = CASE WHEN $4::boolean THEN $2 ELSE current_period_end END,
+		     updated_on = NOW()
+		 WHERE id = $3`,
+		status,
+		periodEnd,
+		tenantID,
+		updatePeriodEnd,
+	)
+	if err != nil {
+		return fmt.Errorf("updating tenant subscription for %d: %w", tenantID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected for tenant subscription update %d: %w", tenantID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("tenant not found when updating subscription: %d", tenantID)
+	}
+	return nil
+}
+
+func (r *Repository) MarkExpiredPendingAsCanceled(ctx context.Context, now time.Time, graceDays int) (int64, error) {
+	if graceDays < 0 {
+		graceDays = 0
+	}
+
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants
+		 SET subscription_status = 'canceled',
+		     updated_on = NOW()
+		 WHERE is_active = true
+		   AND subscription_status = 'pending'
+		   AND current_period_end IS NOT NULL
+		   AND (current_period_end + make_interval(days => $2)) <= $1`,
+		now.UTC(),
+		graceDays,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("mark expired pending subscriptions as canceled: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("reading rows affected when marking canceled subscriptions: %w", err)
+	}
+	return affected, nil
 }
 
 // GetBranding returns tenant display name, logo fields and branding colors for a tenant in one read.

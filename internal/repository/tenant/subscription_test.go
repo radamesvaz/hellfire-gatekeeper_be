@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,7 +49,7 @@ func TestRepository_GetSubscriptionSnapshot_ReturnsData(t *testing.T) {
 
 	snapshot, err := repo.GetSubscriptionSnapshot(context.Background(), 9)
 	require.NoError(t, err)
-	assert.Equal(t, "pending", snapshot.Status)
+	assert.Equal(t, tenantModel.SubscriptionStatusPending, snapshot.Status)
 	assert.Equal(t, "basic", snapshot.PlanCode)
 	assert.True(t, snapshot.CurrentPeriodEnd.Valid)
 	assert.NoError(t, mock.ExpectationsWereMet())
@@ -63,13 +64,13 @@ func TestRepository_MarkExpiredPendingAsCanceled_UsesGraceDays(t *testing.T) {
 	now := time.Now().UTC()
 
 	mock.ExpectExec(regexp.QuoteMeta(`UPDATE tenants
-		 SET subscription_status = 'canceled',
+		 SET subscription_status = $3,
 		     updated_on = NOW()
 		 WHERE is_active = true
-		   AND subscription_status = 'pending'
+		   AND subscription_status = $4
 		   AND current_period_end IS NOT NULL
 		   AND (current_period_end + make_interval(days => $2)) <= $1`)).
-		WithArgs(now, 5).
+		WithArgs(now, 5, tenantModel.SubscriptionStatusCanceled, tenantModel.SubscriptionStatusPending).
 		WillReturnResult(sqlmock.NewResult(0, 3))
 
 	affected, err := repo.MarkExpiredPendingAsCanceled(context.Background(), now, 5)
@@ -91,10 +92,10 @@ func TestRepository_UpdateTenantSubscription_UpdatesStatusAndPeriodEnd(t *testin
 		     current_period_end = CASE WHEN $4::boolean THEN $2 ELSE current_period_end END,
 		     updated_on = NOW()
 		 WHERE id = $3`)).
-		WithArgs("active", sql.NullTime{Time: periodEnd, Valid: true}, uint64(3), true).
+		WithArgs(tenantModel.SubscriptionStatusActive, sql.NullTime{Time: periodEnd, Valid: true}, uint64(3), true).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	err = repo.UpdateTenantSubscription(context.Background(), 3, "active", sql.NullTime{Time: periodEnd, Valid: true}, true)
+	err = repo.UpdateTenantSubscription(context.Background(), 3, tenantModel.SubscriptionStatusActive, sql.NullTime{Time: periodEnd, Valid: true}, true)
 	require.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }

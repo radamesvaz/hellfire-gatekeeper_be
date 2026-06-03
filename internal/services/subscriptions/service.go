@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
@@ -26,7 +26,7 @@ var (
 type Repository interface {
 	GetSubscriptionSnapshot(ctx context.Context, tenantID uint64) (tenantRepo.SubscriptionSnapshot, error)
 	GetSlugByTenantID(ctx context.Context, tenantID uint64) (string, error)
-	UpdateTenantSubscription(ctx context.Context, tenantID uint64, status string, periodEnd sql.NullTime, updatePeriodEnd bool) error
+	UpdateTenantSubscription(ctx context.Context, tenantID uint64, status tenantModel.SubscriptionStatus, periodEnd sql.NullTime, updatePeriodEnd bool) error
 	MarkExpiredActiveAsPending(ctx context.Context, now time.Time) (int64, error)
 	MarkExpiredPendingAsCanceled(ctx context.Context, now time.Time, graceDays int) (int64, error)
 }
@@ -71,7 +71,7 @@ func (s *Service) GetSubscriptionForTenant(ctx context.Context, tenantID uint64,
 		graceEnd := periodEnd.AddDate(0, 0, s.GraceDays)
 		response.Subscription.GracePeriodEnd = &graceEnd
 
-		if snapshot.Status == "pending" {
+		if snapshot.Status == tenantModel.SubscriptionStatusPending {
 			days := int(graceEnd.Sub(now.UTC()).Hours() / 24)
 			if days < 0 {
 				days = 0
@@ -95,8 +95,8 @@ func (s *Service) AdminUpdateSubscription(
 		return authModel.UpdateTenantSubscriptionResponse{}, ErrForbidden
 	}
 
-	status := strings.TrimSpace(strings.ToLower(req.SubscriptionStatus))
-	if !isAllowedSubscriptionStatus(status) {
+	status, ok := tenantModel.ParseSubscriptionStatus(req.SubscriptionStatus)
+	if !ok {
 		return authModel.UpdateTenantSubscriptionResponse{}, ErrInvalidSubscriptionStatus
 	}
 
@@ -123,16 +123,7 @@ func (s *Service) AdminUpdateSubscription(
 	}, nil
 }
 
-func isAllowedSubscriptionStatus(status string) bool {
-	switch status {
-	case "active", "pending", "canceled":
-		return true
-	default:
-		return false
-	}
-}
-
-func resolvePeriodEnd(req authModel.UpdateTenantSubscriptionRequest, status string, now time.Time) (sql.NullTime, bool) {
+func resolvePeriodEnd(req authModel.UpdateTenantSubscriptionRequest, status tenantModel.SubscriptionStatus, now time.Time) (sql.NullTime, bool) {
 	if req.CurrentPeriodEnd != nil {
 		t := req.CurrentPeriodEnd.UTC()
 		return sql.NullTime{Time: t, Valid: true}, true
@@ -140,7 +131,7 @@ func resolvePeriodEnd(req authModel.UpdateTenantSubscriptionRequest, status stri
 	if req.PeriodDays != nil && *req.PeriodDays > 0 {
 		return sql.NullTime{Time: now.AddDate(0, 0, *req.PeriodDays), Valid: true}, true
 	}
-	if status == "active" {
+	if status == tenantModel.SubscriptionStatusActive {
 		return sql.NullTime{Time: now.AddDate(0, 0, DefaultPeriodDays), Valid: true}, true
 	}
 	return sql.NullTime{}, false

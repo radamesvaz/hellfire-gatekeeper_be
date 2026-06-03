@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,7 +21,7 @@ func (s *stubSubscriptionReader) GetSubscriptionSnapshot(ctx context.Context, te
 }
 
 func TestRequireOperableSubscription_AllowsActive(t *testing.T) {
-	reader := &stubSubscriptionReader{snapshot: tenantRepo.SubscriptionSnapshot{Status: "active"}}
+	reader := &stubSubscriptionReader{snapshot: tenantRepo.SubscriptionSnapshot{Status: tenantModel.SubscriptionStatusActive}}
 	mw := RequireOperableSubscription(reader)
 
 	called := false
@@ -38,7 +39,7 @@ func TestRequireOperableSubscription_AllowsActive(t *testing.T) {
 }
 
 func TestRequireOperableSubscription_ForbiddenWhenCanceled(t *testing.T) {
-	reader := &stubSubscriptionReader{snapshot: tenantRepo.SubscriptionSnapshot{Status: "canceled"}}
+	reader := &stubSubscriptionReader{snapshot: tenantRepo.SubscriptionSnapshot{Status: tenantModel.SubscriptionStatusCanceled}}
 	mw := RequireOperableSubscription(reader)
 
 	called := false

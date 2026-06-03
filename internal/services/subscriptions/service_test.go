@@ -8,6 +8,7 @@ import (
 
 	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,7 @@ type fakeRepo struct {
 	canceledErr       error
 	lastGraceDays     int
 	slug              string
-	updateStatus      string
+	updateStatus      tenantModel.SubscriptionStatus
 	updatePeriodEnd   sql.NullTime
 	updatePeriodEndOK bool
 }
@@ -40,7 +41,7 @@ func (f *fakeRepo) GetSlugByTenantID(ctx context.Context, tenantID uint64) (stri
 func (f *fakeRepo) UpdateTenantSubscription(
 	ctx context.Context,
 	tenantID uint64,
-	status string,
+	status tenantModel.SubscriptionStatus,
 	periodEnd sql.NullTime,
 	updatePeriodEnd bool,
 ) error {
@@ -68,7 +69,7 @@ func TestService_GetSubscriptionForTenant_PendingIncludesGraceFields(t *testing.
 	periodEnd := now.AddDate(0, 0, -2)
 	repo := &fakeRepo{
 		snapshot: tenantRepo.SubscriptionSnapshot{
-			Status:           "pending",
+			Status:           tenantModel.SubscriptionStatusPending,
 			PlanCode:         "basic",
 			CurrentPeriodEnd: sql.NullTime{Time: periodEnd, Valid: true},
 		},
@@ -79,7 +80,7 @@ func TestService_GetSubscriptionForTenant_PendingIncludesGraceFields(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, uint64(10), response.TenantID)
 	assert.Equal(t, "acme", response.TenantSlug)
-	assert.Equal(t, "pending", response.Subscription.Status)
+	assert.Equal(t, tenantModel.SubscriptionStatusPending, response.Subscription.Status)
 	assert.Equal(t, "basic", response.Subscription.PlanCode)
 	require.NotNil(t, response.Subscription.GracePeriodEnd)
 	require.NotNil(t, response.Subscription.DaysUntilCancel)
@@ -113,7 +114,7 @@ func TestService_AdminUpdateSubscription_ForbiddenForNonAdmin(t *testing.T) {
 func TestService_AdminUpdateSubscription_ActiveSetsDefault30DayPeriod(t *testing.T) {
 	now := time.Date(2026, 5, 7, 12, 0, 0, 0, time.UTC)
 	repo := &fakeRepo{
-		snapshot: tenantRepo.SubscriptionSnapshot{Status: "canceled", PlanCode: "basic"},
+		snapshot: tenantRepo.SubscriptionSnapshot{Status: tenantModel.SubscriptionStatusCanceled, PlanCode: "basic"},
 	}
 	svc := NewService(repo, 5)
 
@@ -125,9 +126,9 @@ func TestService_AdminUpdateSubscription_ActiveSetsDefault30DayPeriod(t *testing
 		now,
 	)
 	require.NoError(t, err)
-	assert.Equal(t, "active", repo.updateStatus)
+	assert.Equal(t, tenantModel.SubscriptionStatusActive, repo.updateStatus)
 	assert.True(t, repo.updatePeriodEndOK)
 	assert.True(t, repo.updatePeriodEnd.Valid)
 	assert.Equal(t, now.AddDate(0, 0, DefaultPeriodDays), repo.updatePeriodEnd.Time)
-	assert.Equal(t, "active", resp.Subscription.Status)
+	assert.Equal(t, tenantModel.SubscriptionStatusActive, resp.Subscription.Status)
 }

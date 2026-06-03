@@ -3,9 +3,9 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 )
 
 // SubscriptionSnapshotReader loads the current subscription snapshot for a tenant.
@@ -30,7 +30,7 @@ func RequireOperableSubscription(reader SubscriptionSnapshotReader) func(http.Ha
 				return
 			}
 
-			if strings.EqualFold(strings.TrimSpace(snapshot.Status), "canceled") {
+			if snapshot.Status == tenantModel.SubscriptionStatusCanceled {
 				http.Error(w, "tenant subscription is canceled", http.StatusForbidden)
 				return
 			}

@@ -11,6 +11,7 @@ import (
 	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
@@ -87,7 +88,7 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Could not verify tenant subscription", http.StatusInternalServerError)
 			return
 		}
-		if strings.EqualFold(strings.TrimSpace(snapshot.Status), "canceled") {
+		if snapshot.Status == tenantModel.SubscriptionStatusCanceled {
 			http.Error(w, "Tenant subscription is canceled", http.StatusForbidden)
 			return
 		}

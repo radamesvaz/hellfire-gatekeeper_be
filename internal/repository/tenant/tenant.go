@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 )
 
 // Repository provides tenant lookup by slug for path/header resolution.
@@ -36,7 +38,7 @@ type UpdateBrandingColorsRequest struct {
 }
 
 type SubscriptionSnapshot struct {
-	Status           string
+	Status           tenantModel.SubscriptionStatus
 	PlanCode         string
 	CurrentPeriodEnd sql.NullTime
 }
@@ -145,13 +147,15 @@ func (r *Repository) GetSubscriptionSnapshot(ctx context.Context, tenantID uint6
 func (r *Repository) MarkExpiredActiveAsPending(ctx context.Context, now time.Time) (int64, error) {
 	result, err := r.DB.ExecContext(ctx,
 		`UPDATE tenants
-		 SET subscription_status = 'pending',
+		 SET subscription_status = $2,
 		     updated_on = NOW()
 		 WHERE is_active = true
-		   AND subscription_status = 'active'
+		   AND subscription_status = $3
 		   AND current_period_end IS NOT NULL
 		   AND current_period_end <= $1`,
 		now.UTC(),
+		tenantModel.SubscriptionStatusPending,
+		tenantModel.SubscriptionStatusActive,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("mark expired active subscriptions as pending: %w", err)
@@ -168,10 +172,13 @@ func (r *Repository) MarkExpiredActiveAsPending(ctx context.Context, now time.Ti
 func (r *Repository) UpdateTenantSubscription(
 	ctx context.Context,
 	tenantID uint64,
-	status string,
+	status tenantModel.SubscriptionStatus,
 	periodEnd sql.NullTime,
 	updatePeriodEnd bool,
 ) error {
+	if !status.Valid() {
+		return fmt.Errorf("invalid subscription status: %q", status)
+	}
 	result, err := r.DB.ExecContext(ctx,
 		`UPDATE tenants
 		 SET subscription_status = $1,
@@ -203,14 +210,16 @@ func (r *Repository) MarkExpiredPendingAsCanceled(ctx context.Context, now time.
 
 	result, err := r.DB.ExecContext(ctx,
 		`UPDATE tenants
-		 SET subscription_status = 'canceled',
+		 SET subscription_status = $3,
 		     updated_on = NOW()
 		 WHERE is_active = true
-		   AND subscription_status = 'pending'
+		   AND subscription_status = $4
 		   AND current_period_end IS NOT NULL
 		   AND (current_period_end + make_interval(days => $2)) <= $1`,
 		now.UTC(),
 		graceDays,
+		tenantModel.SubscriptionStatusCanceled,
+		tenantModel.SubscriptionStatusPending,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("mark expired pending subscriptions as canceled: %w", err)

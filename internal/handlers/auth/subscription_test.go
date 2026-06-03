@@ -14,6 +14,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	subscriptionService "github.com/radamesvaz/bakery-app/internal/services/subscriptions"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +44,7 @@ func TestSubscriptionHandler_GetSubscription_Success(t *testing.T) {
 				TenantID:   1,
 				TenantSlug: "default",
 				Subscription: authModel.SubscriptionContext{
-					Status:   "pending",
+					Status:   tenantModel.SubscriptionStatusPending,
 					PlanCode: "basic",
 				},
 			},
@@ -81,7 +82,7 @@ func TestSubscriptionHandler_UpdateTenantSubscriptionInternal_Success(t *testing
 				TenantID:   2,
 				TenantSlug: "acme",
 				Subscription: authModel.SubscriptionContext{
-					Status:   "active",
+					Status:   tenantModel.SubscriptionStatusActive,
 					PlanCode: "basic",
 				},
 			},
@@ -103,7 +104,7 @@ func TestSubscriptionHandler_UpdateTenantSubscriptionInternal_Success(t *testing
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp authModel.UpdateTenantSubscriptionResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
-	assert.Equal(t, "active", resp.Subscription.Status)
+	assert.Equal(t, tenantModel.SubscriptionStatusActive, resp.Subscription.Status)
 }
 
 func TestSubscriptionHandler_UpdateTenantSubscriptionInternal_Forbidden(t *testing.T) {

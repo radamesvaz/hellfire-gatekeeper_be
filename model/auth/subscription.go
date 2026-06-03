@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
+)
 
 type SubscriptionContextResponse struct {
 	TenantID     uint64              `json:"tenant_id"`
@@ -9,7 +13,7 @@ type SubscriptionContextResponse struct {
 }
 
 type SubscriptionContext struct {
-	Status           string     `json:"status"`
+	Status           tenantModel.SubscriptionStatus `json:"status"`
 	PlanCode         string     `json:"plan_code"`
 	CurrentPeriodEnd *time.Time `json:"current_period_end,omitempty"`
 	GracePeriodEnd   *time.Time `json:"grace_period_end,omitempty"`

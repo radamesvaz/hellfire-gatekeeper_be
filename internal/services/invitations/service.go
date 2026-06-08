@@ -125,7 +125,7 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, tenantID uint6
 
 	createdID, err := s.Users.CreateUser(ctx, uModel.CreateUserRequest{
 		TenantID: tenantID,
-		IDRole:   uModel.UserRoleClient,
+		IDRole:   uModel.UserRoleAdmin,
 		Name:     name,
 		Email:    rec.Email,
 		Phone:    phone,
@@ -140,7 +140,7 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, tenantID uint6
 	}
 
 	tenantIDPtr := tenantID
-	jwtToken, err := s.AuthService.GenerateJWT(createdID, uModel.UserRoleClient, rec.Email, &tenantIDPtr)
+	jwtToken, err := s.AuthService.GenerateJWT(createdID, uModel.UserRoleAdmin, rec.Email, &tenantIDPtr)
 	if err != nil {
 		return authModel.AcceptTenantInvitationResponse{}, err
 	}

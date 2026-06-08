@@ -11,6 +11,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	userModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -277,6 +278,90 @@ func TestUserRepository_CreateUser(t *testing.T) {
 			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestUserRepository_GetUserByTenantAndEmail_IncludesSoftDeleted(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &UserRepository{DB: db}
+	const tenantID = uint64(1)
+	email := "softdeleted@test.com"
+	deletedAt := time.Now().UTC()
+
+	mock.ExpectQuery(regexp.QuoteMeta(
+		`SELECT id_user, tenant_id, id_role, name, email,
+		        COALESCE(password_hash, ''), COALESCE(phone, ''), created_on, deleted_at
+		 FROM users WHERE tenant_id = $1 AND email = $2`,
+	)).
+		WithArgs(tenantID, email).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id_user", "tenant_id", "id_role", "name", "email", "password_hash", "phone", "created_on", "deleted_at",
+		}).AddRow(uint64(9), tenantID, uint64(2), "Old Name", email, "hash", "55", deletedAt, deletedAt))
+
+	user, err := repo.GetUserByTenantAndEmail(tenantID, email)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(9), user.ID)
+	assert.True(t, user.DeletedAt.Valid)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUserRepository_ReactivateUser_Success(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &UserRepository{DB: db}
+	req := userModel.ReactivateUserRequest{
+		IDRole:   userModel.UserRoleAdmin,
+		Name:     "New Name",
+		Phone:    "555",
+		Password: "newhash",
+	}
+
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE users
+		 SET deleted_at = NULL,
+		     id_role = $1,
+		     name = $2,
+		     phone = $3,
+		     password_hash = $4
+		 WHERE tenant_id = $5 AND id_user = $6 AND deleted_at IS NOT NULL`)).
+		WithArgs(req.IDRole, req.Name, req.Phone, req.Password, uint64(1), uint64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = repo.ReactivateUser(context.Background(), 1, 9, req)
+	require.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUserRepository_ReactivateUser_NotFoundWhenNotSoftDeleted(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &UserRepository{DB: db}
+	req := userModel.ReactivateUserRequest{
+		IDRole:   userModel.UserRoleAdmin,
+		Name:     "Name",
+		Phone:    "",
+		Password: "hash",
+	}
+
+	mock.ExpectExec(regexp.QuoteMeta(`UPDATE users
+		 SET deleted_at = NULL,
+		     id_role = $1,
+		     name = $2,
+		     phone = $3,
+		     password_hash = $4
+		 WHERE tenant_id = $5 AND id_user = $6 AND deleted_at IS NOT NULL`)).
+		WithArgs(req.IDRole, req.Name, req.Phone, req.Password, uint64(1), uint64(9)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	err = repo.ReactivateUser(context.Background(), 1, 9, req)
+	require.Error(t, err)
+	assert.Equal(t, errors.ErrUserNotFound, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // Validates the error to be of *HTTPError type, have the correct status and message

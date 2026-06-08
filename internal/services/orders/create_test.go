@@ -43,6 +43,14 @@ func (m *MockUserRepo) EmailExists(tenantID uint64, email string) (bool, error) 
 	return false, nil
 }
 
+func (m *MockUserRepo) GetUserByTenantAndEmail(tenantID uint64, email string) (uModel.User, error) {
+	return m.GetUserByEmail(tenantID, email)
+}
+
+func (m *MockUserRepo) ReactivateUser(ctx context.Context, tenantID, userID uint64, req uModel.ReactivateUserRequest) error {
+	return nil
+}
+
 type MockProductRepo2 struct {
 	Products       map[uint64]pModel.Product
 	StockUpdates   map[uint64]uint64 // final stock after decrements (for assertions)

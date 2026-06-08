@@ -53,6 +53,39 @@ func (r *UserRepository) GetUserByEmail(tenantID uint64, email string) (uModel.U
 	return user, nil
 }
 
+// GetUserByTenantAndEmail returns a user by tenant and email, including soft-deleted rows.
+func (r *UserRepository) GetUserByTenantAndEmail(tenantID uint64, email string) (uModel.User, error) {
+	maskedEmail := maskEmail(email)
+	logger.Debug().Uint64("tenant_id", tenantID).Str("email", maskedEmail).Msg("Getting user by tenant and email (any status)")
+
+	user := uModel.User{}
+	err := r.DB.QueryRow(
+		`SELECT id_user, tenant_id, id_role, name, email,
+		        COALESCE(password_hash, ''), COALESCE(phone, ''), created_on, deleted_at
+		 FROM users WHERE tenant_id = $1 AND email = $2`,
+		tenantID,
+		email,
+	).Scan(
+		&user.ID,
+		&user.TenantID,
+		&user.IDRole,
+		&user.Name,
+		&user.Email,
+		&user.Password,
+		&user.Phone,
+		&user.CreatedOn,
+		&user.DeletedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return user, errors.ErrUserNotFound
+		}
+		logger.Err(err).Str("email", maskedEmail).Msg("Could not get user by tenant and email")
+		return user, errors.ErrUserNotFound
+	}
+	return user, nil
+}
+
 func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserRequest) (id uint64, err error) {
 	maskedEmail := maskEmail(user.Email)
 	logger.Debug().
@@ -87,6 +120,39 @@ func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserR
 		Str("email", maskedEmail).
 		Msg("User created successfully")
 	return insertedID, nil
+}
+
+// ReactivateUser clears deleted_at and refreshes profile fields for a soft-deleted user.
+func (r *UserRepository) ReactivateUser(ctx context.Context, tenantID, userID uint64, req uModel.ReactivateUserRequest) error {
+	result, err := r.DB.ExecContext(
+		ctx,
+		`UPDATE users
+		 SET deleted_at = NULL,
+		     id_role = $1,
+		     name = $2,
+		     phone = $3,
+		     password_hash = $4
+		 WHERE tenant_id = $5 AND id_user = $6 AND deleted_at IS NOT NULL`,
+		req.IDRole,
+		req.Name,
+		req.Phone,
+		req.Password,
+		tenantID,
+		userID,
+	)
+	if err != nil {
+		logger.Err(err).Uint64("tenant_id", tenantID).Uint64("user_id", userID).Msg("Could not reactivate user")
+		return errors.NewInternalServerError(errors.ErrDatabaseOperation)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return errors.NewInternalServerError(errors.ErrDatabaseOperation)
+	}
+	if n == 0 {
+		return errors.ErrUserNotFound
+	}
+	logger.Info().Uint64("tenant_id", tenantID).Uint64("user_id", userID).Msg("User reactivated from invitation")
+	return nil
 }
 
 // EmailExists checks if an email already exists in the database for the given tenant.

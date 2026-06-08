@@ -76,6 +76,69 @@ func TestInvitationService_AcceptInvitation_AssignsAdminRole(t *testing.T) {
 	assert.Equal(t, float64(tenantID), claims["tenant_id"])
 }
 
+func TestInvitationService_AcceptInvitation_ReactivatesSoftDeletedUser(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	ctx := context.Background()
+	const tenantID = uint64(1)
+	const inviterUserID = uint64(1)
+	inviteEmail := "client@example.com"
+
+	_, err := db.ExecContext(ctx, `
+		UPDATE users SET deleted_at = NOW()
+		WHERE tenant_id = $1 AND email = $2`, tenantID, inviteEmail)
+	require.NoError(t, err)
+
+	var previousUserID uint64
+	err = db.QueryRowContext(ctx, `
+		SELECT id_user FROM users WHERE tenant_id = $1 AND email = $2`, tenantID, inviteEmail).Scan(&previousUserID)
+	require.NoError(t, err)
+	require.NotZero(t, previousUserID)
+
+	authSvc := authService.New("testingsecret", 60)
+	userRepo := user.UserRepository{DB: db}
+	tokenSvc := &authActionTokensService.ActionTokenService{
+		DB:          db,
+		Repo:        &authActionTokensRepo.SQLRepository{DB: db},
+		AuthService: authSvc,
+	}
+	svc := &invitationService.InvitationService{
+		Users:        &userRepo,
+		AuthService:  authSvc,
+		TokenService: tokenSvc,
+		EmailSender:  email.NoopSender{},
+		AppBaseURL:   "http://localhost:5173",
+	}
+
+	tokenResp, err := tokenSvc.CreateToken(ctx, authModel.CreateActionTokenRequest{
+		TenantID:        tenantID,
+		Email:           inviteEmail,
+		Purpose:         authModel.ActionTokenPurposeInvite,
+		CreatedByUserID: ptrUint64(inviterUserID),
+	})
+	require.NoError(t, err)
+
+	resp, err := svc.AcceptInvitation(ctx, tenantID, authModel.AcceptTenantInvitationRequest{
+		Token:    tokenResp.Token,
+		Name:     "Reactivated Admin",
+		Phone:    "555-9999",
+		Password: "MyPassword123!",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, previousUserID, resp.UserID)
+
+	reactivated, err := userRepo.GetUserByEmail(tenantID, inviteEmail)
+	require.NoError(t, err)
+	assert.Equal(t, previousUserID, reactivated.ID)
+	assert.False(t, reactivated.DeletedAt.Valid)
+	assert.Equal(t, "Reactivated Admin", reactivated.Name)
+	assert.Equal(t, "555-9999", reactivated.Phone)
+	assert.Equal(t, uModel.UserRoleAdmin, reactivated.IDRole)
+	assert.NotEmpty(t, reactivated.Password)
+}
+
 func ptrUint64(v uint64) *uint64 {
 	return &v
 }

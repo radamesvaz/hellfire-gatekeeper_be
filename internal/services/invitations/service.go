@@ -123,24 +123,17 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, tenantID uint6
 		return authModel.AcceptTenantInvitationResponse{}, err
 	}
 
-	createdID, err := s.Users.CreateUser(ctx, uModel.CreateUserRequest{
-		TenantID: tenantID,
-		IDRole:   uModel.UserRoleAdmin,
-		Name:     name,
-		Email:    rec.Email,
-		Phone:    phone,
-		Password: passwordHash,
-	})
+	userID, err := s.resolveInvitedUserID(ctx, tenantID, rec.Email, name, phone, passwordHash)
 	if err != nil {
 		return authModel.AcceptTenantInvitationResponse{}, err
 	}
 
-	if err := s.TokenService.RecordInvitationAccepted(ctx, tenantID, rec.ID, createdID); err != nil {
+	if err := s.TokenService.RecordInvitationAccepted(ctx, tenantID, rec.ID, userID); err != nil {
 		return authModel.AcceptTenantInvitationResponse{}, err
 	}
 
 	tenantIDPtr := tenantID
-	jwtToken, err := s.AuthService.GenerateJWT(createdID, uModel.UserRoleAdmin, rec.Email, &tenantIDPtr)
+	jwtToken, err := s.AuthService.GenerateJWT(userID, uModel.UserRoleAdmin, rec.Email, &tenantIDPtr)
 	if err != nil {
 		return authModel.AcceptTenantInvitationResponse{}, err
 	}
@@ -149,8 +142,45 @@ func (s *InvitationService) AcceptInvitation(ctx context.Context, tenantID uint6
 		Message: "Invitation accepted successfully",
 		Token:   jwtToken,
 		Email:   rec.Email,
-		UserID:  createdID,
+		UserID:  userID,
 	}, nil
+}
+
+func (s *InvitationService) resolveInvitedUserID(
+	ctx context.Context,
+	tenantID uint64,
+	email string,
+	name string,
+	phone string,
+	passwordHash string,
+) (uint64, error) {
+	existing, err := s.Users.GetUserByTenantAndEmail(tenantID, email)
+	if err != nil {
+		if errors.Is(err, appErrors.ErrUserNotFound) {
+			return s.Users.CreateUser(ctx, uModel.CreateUserRequest{
+				TenantID: tenantID,
+				IDRole:   uModel.UserRoleAdmin,
+				Name:     name,
+				Email:    email,
+				Phone:    phone,
+				Password: passwordHash,
+			})
+		}
+		return 0, err
+	}
+	if !existing.DeletedAt.Valid {
+		return 0, appErrors.ErrEmailAlreadyExists
+	}
+	reactivate := uModel.ReactivateUserRequest{
+		IDRole:   uModel.UserRoleAdmin,
+		Name:     name,
+		Phone:    phone,
+		Password: passwordHash,
+	}
+	if err := s.Users.ReactivateUser(ctx, tenantID, existing.ID, reactivate); err != nil {
+		return 0, err
+	}
+	return existing.ID, nil
 }
 
 func (s *InvitationService) RevokeInvitation(ctx context.Context, tenantID uint64, roleID uint64, revokedByUserID uint64, invitationID uint64) error {

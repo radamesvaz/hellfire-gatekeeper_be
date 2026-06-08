@@ -31,3 +31,11 @@ type CreateUserRequest struct {
 	Phone    string   `json:"phone"`
 	Password string   `json:"password_hash"`
 }
+
+// ReactivateUserRequest updates a soft-deleted user when they accept a new invitation.
+type ReactivateUserRequest struct {
+	IDRole   UserRole `json:"role"`
+	Name     string   `json:"name"`
+	Phone    string   `json:"phone"`
+	Password string   `json:"password_hash"`
+}

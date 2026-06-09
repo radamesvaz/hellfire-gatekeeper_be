@@ -347,6 +347,76 @@ func TestCreateProduct(t *testing.T) {
 	assert.Len(t, imageURLs, 0)
 }
 
+func TestCreateProduct_TwoAdminsSameTenantCanCreate(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	var secondAdminID uint64
+	err := db.QueryRow(`
+		INSERT INTO users (tenant_id, id_role, name, email, phone, password_hash)
+		VALUES (1, 1, 'Second Admin', 'admin2@example.com', '77-77777', NULL)
+		RETURNING id_user`,
+	).Scan(&secondAdminID)
+	require.NoError(t, err)
+
+	repository := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repository}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	exp := 60
+	authService := auth.New(secret, exp)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
+
+	tenantID := uint64(1)
+
+	adminOneJWT, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	adminTwoJWT, err := authService.GenerateJWT(secondAdminID, uModel.UserRoleAdmin, "admin2@example.com", &tenantID)
+	require.NoError(t, err)
+
+	createProduct := func(token, name string) *httptest.ResponseRecorder {
+		payload := fmt.Sprintf(`{
+			"name": %q,
+			"description": "Created by admin",
+			"price": 10.0,
+			"available": true,
+			"stock": 1,
+			"status": "active"
+		}`, name)
+
+		req := httptest.NewRequest("POST", "/auth/products", strings.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+		return rr
+	}
+
+	rrOne := createProduct(adminOneJWT, "Producto admin uno")
+	assert.Equal(t, http.StatusOK, rrOne.Code)
+
+	rrTwo := createProduct(adminTwoJWT, "Producto admin dos")
+	assert.Equal(t, http.StatusOK, rrTwo.Code)
+
+	var responseOne map[string]interface{}
+	require.NoError(t, json.Unmarshal(rrOne.Body.Bytes(), &responseOne))
+	assert.Equal(t, "Product created successfully", responseOne["message"])
+	assert.NotNil(t, responseOne["product_id"])
+
+	var responseTwo map[string]interface{}
+	require.NoError(t, json.Unmarshal(rrTwo.Body.Bytes(), &responseTwo))
+	assert.Equal(t, "Product created successfully", responseTwo["message"])
+	assert.NotNil(t, responseTwo["product_id"])
+	assert.NotEqual(t, responseOne["product_id"], responseTwo["product_id"])
+}
+
 func TestCreateProductWithImages(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)

@@ -512,6 +512,24 @@ func main() {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
 
+	// TODO: cuando exista login de clientes, agrupar en subrouter con middleware de rol admin (tras AuthMiddleware):
+	//   POST   /auth/products
+	//   PUT    /auth/products/{id}
+	//   PATCH  /auth/products/{id}
+	//   PATCH  /auth/products/{id}/thumbnail
+	//   POST   /auth/products/{id}/thumbnail
+	//   POST   /auth/products/{id}/images
+	//   PUT    /auth/products/{id}/images
+	//   DELETE /auth/products/{id}/images
+	//   PATCH  /auth/branding/logo
+	//   PATCH  /auth/branding/colors
+	//   PATCH  /auth/branding/name
+	//   POST   /auth/invitations
+	//   POST   /auth/invitations/{id}/revoke
+	//   POST   /auth/invitations/{id}/resend
+	//   POST   /t/{tenant_slug}/auth/invitations
+	//   POST   /t/{tenant_slug}/auth/invitations/{id}/revoke
+	//   POST   /t/{tenant_slug}/auth/invitations/{id}/resend
 	// Product endpoints (data only)
 	auth.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
 	auth.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")

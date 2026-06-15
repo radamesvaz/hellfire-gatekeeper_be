@@ -146,6 +146,8 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	product.TenantID = tenantID
 
+	// TODO: persist product creator on products (e.g. created_by_user_id FK → users).
+	// Today it is only recorded in products_history (modified_by + action=create), not on the product row or API.
 	// Create product
 	newProduct, err := h.Repo.CreateProduct(ctx, tenantID, product)
 	if err != nil {

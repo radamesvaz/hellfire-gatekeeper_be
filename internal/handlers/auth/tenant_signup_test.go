@@ -18,6 +18,7 @@ import (
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +43,7 @@ func TestTenantSignupHandler_CreateSignupCode_Success(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
 		"user_id": float64(99),
-		"role_id": float64(1),
+		"role_id": float64(uModel.UserRoleSuperAdmin),
 	})
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()
@@ -56,6 +57,52 @@ func TestTenantSignupHandler_CreateSignupCode_Success(t *testing.T) {
 	assert.NotEmpty(t, resp.Code)
 	assert.True(t, resp.ExpiresAt.After(time.Now().UTC().Add(100*time.Minute)))
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTenantSignupHandler_CreateSignupCode_ForbiddenForTenantAdmin(t *testing.T) {
+	svc := &tenantSignupService.TenantSignupService{
+		Repo:        &tenantSignupRepo.Repository{DB: nil},
+		AuthService: authService.New("testingsecret", 60),
+	}
+	handler := &TenantSignupHandler{Service: svc}
+
+	body := bytes.NewBufferString(`{"expires_in_minutes":120,"notes":"should be forbidden"}`)
+	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", body)
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
+		"user_id": float64(99),
+		"role_id": float64(uModel.UserRoleAdmin),
+	})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.CreateSignupCode(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Forbidden")
+}
+
+func TestTenantSignupHandler_CreateSignupCode_ForbiddenForClient(t *testing.T) {
+	svc := &tenantSignupService.TenantSignupService{
+		Repo:        &tenantSignupRepo.Repository{DB: nil},
+		AuthService: authService.New("testingsecret", 60),
+	}
+	handler := &TenantSignupHandler{Service: svc}
+
+	body := bytes.NewBufferString(`{"expires_in_minutes":120}`)
+	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", body)
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
+		"user_id": float64(50),
+		"role_id": float64(uModel.UserRoleClient),
+	})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.CreateSignupCode(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Forbidden")
 }
 
 func TestTenantSignupHandler_RegisterTenantWithCode_Success(t *testing.T) {
@@ -130,7 +177,7 @@ func TestTenantSignupHandler_CreateSignupCode_DefaultTTL120(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
 		"user_id": float64(99),
-		"role_id": float64(1),
+		"role_id": float64(uModel.UserRoleSuperAdmin),
 	})
 	req = req.WithContext(ctx)
 	rr := httptest.NewRecorder()

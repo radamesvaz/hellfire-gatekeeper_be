@@ -28,9 +28,10 @@ import (
 )
 
 type tenantSignupIntegrationEnv struct {
-	router   *mux.Router
-	db       *sql.DB
-	adminJWT string
+	router         *mux.Router
+	db             *sql.DB
+	superadminJWT  string
+	tenantAdminJWT string
 }
 
 func setupTenantSignupIntegrationEnv(t *testing.T) (*tenantSignupIntegrationEnv, func()) {
@@ -55,13 +56,16 @@ func setupTenantSignupIntegrationEnv(t *testing.T) (*tenantSignupIntegrationEnv,
 	authRouter.HandleFunc("/internal/tenant-signup-codes", handler.CreateSignupCode).Methods("POST")
 
 	defaultTenantID := uint64(1)
-	adminJWT, err := authSvc.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &defaultTenantID)
+	superadminJWT, err := authSvc.GenerateJWT(1, uModel.UserRoleSuperAdmin, "superadmin@example.com", &defaultTenantID)
+	require.NoError(t, err)
+	tenantAdminJWT, err := authSvc.GenerateJWT(2, uModel.UserRoleAdmin, "admin@example.com", &defaultTenantID)
 	require.NoError(t, err)
 
 	return &tenantSignupIntegrationEnv{
-			router:   router,
-			db:       db,
-			adminJWT: adminJWT,
+			router:         router,
+			db:             db,
+			superadminJWT:  superadminJWT,
+			tenantAdminJWT: tenantAdminJWT,
 		}, func() {
 			terminate()
 		}
@@ -77,7 +81,7 @@ func createSignupCodeInternal(
 
 	reqBody := fmt.Sprintf(`{"expires_in_minutes":%d,"notes":"%s"}`, ttlMinutes, notes)
 	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", strings.NewReader(reqBody))
-	req.Header.Set("Authorization", "Bearer "+env.adminJWT)
+	req.Header.Set("Authorization", "Bearer "+env.superadminJWT)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
@@ -143,6 +147,25 @@ func insertSignupCodeForTest(t *testing.T, db *sql.DB, plainCode string, expires
 		"integration seeded code",
 	)
 	require.NoError(t, err)
+}
+
+func TestTenantSignupIntegration_CreateSignupCode_ForbiddenForTenantAdmin(t *testing.T) {
+	env, cleanup := setupTenantSignupIntegrationEnv(t)
+	defer cleanup()
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/auth/internal/tenant-signup-codes",
+		strings.NewReader(`{"expires_in_minutes":120,"notes":"tenant admin should be forbidden"}`),
+	)
+	req.Header.Set("Authorization", "Bearer "+env.tenantAdminJWT)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	env.router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "Forbidden")
 }
 
 func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {

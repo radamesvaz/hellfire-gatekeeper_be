@@ -32,7 +32,7 @@ func (s *TenantSignupService) CreateSignupCode(
 	createdByUserID uint64,
 	req authModel.CreateSignupCodeRequest,
 ) (authModel.CreateSignupCodeResponse, error) {
-	if roleID != uint64(uModel.UserRoleAdmin) {
+	if roleID != uint64(uModel.UserRoleSuperAdmin) {
 		return authModel.CreateSignupCodeResponse{}, ErrForbidden
 	}
 

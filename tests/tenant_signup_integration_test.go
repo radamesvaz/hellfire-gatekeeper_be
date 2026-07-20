@@ -14,11 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	authHandler "github.com/radamesvaz/bakery-app/internal/handlers/auth"
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	tenantSignupRepo "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
+	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
@@ -28,10 +30,12 @@ import (
 )
 
 type tenantSignupIntegrationEnv struct {
-	router         *mux.Router
-	db             *sql.DB
-	superadminJWT  string
-	tenantAdminJWT string
+	router           *mux.Router
+	db               *sql.DB
+	authSvc          authService.Service
+	superadminUserID uint64
+	superadminJWT    string
+	tenantAdminJWT   string
 }
 
 func setupTenantSignupIntegrationEnv(t *testing.T) (*tenantSignupIntegrationEnv, func()) {
@@ -46,29 +50,52 @@ func setupTenantSignupIntegrationEnv(t *testing.T) (*tenantSignupIntegrationEnv,
 		AuthService: authSvc,
 	}
 	handler := &authHandler.TenantSignupHandler{Service: svc}
+	tenantRepo := &tenantRepository.Repository{DB: db}
+	loginHandler := &authHandler.LoginHandler{
+		UserRepo:    user.UserRepository{DB: db},
+		TenantRepo:  tenantRepo,
+		AuthService: authSvc,
+	}
 
 	router := mux.NewRouter()
+	router.HandleFunc("/login", loginHandler.Login).Methods("POST")
 	router.HandleFunc("/public/tenant-register", handler.RegisterTenantWithCode).Methods("POST")
-	tenantRepo := &tenantRepository.Repository{DB: db}
 	authRouter := router.PathPrefix("/auth").Subrouter()
 	authRouter.Use(middleware.AuthMiddleware(authSvc))
 	authRouter.Use(middleware.TenantMiddleware(tenantRepo))
 	authRouter.HandleFunc("/internal/tenant-signup-codes", handler.CreateSignupCode).Methods("POST")
 
 	defaultTenantID := uint64(1)
-	superadminJWT, err := authSvc.GenerateJWT(1, uModel.UserRoleSuperAdmin, "superadmin@example.com", &defaultTenantID)
+	superadminID := lookupUserIDByEmailAndRole(t, db, "superadmin@example.com", uModel.UserRoleSuperAdmin)
+	adminID := lookupUserIDByEmailAndRole(t, db, "admin@example.com", uModel.UserRoleAdmin)
+
+	superadminJWT, err := authSvc.GenerateJWT(superadminID, uModel.UserRoleSuperAdmin, "superadmin@example.com", &defaultTenantID)
 	require.NoError(t, err)
-	tenantAdminJWT, err := authSvc.GenerateJWT(2, uModel.UserRoleAdmin, "admin@example.com", &defaultTenantID)
+	tenantAdminJWT, err := authSvc.GenerateJWT(adminID, uModel.UserRoleAdmin, "admin@example.com", &defaultTenantID)
 	require.NoError(t, err)
 
 	return &tenantSignupIntegrationEnv{
-			router:         router,
-			db:             db,
-			superadminJWT:  superadminJWT,
-			tenantAdminJWT: tenantAdminJWT,
+			router:           router,
+			db:               db,
+			authSvc:          authSvc,
+			superadminUserID: superadminID,
+			superadminJWT:    superadminJWT,
+			tenantAdminJWT:   tenantAdminJWT,
 		}, func() {
 			terminate()
 		}
+}
+
+func lookupUserIDByEmailAndRole(t *testing.T, db *sql.DB, email string, role uModel.UserRole) uint64 {
+	t.Helper()
+	var id uint64
+	err := db.QueryRow(
+		`SELECT id_user FROM users WHERE tenant_id = 1 AND email = $1 AND id_role = $2 AND deleted_at IS NULL`,
+		email,
+		role,
+	).Scan(&id)
+	require.NoError(t, err, "expected seeded user %s with role %d", email, role)
+	return id
 }
 
 func createSignupCodeInternal(
@@ -168,6 +195,46 @@ func TestTenantSignupIntegration_CreateSignupCode_ForbiddenForTenantAdmin(t *tes
 	assert.Contains(t, rr.Body.String(), "Forbidden")
 }
 
+func TestTenantSignupIntegration_CreateSignupCode_AfterSuperAdminLogin(t *testing.T) {
+	env, cleanup := setupTenantSignupIntegrationEnv(t)
+	defer cleanup()
+
+	loginReq := httptest.NewRequest(
+		http.MethodPost,
+		"/login",
+		strings.NewReader(`{"email":"superadmin@example.com","password":"adminpass"}`),
+	)
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginRR := httptest.NewRecorder()
+	env.router.ServeHTTP(loginRR, loginReq)
+	require.Equal(t, http.StatusOK, loginRR.Code, loginRR.Body.String())
+
+	var loginBody authHandler.LoginResponse
+	require.NoError(t, json.Unmarshal(loginRR.Body.Bytes(), &loginBody))
+	require.NotEmpty(t, loginBody.Token)
+
+	parsed, err := env.authSvc.ValidateToken(loginBody.Token)
+	require.NoError(t, err)
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	require.True(t, ok)
+	assert.Equal(t, float64(uModel.UserRoleSuperAdmin), claims["role_id"])
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/auth/internal/tenant-signup-codes",
+		strings.NewReader(`{"expires_in_minutes":60,"notes":"from login flow"}`),
+	)
+	req.Header.Set("Authorization", "Bearer "+loginBody.Token)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	env.router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	var resp authModel.CreateSignupCodeResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.NotEmpty(t, resp.Code)
+}
+
 func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {
 	env, cleanup := setupTenantSignupIntegrationEnv(t)
 	defer cleanup()
@@ -217,7 +284,7 @@ func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {
 	assert.Equal(t, int64(resp.TenantID), usedByTenantID.Int64)
 	assert.Equal(t, int64(resp.AdminID), usedByUserID.Int64)
 	assert.Equal(t, email, usedEmail.String)
-	assert.Equal(t, int64(1), createdBy.Int64)
+	assert.Equal(t, int64(env.superadminUserID), createdBy.Int64)
 }
 
 func TestTenantSignupIntegration_RegisterWithCode_ReusedCodeReturns422(t *testing.T) {

@@ -16,8 +16,15 @@ func getGitDiff(root string, staged bool, base string) (diff string, label strin
 		args = []string{"diff", "--staged"}
 		label = "staged"
 	case base != "":
-		args = []string{"diff", base + "...HEAD"}
-		label = base + "...HEAD"
+		resolved, rerr := resolveBaseRef(root, base)
+		if rerr != nil {
+			return "", "", rerr
+		}
+		if resolved != base {
+			fmt.Fprintf(os.Stderr, "base: %q not found; using %q\n", base, resolved)
+		}
+		args = []string{"diff", resolved + "...HEAD"}
+		label = resolved + "...HEAD"
 	default:
 		args = []string{"diff", "HEAD"}
 		label = "working tree vs HEAD"
@@ -45,6 +52,72 @@ func getGitDiff(root string, staged bool, base string) (diff string, label strin
 	}
 
 	return strings.TrimSpace(out), label, nil
+}
+
+// resolveBaseRef maps -base values to an existing git revision.
+// Accepts main/master interchangeably and falls back to origin/<name>
+// or the remote default branch (origin/HEAD).
+func resolveBaseRef(root, base string) (string, error) {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return "", fmt.Errorf("empty base ref")
+	}
+
+	for _, candidate := range baseRefCandidates(base) {
+		if _, err := runGit(root, "rev-parse", "--verify", "--quiet", candidate+"^{commit}"); err == nil {
+			return candidate, nil
+		}
+	}
+
+	if sym, err := runGit(root, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"); err == nil {
+		sym = strings.TrimSpace(sym)
+		if strings.HasPrefix(sym, "refs/remotes/") {
+			return strings.TrimPrefix(sym, "refs/remotes/"), nil
+		}
+	}
+
+	return "", fmt.Errorf(
+		"unknown base ref %q (tried: %s). Tip: this repo uses master as the default branch",
+		base,
+		strings.Join(baseRefCandidates(base), ", "),
+	)
+}
+
+func baseRefCandidates(base string) []string {
+	base = strings.TrimSpace(base)
+	var out []string
+	add := func(s string) {
+		for _, existing := range out {
+			if existing == s {
+				return
+			}
+		}
+		out = append(out, s)
+	}
+
+	add(base)
+	if !strings.HasPrefix(base, "origin/") {
+		add("origin/" + base)
+	}
+
+	switch base {
+	case "main":
+		add("master")
+		add("origin/master")
+	case "master":
+		add("main")
+		add("origin/main")
+	case "origin/main":
+		add("master")
+		add("origin/master")
+		add("main")
+	case "origin/master":
+		add("main")
+		add("origin/main")
+		add("master")
+	}
+
+	return out
 }
 
 func untrackedFileDiffs(root string) (string, error) {

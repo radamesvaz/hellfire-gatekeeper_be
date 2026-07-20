@@ -52,7 +52,7 @@ func (h *SubscriptionHandler) GetSubscription(w http.ResponseWriter, r *http.Req
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
-// UpdateTenantSubscriptionInternal allows superadmin (role admin) to set subscription status and period end.
+// UpdateTenantSubscriptionInternal allows a platform superadmin to set subscription status and period end.
 // PATCH /auth/internal/tenants/{tenant_id}/subscription
 func (h *SubscriptionHandler) UpdateTenantSubscriptionInternal(w http.ResponseWriter, r *http.Request) {
 	if h.Service == nil {

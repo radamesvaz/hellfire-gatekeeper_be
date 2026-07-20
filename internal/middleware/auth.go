@@ -9,6 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 )
 
 // TenantSlugResolver resolves slug from tenant id when the route has no {tenant_slug}
@@ -68,7 +69,7 @@ func AuthMiddleware(authService auth.Service) func(http.Handler) http.Handler {
 // - tenantID:
 //   - From the "tenant_id" JWT claim when present; otherwise 1 for backwards compatibility.
 // - isSuperadmin:
-//   - Derived from the "role_id" claim (UserRoleAdmin is treated as superadmin).
+//   - Derived from the "role_id" claim (UserRoleSuperAdmin only).
 func TenantMiddleware(slugResolver TenantSlugResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,13 +81,10 @@ func TenantMiddleware(slugResolver TenantSlugResolver) func(http.Handler) http.H
 				return
 			}
 
-			// Determine if user is superadmin based on role_id claim.
+			// Determine if user is platform superadmin based on role_id claim.
 			isSuperadmin := false
 			if roleIDFloat, ok := claims["role_id"].(float64); ok {
-				// Today, role_id=1 is admin; we treat it as superadmin in the
-				// multi-tenant model.
-				const userRoleAdmin = 1
-				if uint64(roleIDFloat) == userRoleAdmin {
+				if uint64(roleIDFloat) == uint64(uModel.UserRoleSuperAdmin) {
 					isSuperadmin = true
 				}
 			}

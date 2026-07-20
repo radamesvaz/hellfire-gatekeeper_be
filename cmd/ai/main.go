@@ -111,6 +111,13 @@ func runReview(args []string) error {
 		return err
 	}
 
+	allowed := extractDiffPaths(diff)
+	cleaned, dropped := sanitizeReview(review, allowed)
+	if dropped > 0 {
+		fmt.Fprintf(os.Stderr, "sanitize: dropped %d finding(s) citing paths outside the diff\n", dropped)
+		review = cleaned
+	}
+
 	fmt.Println(review)
 
 	if *save {

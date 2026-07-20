@@ -26,12 +26,27 @@ func buildReviewPrompt(root, diff string) (reviewPrompt, error) {
 		return reviewPrompt{}, err
 	}
 
+	allowed := extractDiffPaths(diff)
+
 	var user strings.Builder
 	user.WriteString("# PROJECT GUIDELINES\n\n")
 	user.WriteString(strings.TrimSpace(architecture))
 	user.WriteString("\n\n")
 	user.WriteString(strings.TrimSpace(checklist))
 	user.WriteString("\n\n")
+	user.WriteString("# ALLOWED PATHS\n\n")
+	user.WriteString("You may cite ONLY these paths (from the git diff).\n")
+	user.WriteString("If a finding is not about one of these paths, do not report it.\n\n")
+	if len(allowed) == 0 {
+		user.WriteString("- (none extracted — report Findings as `- none`)\n")
+	} else {
+		for _, p := range allowed {
+			user.WriteString("- ")
+			user.WriteString(p)
+			user.WriteByte('\n')
+		}
+	}
+	user.WriteString("\n")
 	user.WriteString("# GIT DIFF TO REVIEW\n\n")
 	user.WriteString("```diff\n")
 	user.WriteString(diff)
@@ -40,7 +55,9 @@ func buildReviewPrompt(root, diff string) (reviewPrompt, error) {
 	}
 	user.WriteString("```\n\n")
 	user.WriteString("# TASK\n")
-	user.WriteString("Review the git diff against the guidelines above.\n\n")
+	user.WriteString("Review the git diff against the guidelines above.\n")
+	user.WriteString("Only flag issues with clear evidence in the diff.\n")
+	user.WriteString("Do not invent files, tools, or generic security TODOs.\n\n")
 	user.WriteString("Severity:\n")
 	user.WriteString("- BLOCK = clear architecture/security/data violation\n")
 	user.WriteString("- WARN = likely issue or missing tests/migrations\n")
@@ -56,7 +73,7 @@ func buildReviewPrompt(root, diff string) (reviewPrompt, error) {
 	user.WriteString("or\n")
 	user.WriteString("- none\n\n")
 	user.WriteString("## Cursor action list\n")
-	user.WriteString("1. ...\n")
+	user.WriteString("1. Concrete fix for a finding above (must reference an ALLOWED PATH)\n")
 	user.WriteString("or\n")
 	user.WriteString("none\n\n")
 	user.WriteString("Begin now with ## Verdict\n")

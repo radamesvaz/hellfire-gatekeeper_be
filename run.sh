@@ -181,36 +181,56 @@ reset() {
 #
 #   ./run.sh review
 #     Diff: working tree vs HEAD + untracked (new files not yet git-added).
-#     Calls Ollama and saves under .ai/reviews/ (default -save when no flags).
+#     Calls Ollama and saves under .ai/reviews/.
 #     Use when: "review what I have dirty on disk right now".
 #
 #   ./run.sh review -staged
 #     Diff: only the git index (git diff --staged).
-#     Ignores unstaged and untracked changes.
+#     Ignores unstaged and untracked changes. Saves under .ai/reviews/.
 #     Use when: "review what I'm about to commit".
 #
-#   ./run.sh review -base main
-#     Diff: main...HEAD (commits on your branch vs main).
-#     Ignores a dirty working tree; looks at branch history.
-#     Use when: "review the PR / whole feature vs main".
+#   ./run.sh review -base master
+#     Diff: master...HEAD (commits on your branch vs the default branch).
+#     -base main also works: it resolves to master when main does not exist.
+#     Ignores a dirty working tree; looks at branch history. Saves under .ai/reviews/.
+#     Use when: "review the PR / whole feature vs master".
 #     Mutually exclusive with -staged.
 #
 #   ./run.sh review -dry-run
 #     Does NOT call Ollama. Prints the assembled prompt (guidelines + diff).
+#     Does NOT save a review file.
 #     Use when: debugging prompt size/content without spending model time.
-#     Combinable, e.g. ./run.sh review -base main -dry-run
+#     Combinable, e.g. ./run.sh review -base master -dry-run
 #
 # Other useful flags (forwarded to cmd/ai):
 #   -model NAME   override model (default qwen3:8b, or OLLAMA_MODEL)
 #   -host URL     Ollama base URL (default http://localhost:11434)
-#   -save         write review under .ai/reviews/
+#   -save         write review under .ai/reviews/ (already default via run.sh)
+#
+# Via ./run.sh, reviews are saved under .ai/reviews/ by default for all modes
+# except -dry-run. Pass flags as usual; -save is added automatically when missing.
 review() {
   echo -e "${YELLOW}🔍 Running local architecture review (Ollama)...${NC}"
-  if [ "$#" -eq 0 ]; then
-    go run ./cmd/ai review -save
-  else
-    go run ./cmd/ai review "$@"
+
+  args=("$@")
+  wants_save=true
+  for arg in "${args[@]}"; do
+    case "$arg" in
+      -dry-run)
+        wants_save=false
+        break
+        ;;
+      -save)
+        wants_save=false
+        break
+        ;;
+    esac
+  done
+  if [ "$wants_save" = true ]; then
+    args+=(-save)
   fi
+
+  go run ./cmd/ai review "${args[@]}"
 }
 
 case "$1" in

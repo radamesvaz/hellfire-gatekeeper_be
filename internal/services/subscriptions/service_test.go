@@ -9,6 +9,7 @@ import (
 	tenantRepo "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
 	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -98,17 +99,23 @@ func TestService_ProcessTransitions_ReturnsCounts(t *testing.T) {
 	assert.Equal(t, 7, repo.lastGraceDays)
 }
 
-func TestService_AdminUpdateSubscription_ForbiddenForNonAdmin(t *testing.T) {
+func TestService_AdminUpdateSubscription_ForbiddenForNonSuperAdmin(t *testing.T) {
 	svc := NewService(&fakeRepo{}, 5)
-	_, err := svc.AdminUpdateSubscription(
-		context.Background(),
-		2,
-		10,
-		authModel.UpdateTenantSubscriptionRequest{SubscriptionStatus: "active"},
-		time.Now().UTC(),
-	)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrForbidden)
+
+	for _, roleID := range []uint64{
+		uint64(uModel.UserRoleAdmin),
+		uint64(uModel.UserRoleClient),
+	} {
+		_, err := svc.AdminUpdateSubscription(
+			context.Background(),
+			roleID,
+			10,
+			authModel.UpdateTenantSubscriptionRequest{SubscriptionStatus: "active"},
+			time.Now().UTC(),
+		)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrForbidden)
+	}
 }
 
 func TestService_AdminUpdateSubscription_ActiveSetsDefault30DayPeriod(t *testing.T) {
@@ -120,7 +127,7 @@ func TestService_AdminUpdateSubscription_ActiveSetsDefault30DayPeriod(t *testing
 
 	resp, err := svc.AdminUpdateSubscription(
 		context.Background(),
-		1,
+		uint64(uModel.UserRoleSuperAdmin),
 		10,
 		authModel.UpdateTenantSubscriptionRequest{SubscriptionStatus: "active"},
 		now,

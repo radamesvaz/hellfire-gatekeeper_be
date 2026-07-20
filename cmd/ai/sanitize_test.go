@@ -41,8 +41,9 @@ Critical issues found.
 - [NOTE] ci/ci.yml — Missing Clair — Security scan — Configure Clair
 
 ## Cursor action list
-1. Implement parameterized queries
-2. Define role enum
+1. Implement parameterized queries in api/user_data.go
+2. Define role enum in model/users/user.go
+3. Configure Clair in ci/ci.yml
 `
 
 	cleaned, dropped := sanitizeReview(review, []string{"model/users/user.go"})
@@ -51,6 +52,34 @@ Critical issues found.
 	assert.Contains(t, cleaned, "- [WARN] model/users/user.go")
 	assert.NotContains(t, cleaned, "api/user_data.go")
 	assert.NotContains(t, cleaned, "ci/ci.yml")
+	assert.Contains(t, cleaned, "## Cursor action list\n1. Define role enum in model/users/user.go")
+	assert.NotContains(t, cleaned, "Implement parameterized queries")
+	assert.NotContains(t, cleaned, "Configure Clair")
+}
+
+func TestSanitizeReview_PartialDropClearsActionsWithoutAllowedPaths(t *testing.T) {
+	review := `## Verdict
+BLOCK
+
+## Summary
+Critical issues found.
+
+## Findings
+- [BLOCK] api/user_data.go — SQL injection — Security — Use parameterized queries
+- [WARN] model/users/user.go — Role stored as string — Use enum — Define role enum
+
+## Cursor action list
+1. Implement parameterized queries
+2. Define role enum
+`
+
+	cleaned, dropped := sanitizeReview(review, []string{"model/users/user.go"})
+	require.Equal(t, 1, dropped)
+	assert.Contains(t, cleaned, "- [WARN] model/users/user.go")
+	assert.Contains(t, cleaned, "## Cursor action list\nnone")
+	assert.NotContains(t, cleaned, "Implement parameterized queries")
+	assert.NotContains(t, cleaned, "1. Define role enum")
+	assert.NotContains(t, cleaned, "2. Define role enum")
 }
 
 func TestSanitizeReview_AllHallucinatedBecomesNone(t *testing.T) {

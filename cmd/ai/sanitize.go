@@ -11,6 +11,7 @@ var findingLineRe = regexp.MustCompile(`(?i)^-\s*\[(BLOCK|WARN|NOTE)\]\s+([^\sâ€
 
 // sanitizeReview drops findings that cite paths outside the diff allowlist.
 // If nothing valid remains, Findings become "- none", action list "none", and Verdict "OK".
+// When some findings remain, the action list is filtered to entries that mention an allowed path.
 // Returns the cleaned review and how many finding lines were dropped.
 func sanitizeReview(review string, allowedPaths []string) (string, int) {
 	original := review
@@ -62,6 +63,9 @@ func sanitizeReview(review string, allowedPaths []string) (string, int) {
 		sections[findingsIdx].Body = strings.Join(kept, "\n") + "\n"
 		if verdictIdx >= 0 {
 			sections[verdictIdx].Body = verdictFromFindings(kept) + "\n"
+		}
+		if actionsIdx >= 0 {
+			sections[actionsIdx].Body = filterActionLines(sections[actionsIdx].Body, allowed)
 		}
 	}
 
@@ -143,6 +147,63 @@ func verdictFromFindings(lines []string) string {
 		}
 	}
 	return verdict
+}
+
+// filterActionLines keeps action items that mention an allowed path, renumbers them,
+// and returns "none" when nothing valid remains.
+func filterActionLines(body string, allowed map[string]struct{}) string {
+	var kept []string
+	for _, line := range strings.Split(body, "\n") {
+		trim := strings.TrimSpace(line)
+		if trim == "" || strings.EqualFold(trim, "none") {
+			continue
+		}
+		if actionMentionsAllowedPath(trim, allowed) {
+			kept = append(kept, trim)
+		}
+	}
+	if len(kept) == 0 {
+		return "none\n"
+	}
+	out := make([]string, 0, len(kept))
+	for i, line := range kept {
+		out = append(out, renumberActionLine(line, i+1))
+	}
+	return strings.Join(out, "\n") + "\n"
+}
+
+func actionMentionsAllowedPath(line string, allowed map[string]struct{}) bool {
+	slashLine := filepathToSlash(line)
+	for p := range allowed {
+		if p != "" && strings.Contains(slashLine, p) {
+			return true
+		}
+	}
+	for p := range allowed {
+		base := pathBasename(p)
+		if base == "" || base == p {
+			continue
+		}
+		if strings.Contains(slashLine, base) && pathAllowed(base, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+var leadingActionNumRe = regexp.MustCompile(`^\d+\.\s*`)
+
+func renumberActionLine(line string, n int) string {
+	rest := leadingActionNumRe.ReplaceAllString(line, "")
+	return fmt.Sprintf("%d. %s", n, rest)
+}
+
+func pathBasename(p string) string {
+	p = filepathToSlash(p)
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
 }
 
 type mdSection struct {

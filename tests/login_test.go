@@ -101,3 +101,63 @@ func TestLogin_SoftDeletedUserCannotLogin(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rr.Code)
 	assert.Contains(t, rr.Body.String(), "User not found")
 }
+
+func TestLogin_CanceledTenant_BlocksAdmin(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, `
+		UPDATE tenants SET subscription_status = 'canceled' WHERE id = 1`)
+	require.NoError(t, err)
+
+	handler := auth.LoginHandler{
+		UserRepo:    user.UserRepository{DB: db},
+		TenantRepo:  &tenantRepository.Repository{DB: db},
+		AuthService: authService.New("testingsecret", 60),
+	}
+	router := mux.NewRouter()
+	router.HandleFunc("/login", handler.Login).Methods("POST")
+
+	req := httptest.NewRequest("POST", "/login", strings.NewReader(`{
+		"email": "admin@example.com",
+		"password": "adminpass"
+	}`))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Tenant subscription is canceled")
+}
+
+func TestLogin_CanceledTenant_AllowsSuperAdmin(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, `
+		UPDATE tenants SET subscription_status = 'canceled' WHERE id = 1`)
+	require.NoError(t, err)
+
+	handler := auth.LoginHandler{
+		UserRepo:    user.UserRepository{DB: db},
+		TenantRepo:  &tenantRepository.Repository{DB: db},
+		AuthService: authService.New("testingsecret", 60),
+	}
+	router := mux.NewRouter()
+	router.HandleFunc("/login", handler.Login).Methods("POST")
+
+	req := httptest.NewRequest("POST", "/login", strings.NewReader(`{
+		"email": "superadmin@example.com",
+		"password": "adminpass"
+	}`))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var loginBody auth.LoginResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &loginBody))
+	assert.NotEmpty(t, loginBody.Token)
+}

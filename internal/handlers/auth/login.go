@@ -82,7 +82,11 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if lh.TenantRepo != nil {
+	idRole := uModel.UserRole(user.IDRole)
+
+	// Platform superadmin may log in even when the home tenant is canceled,
+	// so internal APIs can still issue JWTs to reactivate subscriptions.
+	if lh.TenantRepo != nil && idRole != uModel.UserRoleSuperAdmin {
 		snapshot, snapErr := lh.TenantRepo.GetSubscriptionSnapshot(r.Context(), tenantID)
 		if snapErr != nil {
 			http.Error(w, "Could not verify tenant subscription", http.StatusInternalServerError)
@@ -93,8 +97,6 @@ func (lh *LoginHandler) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	idRole := uModel.UserRole(user.IDRole)
 	resolvedTenantID := user.TenantID
 	token, err := lh.AuthService.GenerateJWT(user.ID, idRole, user.Email, &resolvedTenantID)
 	if err != nil {

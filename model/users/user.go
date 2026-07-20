@@ -7,8 +7,9 @@ import (
 type UserRole uint64
 
 const (
-	UserRoleAdmin  UserRole = 1
-	UserRoleClient UserRole = 2
+	UserRoleAdmin      UserRole = 1
+	UserRoleClient     UserRole = 2
+	UserRoleSuperAdmin UserRole = 3
 )
 
 type User struct {

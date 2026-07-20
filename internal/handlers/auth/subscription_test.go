@@ -15,6 +15,7 @@ import (
 	subscriptionService "github.com/radamesvaz/bakery-app/internal/services/subscriptions"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
 	tenantModel "github.com/radamesvaz/bakery-app/model/tenant"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -94,7 +95,7 @@ func TestSubscriptionHandler_UpdateTenantSubscriptionInternal_Success(t *testing
 	req = mux.SetURLVars(req, map[string]string{"tenant_id": "2"})
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
 		"user_id": float64(1),
-		"role_id": float64(1),
+		"role_id": float64(uModel.UserRoleSuperAdmin),
 	})
 	req = req.WithContext(ctx)
 
@@ -119,7 +120,7 @@ func TestSubscriptionHandler_UpdateTenantSubscriptionInternal_Forbidden(t *testi
 	req = mux.SetURLVars(req, map[string]string{"tenant_id": "2"})
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
 		"user_id": float64(2),
-		"role_id": float64(2),
+		"role_id": float64(uModel.UserRoleAdmin),
 	})
 	req = req.WithContext(ctx)
 

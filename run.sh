@@ -174,6 +174,65 @@ reset() {
   echo "✅ Project is up and running!"
 }
 
+# Local architecture review via Ollama (default model: qwen3:8b).
+# Requires Ollama running locally (http://localhost:11434).
+#
+# What each mode reviews (and whether Ollama is called):
+#
+#   ./run.sh review
+#     Diff: working tree vs HEAD + untracked (new files not yet git-added).
+#     Calls Ollama and saves under .ai/reviews/.
+#     Use when: "review what I have dirty on disk right now".
+#
+#   ./run.sh review -staged
+#     Diff: only the git index (git diff --staged).
+#     Ignores unstaged and untracked changes. Saves under .ai/reviews/.
+#     Use when: "review what I'm about to commit".
+#
+#   ./run.sh review -base master
+#     Diff: master...HEAD (commits on your branch vs the default branch).
+#     -base main also works: it resolves to master when main does not exist.
+#     Ignores a dirty working tree; looks at branch history. Saves under .ai/reviews/.
+#     Use when: "review the PR / whole feature vs master".
+#     Mutually exclusive with -staged.
+#
+#   ./run.sh review -dry-run
+#     Does NOT call Ollama. Prints the assembled prompt (guidelines + diff).
+#     Does NOT save a review file.
+#     Use when: debugging prompt size/content without spending model time.
+#     Combinable, e.g. ./run.sh review -base master -dry-run
+#
+# Other useful flags (forwarded to cmd/ai):
+#   -model NAME   override model (default qwen3:8b, or OLLAMA_MODEL)
+#   -host URL     Ollama base URL (default http://localhost:11434)
+#   -save         write review under .ai/reviews/ (already default via run.sh)
+#
+# Via ./run.sh, reviews are saved under .ai/reviews/ by default for all modes
+# except -dry-run. Pass flags as usual; -save is added automatically when missing.
+review() {
+  echo -e "${YELLOW}🔍 Running local architecture review (Ollama)...${NC}"
+
+  args=("$@")
+  wants_save=true
+  for arg in "${args[@]}"; do
+    case "$arg" in
+      -dry-run)
+        wants_save=false
+        break
+        ;;
+      -save)
+        wants_save=false
+        break
+        ;;
+    esac
+  done
+  if [ "$wants_save" = true ]; then
+    args+=(-save)
+  fi
+
+  go run ./cmd/ai review "${args[@]}"
+}
+
 case "$1" in
   unit)
     unit
@@ -205,6 +264,10 @@ case "$1" in
   reset)
     reset
     ;;
+  review)
+    shift
+    review "$@"
+    ;;
   *)
     echo -e "${RED}⚠️  Command not recognized: $1${NC}"
     echo -e "${YELLOW}👉 Available commands:${NC}"
@@ -218,5 +281,6 @@ case "$1" in
     echo -e "${YELLOW}   integration - Run integration tests${NC}"
     echo -e "${YELLOW}   tests      - Run all tests${NC}"
     echo -e "${YELLOW}   reset      - Reset project (full rebuild)${NC}"
+    echo -e "${YELLOW}   review     - Local architecture review with Ollama (saves under .ai/reviews/)${NC}"
     ;;
 esac

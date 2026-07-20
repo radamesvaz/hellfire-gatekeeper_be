@@ -26,3 +26,7 @@ go.work.sum
 
 markdowns/
 .gopath/
+
+# Local AI review outputs (keep the folder)
+.ai/reviews/*.md
+!.ai/reviews/.gitkeep

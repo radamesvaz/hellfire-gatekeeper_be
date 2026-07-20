@@ -83,7 +83,7 @@ func (s *Service) GetSubscriptionForTenant(ctx context.Context, tenantID uint64,
 	return response, nil
 }
 
-// AdminUpdateSubscription allows a superadmin (role admin) to change subscription status and period end.
+// AdminUpdateSubscription allows a platform superadmin to change subscription status and period end.
 func (s *Service) AdminUpdateSubscription(
 	ctx context.Context,
 	roleID uint64,
@@ -91,7 +91,7 @@ func (s *Service) AdminUpdateSubscription(
 	req authModel.UpdateTenantSubscriptionRequest,
 	now time.Time,
 ) (authModel.UpdateTenantSubscriptionResponse, error) {
-	if roleID != uint64(uModel.UserRoleAdmin) {
+	if roleID != uint64(uModel.UserRoleSuperAdmin) {
 		return authModel.UpdateTenantSubscriptionResponse{}, ErrForbidden
 	}
 

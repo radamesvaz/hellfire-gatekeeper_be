@@ -9,6 +9,10 @@ SET password_hash = '$2a$10$Ued/UmuZslCPE.c.iRdFEON7jicWeAlBBM3vjLrcktSg778XHtvQ
 WHERE id_role = (SELECT id_role FROM roles WHERE name = 'admin');
 
 UPDATE users
+SET password_hash = '$2a$10$Ued/UmuZslCPE.c.iRdFEON7jicWeAlBBM3vjLrcktSg778XHtvQW'
+WHERE id_role = (SELECT id_role FROM roles WHERE name = 'superadmin');
+
+UPDATE users
 SET password_hash = '$2a$10$VdS6bqypHg1a5ZJjKOovjuo4KRwMMegIJ11MZCDYLB/fufAY9OPh6'
 WHERE id_role = (SELECT id_role FROM roles WHERE name = 'client');
 

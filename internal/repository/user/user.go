@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"database/sql"
+	"strings"
 
 	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/logger"
@@ -18,7 +19,8 @@ func NewUserRepository(db *sql.DB) Repository {
 }
 
 func (r *UserRepository) GetUserByEmail(tenantID uint64, email string) (uModel.User, error) {
-	logger.Debug().Uint64("tenant_id", tenantID).Str("email", email).Msg("Getting user by email")
+	maskedEmail := maskEmail(email)
+	logger.Debug().Uint64("tenant_id", tenantID).Str("email", maskedEmail).Msg("Getting user by email")
 
 	user := uModel.User{}
 
@@ -39,21 +41,22 @@ func (r *UserRepository) GetUserByEmail(tenantID uint64, email string) (uModel.U
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logger.Debug().Str("email", email).Msg("User not found")
+			logger.Debug().Str("email", maskedEmail).Msg("User not found")
 			return user, errors.ErrUserNotFound
 		} else {
-			logger.Err(err).Str("email", email).Msg("Could not get the user")
+			logger.Err(err).Str("email", maskedEmail).Msg("Could not get the user")
 			return user, errors.ErrUserNotFound
 		}
 	}
 
-	logger.Debug().Uint64("user_id", user.ID).Str("email", email).Msg("User retrieved successfully")
+	logger.Debug().Uint64("user_id", user.ID).Str("email", maskedEmail).Msg("User retrieved successfully")
 	return user, nil
 }
 
 // GetUserByTenantAndEmail returns a user by tenant and email, including soft-deleted rows.
 func (r *UserRepository) GetUserByTenantAndEmail(tenantID uint64, email string) (uModel.User, error) {
-	logger.Debug().Uint64("tenant_id", tenantID).Str("email", email).Msg("Getting user by tenant and email (any status)")
+	maskedEmail := maskEmail(email)
+	logger.Debug().Uint64("tenant_id", tenantID).Str("email", maskedEmail).Msg("Getting user by tenant and email (any status)")
 
 	user := uModel.User{}
 	err := r.DB.QueryRow(
@@ -77,15 +80,16 @@ func (r *UserRepository) GetUserByTenantAndEmail(tenantID uint64, email string) 
 		if err == sql.ErrNoRows {
 			return user, errors.ErrUserNotFound
 		}
-		logger.Err(err).Str("email", email).Msg("Could not get user by tenant and email")
+		logger.Err(err).Str("email", maskedEmail).Msg("Could not get user by tenant and email")
 		return user, errors.ErrUserNotFound
 	}
 	return user, nil
 }
 
 func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserRequest) (id uint64, err error) {
+	maskedEmail := maskEmail(user.Email)
 	logger.Debug().
-		Str("email", user.Email).
+		Str("email", maskedEmail).
 		Str("name", user.Name).
 		Uint64("role_id", uint64(user.IDRole)).
 		Msg("Creating user")
@@ -106,14 +110,14 @@ func (r *UserRepository) CreateUser(ctx context.Context, user uModel.CreateUserR
 
 	if err != nil {
 		logger.Err(err).
-			Str("email", user.Email).
+			Str("email", maskedEmail).
 			Msg("Error creating the user")
 		return 0, errors.NewInternalServerError(errors.ErrCreatingUser)
 	}
 
 	logger.Info().
 		Uint64("user_id", insertedID).
-		Str("email", user.Email).
+		Str("email", maskedEmail).
 		Msg("User created successfully")
 	return insertedID, nil
 }
@@ -153,7 +157,8 @@ func (r *UserRepository) ReactivateUser(ctx context.Context, tenantID, userID ui
 
 // EmailExists checks if an email already exists in the database for the given tenant.
 func (r *UserRepository) EmailExists(tenantID uint64, email string) (bool, error) {
-	logger.Debug().Uint64("tenant_id", tenantID).Str("email", email).Msg("Checking if email exists")
+	maskedEmail := maskEmail(email)
+	logger.Debug().Uint64("tenant_id", tenantID).Str("email", maskedEmail).Msg("Checking if email exists")
 
 	var count int
 	err := r.DB.QueryRow(
@@ -163,13 +168,13 @@ func (r *UserRepository) EmailExists(tenantID uint64, email string) (bool, error
 	).Scan(&count)
 
 	if err != nil {
-		logger.Err(err).Str("email", email).Msg("Error checking email existence")
+		logger.Err(err).Str("email", maskedEmail).Msg("Error checking email existence")
 		return false, errors.NewInternalServerError(errors.ErrCouldNotGetTheUser)
 	}
 
 	exists := count > 0
 	logger.Debug().
-		Str("email", email).
+		Str("email", maskedEmail).
 		Bool("exists", exists).
 		Msg("Email existence checked")
 	return exists, nil
@@ -190,4 +195,24 @@ func (r *UserRepository) UpdatePasswordHash(ctx context.Context, tenantID uint64
 		return errors.NewInternalServerError(errors.ErrDatabaseOperation)
 	}
 	return nil
+}
+
+func maskEmail(email string) string {
+	e := strings.TrimSpace(email)
+	if e == "" {
+		return ""
+	}
+	parts := strings.SplitN(e, "@", 2)
+	if len(parts) != 2 {
+		if len(e) <= 2 {
+			return "**"
+		}
+		return e[:1] + "***"
+	}
+	local := parts[0]
+	domain := parts[1]
+	if local == "" {
+		return "***@" + domain
+	}
+	return local[:1] + "***@" + domain
 }

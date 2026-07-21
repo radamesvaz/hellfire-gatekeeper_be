@@ -93,7 +93,10 @@ func (h *TenantSignupHandler) RegisterTenantWithCode(w http.ResponseWriter, r *h
 	}
 	tenantSlug := strings.TrimSpace(strings.ToLower(req.TenantSlug))
 	if tenantSlug == "" {
-		http.Error(w, "Tenant slug is required", http.StatusBadRequest)
+		tenantSlug = tenantSignupService.SlugifyTenantName(tenantName)
+	}
+	if tenantSlug == "" {
+		http.Error(w, "Could not derive tenant slug from tenant name", http.StatusBadRequest)
 		return
 	}
 	if strings.TrimSpace(req.AdminName) == "" {
@@ -122,7 +125,11 @@ func (h *TenantSignupHandler) RegisterTenantWithCode(w http.ResponseWriter, r *h
 			http.Error(w, "Invalid or unavailable one-time code", http.StatusUnprocessableEntity)
 			return
 		case errors.Is(err, tenantSignupService.ErrTenantSlugExists):
-			http.Error(w, "Tenant slug already exists", http.StatusConflict)
+			// Exhausted auto-suffix attempts; rare. Ask for a different business name.
+			http.Error(w, "Business name is not available, please choose another", http.StatusConflict)
+			return
+		case errors.Is(err, tenantSignupService.ErrInvalidTenantSlug):
+			http.Error(w, "Could not derive tenant slug from tenant name", http.StatusBadRequest)
 			return
 		case errors.Is(err, tenantSignupService.ErrAdminEmailExists):
 			http.Error(w, "Admin email already exists in tenant", http.StatusConflict)

@@ -362,7 +362,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithUnknownOTC_Returns422(t 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_Returns409(t *testing.T) {
+func TestTenantSignupHandler_RegisterTenantWithCode_WithoutSlug_DerivesFromName(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
@@ -370,6 +370,59 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_Returns409
 	svc := &tenantSignupService.TenantSignupService{
 		Repo:        &tenantSignupRepo.Repository{DB: db},
 		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
+	}
+	handler := &TenantSignupHandler{Service: svc}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id, expires_at, used_at, revoked_at`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "expires_at", "used_at", "revoked_at"}).
+			AddRow(uint64(5), time.Now().UTC().Add(2*time.Hour), nil, nil))
+	mock.ExpectQuery(`INSERT INTO tenants`).
+		WithArgs("Acme Bakery", "acme-bakery").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(10)))
+	mock.ExpectQuery(`INSERT INTO users`).
+		WithArgs(uint64(10), 1, "Owner Admin", "owner@acme.com", "555-0101", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id_user"}).AddRow(uint64(100)))
+	mock.ExpectExec(`UPDATE tenant_signup_codes`).
+		WithArgs(uint64(5), uint64(10), uint64(100), "owner@acme.com").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	body := bytes.NewBufferString(`{
+		"tenant_name":"Acme Bakery",
+		"admin_name":"Owner Admin",
+		"email":"owner@acme.com",
+		"phone":"555-0101",
+		"password":"StrongPass123!",
+		"one_time_code":"ABCD1234-EFGH5678"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/public/tenant-register", body)
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	handler.RegisterTenantWithCode(rr, req)
+
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	var resp authModel.PublicTenantRegisterResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "acme-bakery", resp.TenantSlug)
+	assert.Equal(t, "Acme Bakery", resp.TenantName)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_AutoSuffixes(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	svc := &tenantSignupService.TenantSignupService{
+		Repo:        &tenantSignupRepo.Repository{DB: db},
+		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
 	}
 	handler := &TenantSignupHandler{Service: svc}
 
@@ -383,6 +436,22 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_Returns409
 		WillReturnError(&pq.Error{Code: "23505"})
 	mock.ExpectRollback()
 
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id, expires_at, used_at, revoked_at`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "expires_at", "used_at", "revoked_at"}).
+			AddRow(uint64(5), time.Now().UTC().Add(2*time.Hour), nil, nil))
+	mock.ExpectQuery(`INSERT INTO tenants`).
+		WithArgs("Acme Bakery", "acme-2").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(10)))
+	mock.ExpectQuery(`INSERT INTO users`).
+		WithArgs(uint64(10), 1, "Owner Admin", "owner@acme.com", "555-0101", sqlmock.AnyArg()).
+		WillReturnRows(sqlmock.NewRows([]string{"id_user"}).AddRow(uint64(100)))
+	mock.ExpectExec(`UPDATE tenant_signup_codes`).
+		WithArgs(uint64(5), uint64(10), uint64(100), "owner@acme.com").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
 	req := httptest.NewRequest(http.MethodPost, "/public/tenant-register",
 		bytes.NewBufferString(validRegisterBody("ABCD1234-EFGH5678")))
 	req.Header.Set("Content-Type", "application/json")
@@ -390,8 +459,10 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_Returns409
 
 	handler.RegisterTenantWithCode(rr, req)
 
-	assert.Equal(t, http.StatusConflict, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "Tenant slug already exists")
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	var resp authModel.PublicTenantRegisterResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "acme-2", resp.TenantSlug)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

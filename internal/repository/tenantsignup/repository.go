@@ -37,22 +37,44 @@ type RegisterTenantWithCodeResult struct {
 	AdminID  uint64
 }
 
-func (r *Repository) CreateSignupCode(ctx context.Context, codeHash string, expiresAt time.Time, createdByUserID uint64, notes string) (uint64, error) {
+func (r *Repository) CreateSignupCode(
+	ctx context.Context,
+	codeHash string,
+	expiresAt time.Time,
+	createdByUserID uint64,
+	recipientEmail string,
+	notes string,
+) (uint64, error) {
 	var id uint64
 	err := r.DB.QueryRowContext(
 		ctx,
-		`INSERT INTO tenant_signup_codes (code_hash, expires_at, created_by_user_id, notes)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO tenant_signup_codes (code_hash, expires_at, created_by_user_id, recipient_email, notes)
+		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id`,
 		codeHash,
 		expiresAt,
 		createdByUserID,
+		strings.TrimSpace(strings.ToLower(recipientEmail)),
 		strings.TrimSpace(notes),
 	).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("create signup code: %w", err)
 	}
 	return id, nil
+}
+
+func (r *Repository) RevokeSignupCode(ctx context.Context, id uint64) error {
+	_, err := r.DB.ExecContext(
+		ctx,
+		`UPDATE tenant_signup_codes
+		 SET revoked_at = NOW(), updated_on = NOW()
+		 WHERE id = $1 AND revoked_at IS NULL AND used_at IS NULL`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("revoke signup code: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) RegisterTenantWithCode(

@@ -340,6 +340,8 @@ func main() {
 	tenantSignupSvc := &tenantSignupService.TenantSignupService{
 		Repo:        tenantSignupRepo,
 		AuthService: authSvc,
+		EmailSender: resolveEmailSender(),
+		AppBaseURL:  strings.TrimSpace(os.Getenv("APP_BASE_URL")),
 	}
 	tenantSignupHandler := &auth.TenantSignupHandler{
 		Service: tenantSignupSvc,
@@ -663,9 +665,9 @@ func parseBoolWithDefault(value string, defaultValue bool) bool {
 }
 
 func resolveEmailSender() emailService.Sender {
-	apiKey := strings.TrimSpace(os.Getenv("BREVO_API_KEY"))
-	fromEmail := strings.TrimSpace(os.Getenv("BREVO_FROM_EMAIL"))
-	fromName := strings.TrimSpace(os.Getenv("BREVO_FROM_NAME"))
+	apiKey := stripEnvQuotes(strings.TrimSpace(os.Getenv("BREVO_API_KEY")))
+	fromEmail := stripEnvQuotes(strings.TrimSpace(os.Getenv("BREVO_FROM_EMAIL")))
+	fromName := stripEnvQuotes(strings.TrimSpace(os.Getenv("BREVO_FROM_NAME")))
 
 	if apiKey == "" || fromEmail == "" {
 		logger.Warn().Msg("Brevo sender not configured, using noop email sender")
@@ -674,6 +676,19 @@ func resolveEmailSender() emailService.Sender {
 	if fromName == "" {
 		fromName = "Hellfire Gatekeeper"
 	}
-	logger.Info().Msg("Brevo setup successfully")
+	logger.Info().
+		Int("brevo_api_key_len", len(apiKey)).
+		Bool("brevo_api_key_looks_valid", strings.HasPrefix(apiKey, "xkeysib-")).
+		Str("brevo_from_email", fromEmail).
+		Msg("Brevo setup successfully")
 	return emailService.NewBrevoSender(apiKey, fromEmail, fromName)
+}
+
+func stripEnvQuotes(v string) string {
+	if len(v) >= 2 {
+		if (v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'') {
+			return v[1 : len(v)-1]
+		}
+	}
+	return v
 }

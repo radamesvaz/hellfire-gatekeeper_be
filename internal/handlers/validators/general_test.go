@@ -85,6 +85,11 @@ func TestIsValidEmail(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "HAPPY PATH: gmail plus alias",
+			email:    "vazradames+testsignup1@gmail.com",
+			expected: true,
+		},
+		{
 			name:     "ERROR PATH: invalid email format",
 			email:    "invalid-email",
 			expected: false,

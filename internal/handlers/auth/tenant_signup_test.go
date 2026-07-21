@@ -16,6 +16,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	tenantSignupRepo "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	"github.com/radamesvaz/bakery-app/internal/services/email"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
@@ -31,14 +32,16 @@ func TestTenantSignupHandler_CreateSignupCode_Success(t *testing.T) {
 	svc := &tenantSignupService.TenantSignupService{
 		Repo:        &tenantSignupRepo.Repository{DB: db},
 		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
 	}
 	handler := &TenantSignupHandler{Service: svc}
 
 	mock.ExpectQuery(`INSERT INTO tenant_signup_codes`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(99), "manual request").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(99), "ana@panaderia.com", "manual request").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(7)))
 
-	body := bytes.NewBufferString(`{"expires_in_minutes":120,"notes":"manual request"}`)
+	body := bytes.NewBufferString(`{"email":"ana@panaderia.com","expires_in_minutes":120,"notes":"manual request"}`)
 	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", body)
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
@@ -55,18 +58,47 @@ func TestTenantSignupHandler_CreateSignupCode_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Equal(t, uint64(7), resp.ID)
 	assert.NotEmpty(t, resp.Code)
+	assert.Equal(t, "ana@panaderia.com", resp.Email)
+	assert.Equal(t, "Signup code sent successfully", resp.Message)
 	assert.True(t, resp.ExpiresAt.After(time.Now().UTC().Add(100*time.Minute)))
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTenantSignupHandler_CreateSignupCode_MissingEmail(t *testing.T) {
+	svc := &tenantSignupService.TenantSignupService{
+		Repo:        &tenantSignupRepo.Repository{DB: nil},
+		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
+	}
+	handler := &TenantSignupHandler{Service: svc}
+
+	body := bytes.NewBufferString(`{"expires_in_minutes":120}`)
+	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", body)
+	req.Header.Set("Content-Type", "application/json")
+	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
+		"user_id": float64(99),
+		"role_id": float64(uModel.UserRoleSuperAdmin),
+	})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.CreateSignupCode(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Invalid Email")
 }
 
 func TestTenantSignupHandler_CreateSignupCode_ForbiddenForTenantAdmin(t *testing.T) {
 	svc := &tenantSignupService.TenantSignupService{
 		Repo:        &tenantSignupRepo.Repository{DB: nil},
 		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
 	}
 	handler := &TenantSignupHandler{Service: svc}
 
-	body := bytes.NewBufferString(`{"expires_in_minutes":120,"notes":"should be forbidden"}`)
+	body := bytes.NewBufferString(`{"email":"ana@panaderia.com","expires_in_minutes":120,"notes":"should be forbidden"}`)
 	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", body)
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
@@ -86,10 +118,12 @@ func TestTenantSignupHandler_CreateSignupCode_ForbiddenForClient(t *testing.T) {
 	svc := &tenantSignupService.TenantSignupService{
 		Repo:        &tenantSignupRepo.Repository{DB: nil},
 		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
 	}
 	handler := &TenantSignupHandler{Service: svc}
 
-	body := bytes.NewBufferString(`{"expires_in_minutes":120}`)
+	body := bytes.NewBufferString(`{"email":"ana@panaderia.com","expires_in_minutes":120}`)
 	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", body)
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{
@@ -113,6 +147,8 @@ func TestTenantSignupHandler_RegisterTenantWithCode_Success(t *testing.T) {
 	svc := &tenantSignupService.TenantSignupService{
 		Repo:        &tenantSignupRepo.Repository{DB: db},
 		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
 	}
 	handler := &TenantSignupHandler{Service: svc}
 
@@ -165,14 +201,16 @@ func TestTenantSignupHandler_CreateSignupCode_DefaultTTL120(t *testing.T) {
 	svc := &tenantSignupService.TenantSignupService{
 		Repo:        &tenantSignupRepo.Repository{DB: db},
 		AuthService: authService.New("testingsecret", 60),
+		EmailSender: email.NoopSender{},
+		AppBaseURL:  "https://admin.example.com",
 	}
 	handler := &TenantSignupHandler{Service: svc}
 
 	mock.ExpectQuery(`INSERT INTO tenant_signup_codes`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(99), "").
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), uint64(99), "ana@panaderia.com", "").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(7)))
 
-	body := bytes.NewBufferString(`{}`)
+	body := bytes.NewBufferString(`{"email":"ana@panaderia.com"}`)
 	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", body)
 	req.Header.Set("Content-Type", "application/json")
 	ctx := context.WithValue(req.Context(), middleware.UserClaimsKey, jwt.MapClaims{

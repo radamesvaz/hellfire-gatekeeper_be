@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -44,30 +46,7 @@ func (s *BrevoSender) SendPasswordReset(ctx context.Context, payload PasswordRes
 		"textContent": "You requested a password reset. Open this link: " + payload.ResetURL,
 	}
 
-	raw, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("marshal brevo request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.brevo.com/v3/smtp/email", bytes.NewReader(raw))
-	if err != nil {
-		return fmt.Errorf("create brevo request: %w", err)
-	}
-	req.Header.Set("accept", "application/json")
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("api-key", s.APIKey)
-
-	resp, err := s.Client.Do(req)
-	if err != nil {
-		return fmt.Errorf("brevo http request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("brevo returned unexpected status: %d", resp.StatusCode)
-	}
-
-	return nil
+	return s.send(ctx, reqBody)
 }
 
 func (s *BrevoSender) SendTenantInvitation(ctx context.Context, payload TenantInvitationPayload) error {
@@ -87,6 +66,43 @@ func (s *BrevoSender) SendTenantInvitation(ctx context.Context, payload TenantIn
 		"textContent": "You have been invited to join a tenant. Open this link: " + payload.InviteURL,
 	}
 
+	return s.send(ctx, reqBody)
+}
+
+func (s *BrevoSender) SendTenantSignupCode(ctx context.Context, payload TenantSignupCodePayload) error {
+	expiresAt := strings.TrimSpace(payload.ExpiresAt)
+	expiryHTML := ""
+	expiryText := ""
+	if expiresAt != "" {
+		expiryHTML = fmt.Sprintf("<p>This link expires at %s (UTC).</p>", expiresAt)
+		expiryText = "This link expires at " + expiresAt + " (UTC).\n"
+	}
+
+	reqBody := map[string]interface{}{
+		"sender": map[string]string{
+			"email": s.FromEmail,
+			"name":  s.FromName,
+		},
+		"to": []map[string]string{
+			{"email": payload.ToEmail},
+		},
+		"subject": "Complete your bakery registration",
+		"htmlContent": fmt.Sprintf(
+			"<p>You have been invited to register a new bakery on Hellfire Gatekeeper.</p><p><a href=\"%s\">Complete registration</a></p>%s<p>If you did not expect this email, ignore it.</p>",
+			payload.RegisterURL,
+			expiryHTML,
+		),
+		"textContent": fmt.Sprintf(
+			"You have been invited to register a new bakery on Hellfire Gatekeeper.\nComplete registration: %s\n%s",
+			payload.RegisterURL,
+			expiryText,
+		),
+	}
+
+	return s.send(ctx, reqBody)
+}
+
+func (s *BrevoSender) send(ctx context.Context, reqBody map[string]interface{}) error {
 	raw, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("marshal brevo request: %w", err)
@@ -107,7 +123,12 @@ func (s *BrevoSender) SendTenantInvitation(ctx context.Context, payload TenantIn
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("brevo returned unexpected status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			return fmt.Errorf("brevo returned unexpected status: %d", resp.StatusCode)
+		}
+		return fmt.Errorf("brevo returned unexpected status: %d: %s", resp.StatusCode, msg)
 	}
 
 	return nil

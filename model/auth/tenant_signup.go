@@ -3,6 +3,7 @@ package model
 import "time"
 
 type CreateSignupCodeRequest struct {
+	Email            string `json:"email"`
 	ExpiresInMinutes int    `json:"expires_in_minutes"`
 	Notes            string `json:"notes"`
 }
@@ -11,6 +12,8 @@ type CreateSignupCodeResponse struct {
 	ID        uint64    `json:"id"`
 	Code      string    `json:"code"`
 	ExpiresAt time.Time `json:"expires_at"`
+	Email     string    `json:"email"`
+	Message   string    `json:"message"`
 }
 
 type PublicTenantRegisterRequest struct {

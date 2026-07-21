@@ -17,10 +17,12 @@ import (
 )
 
 const defaultSignupCodeTTLMinutes = 120
+const maxTenantSlugSuffixAttempts = 50
 
 var (
 	ErrForbidden                = errors.New("forbidden")
 	ErrInvalidEmail             = errors.New("invalid email")
+	ErrInvalidTenantSlug        = errors.New("invalid tenant slug")
 	ErrEmailNotConfigured       = errors.New("email sender not configured")
 	ErrEmailDeliveryFailed      = errors.New("email delivery failed")
 	ErrAppBaseURLRequired       = errors.New("APP_BASE_URL is required for signup links")
@@ -104,15 +106,41 @@ func (s *TenantSignupService) RegisterTenantWithCode(ctx context.Context, req au
 		return authModel.PublicTenantRegisterResponse{}, err
 	}
 
-	result, err := s.Repo.RegisterTenantWithCode(ctx, repo.RegisterTenantWithCodeInput{
-		CodeHash:     s.AuthService.HashOneTimeToken(req.OneTimeCode),
-		TenantName:   req.TenantName,
-		TenantSlug:   req.TenantSlug,
-		AdminName:    strings.TrimSpace(req.AdminName),
-		AdminEmail:   adminEmail,
-		AdminPhone:   strings.TrimSpace(req.Phone),
-		PasswordHash: hashedPassword,
-	})
+	baseSlug := strings.TrimSpace(strings.ToLower(req.TenantSlug))
+	if baseSlug == "" {
+		baseSlug = SlugifyTenantName(req.TenantName)
+	}
+	if baseSlug == "" {
+		return authModel.PublicTenantRegisterResponse{}, ErrInvalidTenantSlug
+	}
+
+	codeHash := s.AuthService.HashOneTimeToken(req.OneTimeCode)
+	adminName := strings.TrimSpace(req.AdminName)
+	adminPhone := strings.TrimSpace(req.Phone)
+
+	var (
+		result repo.RegisterTenantWithCodeResult
+		slug   string
+	)
+	for attempt := 1; attempt <= maxTenantSlugSuffixAttempts; attempt++ {
+		slug = TenantSlugCandidate(baseSlug, attempt)
+		result, err = s.Repo.RegisterTenantWithCode(ctx, repo.RegisterTenantWithCodeInput{
+			CodeHash:     codeHash,
+			TenantName:   req.TenantName,
+			TenantSlug:   slug,
+			AdminName:    adminName,
+			AdminEmail:   adminEmail,
+			AdminPhone:   adminPhone,
+			PasswordHash: hashedPassword,
+		})
+		if err == nil {
+			break
+		}
+		if errors.Is(err, ErrTenantSlugExists) {
+			continue
+		}
+		return authModel.PublicTenantRegisterResponse{}, err
+	}
 	if err != nil {
 		return authModel.PublicTenantRegisterResponse{}, err
 	}
@@ -126,7 +154,7 @@ func (s *TenantSignupService) RegisterTenantWithCode(ctx context.Context, req au
 		Message:    "Tenant registered successfully",
 		Token:      token,
 		TenantID:   result.TenantID,
-		TenantSlug: req.TenantSlug,
+		TenantSlug: slug,
 		TenantName: req.TenantName,
 		AdminID:    result.AdminID,
 		AdminEmail: adminEmail,

@@ -17,7 +17,9 @@ type CreateSignupCodeResponse struct {
 }
 
 type PublicTenantRegisterRequest struct {
-	TenantName  string `json:"tenant_name"`
+	TenantName string `json:"tenant_name"`
+	// TenantSlug is optional. When empty, the backend derives it from tenant_name
+	// and may append -2, -3, ... if the base slug is already taken.
 	TenantSlug  string `json:"tenant_slug"`
 	AdminName   string `json:"admin_name"`
 	Email       string `json:"email"`

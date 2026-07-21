@@ -8,10 +8,34 @@ RED="\033[0;31m"
 YELLOW="\033[1;33m"
 NC="\033[0m" # No Color
 
-# Load environment variables from .env file if it exists
+# Load environment variables from .env file if it exists.
+# Prefer a line-based export so values with special characters (e.g. Brevo API keys)
+# are not mangled by `xargs` / word-splitting.
 if [ -f .env ]; then
   echo -e "${YELLOW}📄 Loading environment variables from .env file...${NC}"
-  export $(cat .env | grep -v '^#' | xargs)
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Normalize Windows CRLF endings
+    line="${line%$'\r'}"
+    # Skip comments and blank lines
+    case "$line" in
+      ''|\#*) continue ;;
+    esac
+    # Trim leading whitespace
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in
+      ''|\#*) continue ;;
+    esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    value="${value%$'\r'}"
+    # Strip optional surrounding quotes
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    export "$key=$value"
+  done < .env
 else
   echo -e "${YELLOW}⚠️  No .env file found. Make sure environment variables are set.${NC}"
 fi
@@ -106,7 +130,12 @@ dev() {
 
 # Start the application
 app() {
+  # Local default: debug so repository/handler Debug() logs are visible.
+  # Override with LOG_LEVEL in .env or the environment (e.g. LOG_LEVEL=info).
+  export LOG_LEVEL="${LOG_LEVEL:-debug}"
+
   echo -e "${YELLOW}🚀 Starting application...${NC}"
+  echo -e "${YELLOW}📋 LOG_LEVEL=${LOG_LEVEL}${NC}"
   echo -e "${YELLOW}🌐 Server will be available at http://localhost:8080${NC}"
   go run cmd/api/main.go
 }

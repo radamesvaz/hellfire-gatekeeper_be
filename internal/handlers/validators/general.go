@@ -9,9 +9,10 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/errors"
 )
 
+var emailRegexp = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+
 func IsValidEmail(email string) bool {
-	re := regexp.MustCompile(`^[\w\.-]+@[\w\.-]+\.\w+$`)
-	return re.MatchString(email)
+	return emailRegexp.MatchString(strings.TrimSpace(email))
 }
 
 // ValidatePassword validates password strength

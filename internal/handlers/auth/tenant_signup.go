@@ -40,14 +40,33 @@ func (h *TenantSignupHandler) CreateSignupCode(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if !v.IsValidEmail(req.Email) {
+		http.Error(w, "Invalid Email", http.StatusBadRequest)
+		return
+	}
+
 	resp, err := h.Service.CreateSignupCode(r.Context(), roleID, createdByUserID, req)
 	if err != nil {
-		if errors.Is(err, tenantSignupService.ErrForbidden) {
+		switch {
+		case errors.Is(err, tenantSignupService.ErrForbidden):
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
+		case errors.Is(err, tenantSignupService.ErrInvalidEmail):
+			http.Error(w, "Invalid Email", http.StatusBadRequest)
+			return
+		case errors.Is(err, tenantSignupService.ErrAppBaseURLRequired):
+			http.Error(w, "APP_BASE_URL is not configured", http.StatusInternalServerError)
+			return
+		case errors.Is(err, tenantSignupService.ErrEmailNotConfigured):
+			http.Error(w, "Email sender is not configured", http.StatusInternalServerError)
+			return
+		case errors.Is(err, tenantSignupService.ErrEmailDeliveryFailed):
+			http.Error(w, "Could not send signup code email", http.StatusBadGateway)
+			return
+		default:
+			http.Error(w, "Could not generate signup code", http.StatusInternalServerError)
+			return
 		}
-		http.Error(w, "Could not generate signup code", http.StatusInternalServerError)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

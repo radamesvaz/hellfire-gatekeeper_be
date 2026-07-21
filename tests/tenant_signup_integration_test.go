@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -22,6 +23,7 @@ import (
 	tenantSignupRepo "github.com/radamesvaz/bakery-app/internal/repository/tenantsignup"
 	"github.com/radamesvaz/bakery-app/internal/repository/user"
 	authService "github.com/radamesvaz/bakery-app/internal/services/auth"
+	"github.com/radamesvaz/bakery-app/internal/services/email"
 	tenantSignupService "github.com/radamesvaz/bakery-app/internal/services/tenantsignup"
 	authModel "github.com/radamesvaz/bakery-app/model/auth"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
@@ -29,10 +31,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type recordingTenantSignupEmailSender struct {
+	mu    sync.Mutex
+	last  email.TenantSignupCodePayload
+	calls int
+	err   error
+}
+
+func (r *recordingTenantSignupEmailSender) SendPasswordReset(context.Context, email.PasswordResetPayload) error {
+	return nil
+}
+
+func (r *recordingTenantSignupEmailSender) SendTenantInvitation(context.Context, email.TenantInvitationPayload) error {
+	return nil
+}
+
+func (r *recordingTenantSignupEmailSender) SendTenantSignupCode(_ context.Context, payload email.TenantSignupCodePayload) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls++
+	r.last = payload
+	return r.err
+}
+
 type tenantSignupIntegrationEnv struct {
 	router           *mux.Router
 	db               *sql.DB
 	authSvc          authService.Service
+	emailSender      *recordingTenantSignupEmailSender
 	superadminUserID uint64
 	superadminJWT    string
 	tenantAdminJWT   string
@@ -45,9 +71,12 @@ func setupTenantSignupIntegrationEnv(t *testing.T) (*tenantSignupIntegrationEnv,
 	runMigrations(t, dsn)
 
 	authSvc := authService.New("testingsecret", 60)
+	emailSender := &recordingTenantSignupEmailSender{}
 	svc := &tenantSignupService.TenantSignupService{
 		Repo:        &tenantSignupRepo.Repository{DB: db},
 		AuthService: authSvc,
+		EmailSender: emailSender,
+		AppBaseURL:  "https://admin.example.com",
 	}
 	handler := &authHandler.TenantSignupHandler{Service: svc}
 	tenantRepo := &tenantRepository.Repository{DB: db}
@@ -78,6 +107,7 @@ func setupTenantSignupIntegrationEnv(t *testing.T) (*tenantSignupIntegrationEnv,
 			router:           router,
 			db:               db,
 			authSvc:          authSvc,
+			emailSender:      emailSender,
 			superadminUserID: superadminID,
 			superadminJWT:    superadminJWT,
 			tenantAdminJWT:   tenantAdminJWT,
@@ -101,12 +131,18 @@ func lookupUserIDByEmailAndRole(t *testing.T, db *sql.DB, email string, role uMo
 func createSignupCodeInternal(
 	t *testing.T,
 	env *tenantSignupIntegrationEnv,
+	recipientEmail string,
 	ttlMinutes int,
 	notes string,
 ) authModel.CreateSignupCodeResponse {
 	t.Helper()
 
-	reqBody := fmt.Sprintf(`{"expires_in_minutes":%d,"notes":"%s"}`, ttlMinutes, notes)
+	reqBody := fmt.Sprintf(
+		`{"email":"%s","expires_in_minutes":%d,"notes":"%s"}`,
+		recipientEmail,
+		ttlMinutes,
+		notes,
+	)
 	req := httptest.NewRequest(http.MethodPost, "/auth/internal/tenant-signup-codes", strings.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer "+env.superadminJWT)
 	req.Header.Set("Content-Type", "application/json")
@@ -118,6 +154,7 @@ func createSignupCodeInternal(
 	var resp authModel.CreateSignupCodeResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	require.NotEmpty(t, resp.Code)
+	require.Equal(t, strings.ToLower(recipientEmail), resp.Email)
 	return resp
 }
 
@@ -183,7 +220,7 @@ func TestTenantSignupIntegration_CreateSignupCode_ForbiddenForTenantAdmin(t *tes
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/auth/internal/tenant-signup-codes",
-		strings.NewReader(`{"expires_in_minutes":120,"notes":"tenant admin should be forbidden"}`),
+		strings.NewReader(`{"email":"invitee@example.com","expires_in_minutes":120,"notes":"tenant admin should be forbidden"}`),
 	)
 	req.Header.Set("Authorization", "Bearer "+env.tenantAdminJWT)
 	req.Header.Set("Content-Type", "application/json")
@@ -222,7 +259,7 @@ func TestTenantSignupIntegration_CreateSignupCode_AfterSuperAdminLogin(t *testin
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/auth/internal/tenant-signup-codes",
-		strings.NewReader(`{"expires_in_minutes":60,"notes":"from login flow"}`),
+		strings.NewReader(`{"email":"invitee@example.com","expires_in_minutes":60,"notes":"from login flow"}`),
 	)
 	req.Header.Set("Authorization", "Bearer "+loginBody.Token)
 	req.Header.Set("Content-Type", "application/json")
@@ -233,13 +270,21 @@ func TestTenantSignupIntegration_CreateSignupCode_AfterSuperAdminLogin(t *testin
 	var resp authModel.CreateSignupCodeResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.NotEmpty(t, resp.Code)
+	assert.Equal(t, "invitee@example.com", resp.Email)
+	assert.Equal(t, 1, env.emailSender.calls)
+	assert.Equal(t, "invitee@example.com", env.emailSender.last.ToEmail)
+	assert.Contains(t, env.emailSender.last.RegisterURL, "/tenant-register?code=")
+	assert.Contains(t, env.emailSender.last.RegisterURL, resp.Code)
 }
 
 func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {
 	env, cleanup := setupTenantSignupIntegrationEnv(t)
 	defer cleanup()
 
-	createdCode := createSignupCodeInternal(t, env, 120, "integration happy path")
+	recipient := fmt.Sprintf("invitee-happy-%d@test.com", time.Now().UnixNano())
+	createdCode := createSignupCodeInternal(t, env, recipient, 120, "integration happy path")
+	assert.Equal(t, 1, env.emailSender.calls)
+	assert.Contains(t, env.emailSender.last.RegisterURL, createdCode.Code)
 
 	slug := fmt.Sprintf("tenant-happy-%d", time.Now().UnixNano())
 	email := fmt.Sprintf("owner-happy-%d@test.com", time.Now().UnixNano())
@@ -262,18 +307,19 @@ func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {
 	assert.NotZero(t, resp.AdminID)
 
 	var (
-		usedAt         sql.NullTime
-		usedByTenantID sql.NullInt64
-		usedByUserID   sql.NullInt64
-		usedEmail      sql.NullString
-		createdBy      sql.NullInt64
+		usedAt          sql.NullTime
+		usedByTenantID  sql.NullInt64
+		usedByUserID    sql.NullInt64
+		usedEmail       sql.NullString
+		createdBy       sql.NullInt64
+		storedRecipient sql.NullString
 	)
 	err := env.db.QueryRow(
-		`SELECT used_at, used_by_tenant_id, used_by_user_id, used_email, created_by_user_id
+		`SELECT used_at, used_by_tenant_id, used_by_user_id, used_email, created_by_user_id, recipient_email
 		 FROM tenant_signup_codes
 		 WHERE code_hash = $1`,
 		hashOneTimeCodeForTest(createdCode.Code),
-	).Scan(&usedAt, &usedByTenantID, &usedByUserID, &usedEmail, &createdBy)
+	).Scan(&usedAt, &usedByTenantID, &usedByUserID, &usedEmail, &createdBy, &storedRecipient)
 	require.NoError(t, err)
 
 	assert.True(t, usedAt.Valid)
@@ -281,6 +327,8 @@ func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {
 	assert.True(t, usedByUserID.Valid)
 	assert.True(t, usedEmail.Valid)
 	assert.True(t, createdBy.Valid)
+	assert.True(t, storedRecipient.Valid)
+	assert.Equal(t, recipient, storedRecipient.String)
 	assert.Equal(t, int64(resp.TenantID), usedByTenantID.Int64)
 	assert.Equal(t, int64(resp.AdminID), usedByUserID.Int64)
 	assert.Equal(t, email, usedEmail.String)
@@ -291,7 +339,7 @@ func TestTenantSignupIntegration_RegisterWithCode_ReusedCodeReturns422(t *testin
 	env, cleanup := setupTenantSignupIntegrationEnv(t)
 	defer cleanup()
 
-	createdCode := createSignupCodeInternal(t, env, 120, "integration reused code")
+	createdCode := createSignupCodeInternal(t, env, "invitee-reuse@test.com", 120, "integration reused code")
 
 	firstSlug := fmt.Sprintf("tenant-reuse-a-%d", time.Now().UnixNano())
 	firstEmail := fmt.Sprintf("owner-reuse-a-%d@test.com", time.Now().UnixNano())
@@ -355,7 +403,7 @@ func TestTenantSignupIntegration_RegisterWithCode_DuplicateSlugReturns409(t *tes
 	env, cleanup := setupTenantSignupIntegrationEnv(t)
 	defer cleanup()
 
-	createdCode := createSignupCodeInternal(t, env, 120, "integration duplicate slug")
+	createdCode := createSignupCodeInternal(t, env, "invitee-dup-slug@test.com", 120, "integration duplicate slug")
 	rr := registerTenantPublic(
 		t, env,
 		"Default Tenant Collision", "default", "Owner Collision", "owner-collision@test.com", "555-5050", "StrongPass123!",
@@ -378,7 +426,7 @@ func TestTenantSignupIntegration_RegisterWithCode_ConcurrentSameCodeOnlyOneSucce
 	env, cleanup := setupTenantSignupIntegrationEnv(t)
 	defer cleanup()
 
-	createdCode := createSignupCodeInternal(t, env, 120, "integration concurrent same code")
+	createdCode := createSignupCodeInternal(t, env, "invitee-race@test.com", 120, "integration concurrent same code")
 
 	type concurrentResult struct {
 		status int

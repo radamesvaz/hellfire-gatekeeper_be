@@ -399,19 +399,24 @@ func TestTenantSignupIntegration_RegisterWithCode_RevokedCodeReturns422(t *testi
 	assert.Contains(t, rr.Body.String(), "Invalid or unavailable one-time code")
 }
 
-func TestTenantSignupIntegration_RegisterWithCode_DuplicateSlugReturns409(t *testing.T) {
+func TestTenantSignupIntegration_RegisterWithCode_DuplicateSlugAutoSuffixes(t *testing.T) {
 	env, cleanup := setupTenantSignupIntegrationEnv(t)
 	defer cleanup()
 
+	// Seeded tenant uses slug "default"; requesting the same slug should succeed as "default-2".
 	createdCode := createSignupCodeInternal(t, env, "invitee-dup-slug@test.com", 120, "integration duplicate slug")
+	ownerEmail := fmt.Sprintf("owner-collision-%d@test.com", time.Now().UnixNano())
 	rr := registerTenantPublic(
 		t, env,
-		"Default Tenant Collision", "default", "Owner Collision", "owner-collision@test.com", "555-5050", "StrongPass123!",
+		"Default Tenant Collision", "default", "Owner Collision", ownerEmail, "555-5050", "StrongPass123!",
 		createdCode.Code,
 	)
 
-	assert.Equal(t, http.StatusConflict, rr.Code, rr.Body.String())
-	assert.Contains(t, rr.Body.String(), "Tenant slug already exists")
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	var resp authModel.PublicTenantRegisterResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "default-2", resp.TenantSlug)
+	assert.NotEmpty(t, resp.Token)
 
 	var usedAt sql.NullTime
 	err := env.db.QueryRow(
@@ -419,7 +424,12 @@ func TestTenantSignupIntegration_RegisterWithCode_DuplicateSlugReturns409(t *tes
 		hashOneTimeCodeForTest(createdCode.Code),
 	).Scan(&usedAt)
 	require.NoError(t, err)
-	assert.False(t, usedAt.Valid, "code should remain unused when tenant creation fails")
+	assert.True(t, usedAt.Valid, "code should be consumed after successful auto-suffix registration")
+
+	var slugCount int
+	err = env.db.QueryRow(`SELECT COUNT(*) FROM tenants WHERE slug = $1`, "default-2").Scan(&slugCount)
+	require.NoError(t, err)
+	assert.Equal(t, 1, slugCount)
 }
 
 func TestTenantSignupIntegration_RegisterWithCode_ConcurrentSameCodeOnlyOneSucceeds(t *testing.T) {

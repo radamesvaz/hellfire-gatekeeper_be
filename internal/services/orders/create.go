@@ -27,6 +27,7 @@ type orderCreatorRepository interface {
 
 type productCreatorRepository interface {
 	GetProductsByIDs(ctx context.Context, tenantID uint64, ids []uint64) ([]pModel.Product, error)
+	AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) error
 	DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error)
 }
 
@@ -150,9 +151,13 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Atomic stock decrement only for products that track inventory
+	// Re-validate active status under row lock, then decrement stock for tracked inventory.
+	// Pre-tx status checks alone are racy if a product is deactivated mid-create.
 	for _, item := range mergedItems {
 		product := productMap[item.IdProduct]
+		if err := c.ProductRepo.AssertProductActiveTx(ctx, tx, tenantID, item.IdProduct); err != nil {
+			return err
+		}
 		if !product.TrackInventory {
 			continue
 		}

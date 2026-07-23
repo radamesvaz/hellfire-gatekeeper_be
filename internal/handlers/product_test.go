@@ -22,6 +22,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestProductHandler_UpdateProduct_RejectsEmptyDescription(t *testing.T) {
+	handler := &ProductHandler{}
+	payload := `{"name":"Cake","description":"   ","price":10.5,"stock":3,"status":"active"}`
+	req := httptest.NewRequest(http.MethodPut, "/auth/products/10", strings.NewReader(payload))
+	req = mux.SetURLVars(req, map[string]string{"id": "10"})
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
+	ctx = context.WithValue(ctx, middleware.UserClaimsKey, jwt.MapClaims{"user_id": float64(77)})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.UpdateProduct(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Description is required")
+}
+
 func TestProductHandler_UpdateProduct_SoftDeleteCleansUpImages(t *testing.T) {
 	restore := disableCloudinaryForHandlerTests(t)
 	defer restore()

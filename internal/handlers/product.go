@@ -189,17 +189,17 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	product.TenantID = tenantID
 
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
+		return
+	}
+
 	// TODO: persist product creator on products (e.g. created_by_user_id FK → users).
 	// Today it is only recorded in products_history (modified_by + action=create), not on the product row or API.
 	newProduct, err := h.Repo.CreateProduct(ctx, tenantID, product)
 	if err != nil {
 		writeRepoError(w, err, "Failed to create product")
-		return
-	}
-
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
 		return
 	}
 
@@ -243,13 +243,9 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.Repo.GetProductByID(ctx, tenantID, id, false)
+	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
-		if errors.Is(err, appErrors.ErrProductNotFound) {
-			http.Error(w, "Product not found", http.StatusNotFound)
-			return
-		}
-		writeRepoError(w, err, "Failed to get product")
+		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
 		return
 	}
 
@@ -257,8 +253,22 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Name is required", http.StatusBadRequest)
 		return
 	}
+	if strings.TrimSpace(req.Description) == "" {
+		http.Error(w, "Description is required", http.StatusBadRequest)
+		return
+	}
 	if req.Price < 0 {
 		http.Error(w, "Price must be greater than or equal to 0", http.StatusBadRequest)
+		return
+	}
+
+	existing, err := h.Repo.GetProductByID(ctx, tenantID, id, false)
+	if err != nil {
+		if errors.Is(err, appErrors.ErrProductNotFound) {
+			http.Error(w, "Product not found", http.StatusNotFound)
+			return
+		}
+		writeRepoError(w, err, "Failed to get product")
 		return
 	}
 
@@ -290,12 +300,6 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.cleanupImagesIfDeleted(id, status)
-
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
-		return
-	}
 
 	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionUpdate)
 	if err != nil {
@@ -341,6 +345,13 @@ func (h *ProductHandler) UpdateProductThumbnail(w http.ResponseWriter, r *http.R
 	if !ok {
 		return
 	}
+
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
+		return
+	}
+
 	product, err := h.Repo.GetProductByID(ctx, tenantID, id, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
@@ -366,12 +377,6 @@ func (h *ProductHandler) UpdateProductThumbnail(w http.ResponseWriter, r *http.R
 	}
 
 	product.ThumbnailURL = req.ThumbnailURL
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
-		return
-	}
-
 	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
@@ -412,6 +417,12 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
+		return
+	}
+
 	product, err := h.Repo.GetProductByID(ctx, tenantID, id, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
@@ -433,12 +444,6 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.cleanupImagesIfDeleted(id, newStatus)
-
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
-		return
-	}
 
 	product.Status = newStatus
 	err = h.UpdateHistoryTable(ctx, &product, id, idUser, pModel.ActionUpdate)

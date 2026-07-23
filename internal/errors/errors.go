@@ -25,6 +25,7 @@ var (
 	ErrUpdatingTheProduct      = errors.New("error updating the product")
 	ErrProductNotPurchasable   = errors.New("product not available for purchase")
 	ErrNotEnoughProductStock   = errors.New("not enough product stock")
+	ErrImageNotInProduct       = errors.New("image not found in product")
 	ErrConflict                = errors.New("conflict")
 
 	// Order errors

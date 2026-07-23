@@ -47,6 +47,12 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+
 	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
@@ -119,12 +125,6 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
-		return
-	}
-
 	existingProduct.ImageURLs = allImageURLs
 	existingProduct.ThumbnailURL = newThumbnail
 	err = h.UpdateHistoryTable(ctx, &existingProduct, productID, idUser, pModel.ActionUpdate)
@@ -161,6 +161,12 @@ func (h *ImageHandler) UploadProductThumbnail(w http.ResponseWriter, r *http.Req
 
 	tenantID, ok := requireImageTenantID(w, r)
 	if !ok {
+		return
+	}
+
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
 		return
 	}
 
@@ -210,12 +216,6 @@ func (h *ImageHandler) UploadProductThumbnail(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
-		return
-	}
-
 	existingProduct.ImageURLs = updatedImageURLs
 	existingProduct.ThumbnailURL = thumbnailURL
 	err = h.UpdateHistoryTable(ctx, &existingProduct, productID, idUser, pModel.ActionUpdate)
@@ -261,6 +261,12 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+
 	product, err := h.Repo.GetProductByID(ctx, tenantID, productID, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
@@ -271,27 +277,16 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	imageIndex := -1
-	for i, url := range product.ImageURLs {
-		if url == imageURL {
-			imageIndex = i
-			break
-		}
-	}
-
-	if imageIndex == -1 {
-		http.Error(w, "Image not found in product", http.StatusNotFound)
-		return
-	}
-
-	newImageURLs := make([]string, 0, len(product.ImageURLs)-1)
-	newImageURLs = append(newImageURLs, product.ImageURLs[:imageIndex]...)
-	newImageURLs = append(newImageURLs, product.ImageURLs[imageIndex+1:]...)
-
-	newThumbnail := selectThumbnail(product.ThumbnailURL, newImageURLs)
-
-	err = h.Repo.UpdateProductImages(ctx, tenantID, productID, newImageURLs, newThumbnail)
+	newImageURLs, newThumbnail, err := h.Repo.RemoveProductImage(ctx, tenantID, productID, imageURL)
 	if err != nil {
+		if errors.Is(err, appErrors.ErrImageNotInProduct) {
+			http.Error(w, "Image not found in product", http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, appErrors.ErrProductNotFound) {
+			http.Error(w, "Product not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
 	}
@@ -302,12 +297,6 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 			Str("image_url", imageURL).
 			Uint64("product_id", productID).
 			Msg("Failed to delete image file")
-	}
-
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
-		return
 	}
 
 	product.ImageURLs = newImageURLs
@@ -346,6 +335,12 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 
 	tenantID, ok := requireImageTenantID(w, r)
 	if !ok {
+		return
+	}
+
+	idUser, err := middleware.GetUserIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
 		return
 	}
 
@@ -416,12 +411,6 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 				Uint64("product_id", productID).
 				Msg("Failed to delete old image file after replace")
 		}
-	}
-
-	idUser, err := middleware.GetUserIDFromContext(ctx)
-	if err != nil {
-		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
-		return
 	}
 
 	existingProduct.ImageURLs = newImageURLs

@@ -703,14 +703,50 @@ func TestProductRepository_UpdateProductImages(t *testing.T) {
 	repo := &ProductRepository{DB: db}
 
 	const tenantID5 = uint64(1)
+	mock.ExpectBegin()
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT image_urls FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE"),
+	).WithArgs(tenantID5, uint64(1)).WillReturnRows(
+		sqlmock.NewRows([]string{"image_urls"}).AddRow(`["old"]`),
+	)
 	mock.ExpectExec(
 		regexp.QuoteMeta("UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4"),
 	).
 		WithArgs(`["a","b"]`, "a", tenantID5, uint64(1)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 
 	err = repo.UpdateProductImages(context.Background(), tenantID5, 1, []string{"a", "b"}, "a")
 	assert.NoError(t, err)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProductRepository_RemoveProductImage(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	const tenantID = uint64(1)
+	const productID = uint64(2)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT image_urls, thumbnail_url FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE"),
+	).WithArgs(tenantID, productID).WillReturnRows(
+		sqlmock.NewRows([]string{"image_urls", "thumbnail_url"}).
+			AddRow(`["/a.jpg","/b.jpg","/c.jpg"]`, "/b.jpg"),
+	)
+	mock.ExpectExec(
+		regexp.QuoteMeta("UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4"),
+	).WithArgs(`["/a.jpg","/c.jpg"]`, "/a.jpg", tenantID, productID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	urls, thumb, err := repo.RemoveProductImage(context.Background(), tenantID, productID, "/b.jpg")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/a.jpg", "/c.jpg"}, urls)
+	assert.Equal(t, "/a.jpg", thumb)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -799,7 +835,7 @@ func TestProductRepository_DecrementProductStockTx(t *testing.T) {
 
 	t.Run("success_decrements_stock", func(t *testing.T) {
 		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1")).
+		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1 AND status = 'active'")).
 			WithArgs(3, tenantID9, 1).
 			WillReturnResult(sqlmock.NewResult(0, 1))
 
@@ -814,7 +850,7 @@ func TestProductRepository_DecrementProductStockTx(t *testing.T) {
 
 	t.Run("zero_rows_when_insufficient_stock", func(t *testing.T) {
 		mock.ExpectBegin()
-		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1")).
+		mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1 AND status = 'active'")).
 			WithArgs(10, tenantID9, 1).
 			WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -834,6 +870,43 @@ func TestProductRepository_DecrementProductStockTx(t *testing.T) {
 		rows, err := repo.DecrementProductStockTx(ctx, tx, tenantID9, 1, 0)
 		require.NoError(t, err)
 		assert.Equal(t, int64(1), rows)
+		_ = tx.Rollback()
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+}
+
+func TestProductRepository_AssertProductActiveTx(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	ctx := context.Background()
+	const tenantID = uint64(1)
+
+	t.Run("active_ok", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
+			WithArgs(tenantID, uint64(1)).
+			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("active"))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		require.NoError(t, repo.AssertProductActiveTx(ctx, tx, tenantID, 1))
+		_ = tx.Rollback()
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("inactive_rejected", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
+			WithArgs(tenantID, uint64(1)).
+			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("inactive"))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		err = repo.AssertProductActiveTx(ctx, tx, tenantID, 1)
+		assert.ErrorIs(t, err, errors.ErrProductNotPurchasable)
 		_ = tx.Rollback()
 		require.NoError(t, mock.ExpectationsWereMet())
 	})

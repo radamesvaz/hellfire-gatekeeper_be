@@ -52,11 +52,12 @@ func (m *MockUserRepo) ReactivateUser(ctx context.Context, tenantID, userID uint
 }
 
 type MockProductRepo2 struct {
-	Products      map[uint64]pModel.Product
-	StockUpdates  map[uint64]uint64 // final stock after decrements (for assertions)
-	stockSnapshot map[uint64]uint64 // mutable copy used by DecrementProductStockTx
-	LastIDs       []uint64          // IDs passed to GetProductsByIDs
+	Products       map[uint64]pModel.Product
+	StockUpdates   map[uint64]uint64 // final stock after decrements (for assertions)
+	stockSnapshot  map[uint64]uint64 // mutable copy used by DecrementProductStockTx
+	LastIDs        []uint64          // IDs passed to GetProductsByIDs
 	DecrementCalls int
+	onAssertActive func(id uint64) // optional hook before status check (simulates mid-tx deactivation)
 }
 
 func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, tenantID uint64, ids []uint64) ([]pModel.Product, error) {
@@ -73,6 +74,20 @@ func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, tenantID uint64
 		}
 	}
 	return products, nil
+}
+
+func (m *MockProductRepo2) AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) error {
+	if m.onAssertActive != nil {
+		m.onAssertActive(idProduct)
+	}
+	product, exists := m.Products[idProduct]
+	if !exists {
+		return internalErrors.ErrProductNotFound
+	}
+	if product.Status != pModel.StatusActive {
+		return internalErrors.ErrProductNotPurchasable
+	}
+	return nil
 }
 
 func (m *MockProductRepo2) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error) {
@@ -362,6 +377,50 @@ func TestCreateOrder_RejectsInactiveProduct(t *testing.T) {
 
 	assert.ErrorIs(t, err, internalErrors.ErrProductNotPurchasable)
 	assert.False(t, mockOrderRepo.OrderCreated)
+}
+
+func TestCreateOrder_RejectsWhenProductDeactivatedInsideTx(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	mockUserRepo := &MockUserRepo{ShouldCreate: false}
+	product := activeProduct(1, "Pan", 2.50, 10)
+	mockProductRepo := &MockProductRepo2{
+		Products: map[uint64]pModel.Product{1: product},
+	}
+	mockProductRepo.onAssertActive = func(id uint64) {
+		p := mockProductRepo.Products[id]
+		p.Status = pModel.StatusInactive
+		mockProductRepo.Products[id] = p
+	}
+	mockOrderRepo := &MockOrderRepo2{DB: db}
+
+	service := Creator{
+		UserRepo:    mockUserRepo,
+		ProductRepo: mockProductRepo,
+		OrderRepo:   mockOrderRepo,
+	}
+
+	payload := oModel.CreateOrderPayload{
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-race",
+		Items: []oModel.CreateOrderItemInput{
+			{IdProduct: 1, Quantity: 1},
+		},
+		DeliveryDate: "2024-12-25",
+	}
+	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
+	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+
+	assert.ErrorIs(t, err, internalErrors.ErrProductNotPurchasable)
+	assert.False(t, mockOrderRepo.OrderCreated)
+	assert.Equal(t, 0, mockProductRepo.DecrementCalls)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {

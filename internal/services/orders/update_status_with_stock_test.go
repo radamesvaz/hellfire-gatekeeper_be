@@ -137,7 +137,7 @@ func TestUpdateOrderStatus_AdminCancelsOrder_RevertsStock(t *testing.T) {
 		ProductRepo: mockProductRepo,
 	}
 
-	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil)
+	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil, nil)
 
 	assert.NoError(t, err)
 	mockOrderRepo.AssertExpectations(t)
@@ -167,7 +167,7 @@ func TestUpdateOrderStatus_ClientCancelsOrder_NoStockRevert(t *testing.T) {
 		ProductRepo: mockProductRepo,
 	}
 
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 2, false, nil)
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 2, false, nil, nil)
 
 	assert.NoError(t, err)
 	mockOrderRepo.AssertExpectations(t)
@@ -197,7 +197,7 @@ func TestUpdateOrderStatus_NonCancelledStatus_NoStockRevert(t *testing.T) {
 		ProductRepo: mockProductRepo,
 	}
 
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil)
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, nil)
 
 	assert.NoError(t, err)
 	mockOrderRepo.AssertExpectations(t)
@@ -238,7 +238,7 @@ func TestUpdateOrderStatus_StockRevertFails_ReturnsError(t *testing.T) {
 		ProductRepo: mockProductRepo,
 	}
 
-	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil)
+	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil, nil)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "error reverting stock for cancelled order")
@@ -264,7 +264,38 @@ func TestUpdateOrderStatus_AlreadyCancelled_ReturnsError(t *testing.T) {
 		ProductRepo: mockProductRepo,
 	}
 
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil)
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil, nil)
 	assert.ErrorIs(t, err, errors.ErrOrderAlreadyCancelled)
 	mockProductRepo.AssertNotCalled(t, "RevertProductStockTx")
+}
+
+func TestUpdateOrderStatus_PaidOverrideUsedInHistory(t *testing.T) {
+	mockOrderRepo := new(MockOrderStatusRepositoryWithStock)
+	mockProductRepo := new(MockProductRepositoryWithStock)
+
+	order := oModel.OrderResponse{
+		ID:     1,
+		TenantID: 1,
+		IdUser: 1,
+		Status: oModel.StatusPending,
+		Price:  15.0,
+		Paid:   false,
+	}
+
+	const tenantID = uint64(1)
+	paidTrue := true
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).Return(nil)
+	mockOrderRepo.On("CreateOrderHistory", mock.Anything, mock.MatchedBy(func(h oModel.OrderHistory) bool {
+		return h.Status == oModel.StatusPreparing && h.Paid == true && h.TenantID == tenantID
+	})).Return(nil)
+
+	statusUpdater := &StatusUpdaterWithStock{
+		OrderRepo:   mockOrderRepo,
+		ProductRepo: mockProductRepo,
+	}
+
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, &paidTrue)
+	require.NoError(t, err)
+	mockOrderRepo.AssertExpectations(t)
 }

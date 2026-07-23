@@ -305,7 +305,20 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update status if provided
+	// Apply paid first so a combined status+paid PATCH can record history with the final paid flag.
+	if payload.Paid != nil {
+		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
+		if err != nil {
+			if httpErr, ok := err.(*appErrors.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.StatusCode)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Error updating order paid status: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	statusUpdated := false
 	if payload.Status != nil {
 		// Validate status enum values
 		validStatuses := []oModel.OrderStatus{
@@ -342,8 +355,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		// Create status updater service with stock reversion capability
 		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
 
-		// Update the order status with stock reversion if admin cancels; optional cancellation reason when cancelling
-		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason)
+		// Status updater persists history (with paidOverride when paid was also patched).
+		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason, payload.Paid)
 		if err != nil {
 			if httpErr, ok := err.(*appErrors.HTTPError); ok {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
@@ -352,46 +365,32 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("Error updating order status: %v", err), http.StatusInternalServerError)
 			return
 		}
+		statusUpdated = true
 	}
 
-	// Update paid status if provided
-	if payload.Paid != nil {
-		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
-		if err != nil {
-			if httpErr, ok := err.(*appErrors.HTTPError); ok {
-				http.Error(w, httpErr.Error(), httpErr.StatusCode)
-				return
-			}
-			http.Error(w, fmt.Sprintf("Error updating order paid status: %v", err), http.StatusInternalServerError)
-			return
+	// Paid-only updates: write history here (status path already recorded history).
+	if !statusUpdated {
+		orderModel := &oModel.Order{
+			ID:                currentOrder.ID,
+			TenantID:          tenantID,
+			IdUser:            currentOrder.IdUser,
+			Status:            currentOrder.Status,
+			Price:             currentOrder.Price,
+			Note:              currentOrder.Note,
+			DeliveryDirection: currentOrder.DeliveryDirection,
+			DeliveryDate:      currentOrder.DeliveryDate,
+			Paid:              currentOrder.Paid,
 		}
-	}
+		if payload.Paid != nil {
+			orderModel.Paid = *payload.Paid
+		}
 
-	// Create order history record for the update
-	orderModel := &oModel.Order{
-		ID:                currentOrder.ID,
-		IdUser:            currentOrder.IdUser,
-		Status:            currentOrder.Status,
-		Price:             currentOrder.Price,
-		Note:              currentOrder.Note,
-		DeliveryDirection: currentOrder.DeliveryDirection,
-		DeliveryDate:      currentOrder.DeliveryDate,
-		Paid:              currentOrder.Paid,
-	}
-
-	// Update the model with new values
-	if payload.Status != nil {
-		orderModel.Status = *payload.Status
-	}
-	if payload.Paid != nil {
-		orderModel.Paid = *payload.Paid
-	}
-
-	err = h.UpdateOrderHistoryTable(ctx, orderModel, idOrder, userID, oModel.ActionUpdate)
-	if err != nil {
-		logger.Warn().Err(err).
-			Uint64("order_id", idOrder).
-			Msg("Failed to create order history")
+		err = h.UpdateOrderHistoryTable(ctx, orderModel, idOrder, userID, oModel.ActionUpdate)
+		if err != nil {
+			logger.Warn().Err(err).
+				Uint64("order_id", idOrder).
+				Msg("Failed to create order history")
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

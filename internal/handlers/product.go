@@ -157,14 +157,14 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Description is required", http.StatusBadRequest)
 		return
 	}
-	if req.Price < 0 {
+	if !validators.IsNonNegativePrice(req.Price) {
 		http.Error(w, "Price must be greater than or equal to 0", http.StatusBadRequest)
 		return
 	}
-
-	status := req.Status
-	if status == "" {
-		status = pModel.StatusActive
+	status, ok := validators.NormalizeProductStatus(req.Status)
+	if !ok {
+		http.Error(w, "Invalid status value", http.StatusBadRequest)
+		return
 	}
 	trackInventory := true
 	if req.TrackInventory != nil {

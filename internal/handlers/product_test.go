@@ -22,6 +22,36 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestProductHandler_CreateProduct_RejectsNegativePrice(t *testing.T) {
+	handler := &ProductHandler{}
+	payload := `{"name":"Cake","description":"desc","price":-1,"stock":3}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/products", strings.NewReader(payload))
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
+	ctx = context.WithValue(ctx, middleware.UserClaimsKey, jwt.MapClaims{"user_id": float64(77)})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.CreateProduct(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Price must be greater than or equal to 0")
+}
+
+func TestProductHandler_CreateProduct_RejectsInvalidStatus(t *testing.T) {
+	handler := &ProductHandler{}
+	payload := `{"name":"Cake","description":"desc","price":10,"stock":3,"status":"bogus"}`
+	req := httptest.NewRequest(http.MethodPost, "/auth/products", strings.NewReader(payload))
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, uint64(1))
+	ctx = context.WithValue(ctx, middleware.UserClaimsKey, jwt.MapClaims{"user_id": float64(77)})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.CreateProduct(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Invalid status value")
+}
+
 func TestProductHandler_UpdateProduct_RejectsEmptyDescription(t *testing.T) {
 	handler := &ProductHandler{}
 	payload := `{"name":"Cake","description":"   ","price":10.5,"stock":3,"status":"active"}`

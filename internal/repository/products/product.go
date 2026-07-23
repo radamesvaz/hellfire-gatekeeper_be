@@ -251,25 +251,6 @@ func (r *ProductRepository) CreateProduct(_ context.Context, tenantID uint64, pr
 		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
 	}
 
-	if product.Price < 0 {
-		logger.Warn().
-			Str("name", product.Name).
-			Float64("price", product.Price).
-			Msg("Invalid product price for creation")
-		return createdProduct, errors.NewBadRequest(errors.ErrCreatingProduct)
-	}
-
-	if product.Status == "" {
-		product.Status = pModel.StatusActive
-	}
-	if !IsValidStatus(product.Status) {
-		logger.Warn().
-			Str("name", product.Name).
-			Str("status", string(product.Status)).
-			Msg("Invalid status for creation")
-		return createdProduct, errors.NewBadRequest(errors.ErrInvalidStatus)
-	}
-
 	// Convert imageURLs to JSON
 	imageURLsJSON, err := json.Marshal(product.ImageURLs)
 	if err != nil {

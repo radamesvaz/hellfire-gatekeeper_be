@@ -55,8 +55,10 @@ func (s *StatusUpdaterWithStock) validateStatusTransition(currentStatus, newStat
 
 // UpdateOrderStatusWithStockReversion updates order status and reverts stock if admin cancels order.
 // cancellationReason is optional; only used when newStatus is cancelled (e.g. user-provided reason or nil).
+// paidOverride, when non-nil, is written to order history instead of the pre-update paid flag
+// (used when the same PATCH also updates paid).
 // Status update and stock reversion run in a single transaction when BeginTx is available.
-func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, tenantID, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string) error {
+func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, tenantID, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string, paidOverride *bool) error {
 	// Get the current order
 	order, err := s.OrderRepo.GetOrderByID(ctx, tenantID, orderID)
 	if err != nil {
@@ -73,10 +75,15 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 		effectiveCancellationReason = cancellationReason
 	}
 
+	paidForHistory := order.Paid
+	if paidOverride != nil {
+		paidForHistory = *paidOverride
+	}
+
 	needsStockRevert := isAdmin && newStatus == oModel.StatusCancelled
 
 	if needsStockRevert {
-		return s.updateStatusAndRevertStockTx(ctx, tenantID, orderID, order, newStatus, userID, effectiveCancellationReason)
+		return s.updateStatusAndRevertStockTx(ctx, tenantID, orderID, order, newStatus, userID, effectiveCancellationReason, paidForHistory)
 	}
 
 	err = s.OrderRepo.UpdateOrderStatus(ctx, tenantID, orderID, newStatus, effectiveCancellationReason)
@@ -84,7 +91,7 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 		return fmt.Errorf("error updating order status: %w", err)
 	}
 
-	s.writeOrderHistoryBestEffort(ctx, tenantID, orderID, order, newStatus, userID, effectiveCancellationReason)
+	s.writeOrderHistoryBestEffort(ctx, tenantID, orderID, order, newStatus, userID, effectiveCancellationReason, paidForHistory)
 	return nil
 }
 
@@ -95,6 +102,7 @@ func (s *StatusUpdaterWithStock) updateStatusAndRevertStockTx(
 	newStatus oModel.OrderStatus,
 	userID uint64,
 	cancellationReason *string,
+	paidForHistory bool,
 ) error {
 	tx, err := s.OrderRepo.BeginTx(ctx)
 	if err != nil {
@@ -128,7 +136,7 @@ func (s *StatusUpdaterWithStock) updateStatusAndRevertStockTx(
 			Time:  order.DeliveryDate,
 			Valid: !order.DeliveryDate.IsZero(),
 		},
-		Paid:               order.Paid,
+		Paid:               paidForHistory,
 		CancellationReason: cancellationReason,
 		ModifiedBy:         userID,
 		Action:             oModel.ActionUpdate,
@@ -154,6 +162,7 @@ func (s *StatusUpdaterWithStock) writeOrderHistoryBestEffort(
 	newStatus oModel.OrderStatus,
 	userID uint64,
 	cancellationReason *string,
+	paidForHistory bool,
 ) {
 	var orderHistoryIdUser *uint64
 	if order.IdUser != 0 {
@@ -170,7 +179,7 @@ func (s *StatusUpdaterWithStock) writeOrderHistoryBestEffort(
 			Time:  order.DeliveryDate,
 			Valid: !order.DeliveryDate.IsZero(),
 		},
-		Paid:               order.Paid,
+		Paid:               paidForHistory,
 		CancellationReason: cancellationReason,
 		ModifiedBy:         userID,
 		Action:             oModel.ActionUpdate,

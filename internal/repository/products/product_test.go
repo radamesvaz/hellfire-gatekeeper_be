@@ -350,21 +350,6 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 			errorStatus:   400,
 			expected:      pModel.Product{},
 		},
-		{
-			name: "SAD PATH: Creating a product with negative price",
-			payload: pModel.Product{
-				Name:           "Name",
-				Description:    "Esta es la descripcion del producto de prueba",
-				Price:          -1,
-				TrackInventory: true,
-				ImageURLs:      []string{},
-				ThumbnailURL:   "",
-			},
-			expectedError: true,
-			mockError:     errors.ErrCreatingProduct,
-			errorStatus:   400,
-			expected:      pModel.Product{},
-		},
 	}
 	const tenantID = uint64(1)
 	for _, tt := range tests {

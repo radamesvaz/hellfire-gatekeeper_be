@@ -586,23 +586,25 @@ func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql
 	return rows, nil
 }
 
-// AssertProductActiveTx locks the product row and ensures it is still purchasable (status=active).
-func (r *ProductRepository) AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) error {
+// AssertProductActiveTx locks the product row, ensures it is purchasable (status=active),
+// and returns the current track_inventory flag under that lock (not a pre-tx snapshot).
+func (r *ProductRepository) AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) (bool, error) {
 	var status pModel.ProductStatus
+	var trackInventory bool
 	err := tx.QueryRowContext(ctx,
-		"SELECT status FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE",
+		"SELECT status, track_inventory FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE",
 		tenantID, idProduct,
-	).Scan(&status)
+	).Scan(&status, &trackInventory)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return errors.ErrProductNotFound
+			return false, errors.ErrProductNotFound
 		}
-		return fmt.Errorf("error locking product for purchase: %w", err)
+		return false, fmt.Errorf("error locking product for purchase: %w", err)
 	}
 	if status != pModel.StatusActive {
-		return errors.ErrProductNotPurchasable
+		return false, errors.ErrProductNotPurchasable
 	}
-	return nil
+	return trackInventory, nil
 }
 
 // UpdateProductImages replaces image_urls and thumbnail_url under a FOR UPDATE lock

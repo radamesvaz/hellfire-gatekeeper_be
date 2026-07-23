@@ -76,18 +76,18 @@ func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, tenantID uint64
 	return products, nil
 }
 
-func (m *MockProductRepo2) AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) error {
+func (m *MockProductRepo2) AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) (bool, error) {
 	if m.onAssertActive != nil {
 		m.onAssertActive(idProduct)
 	}
 	product, exists := m.Products[idProduct]
 	if !exists {
-		return internalErrors.ErrProductNotFound
+		return false, internalErrors.ErrProductNotFound
 	}
 	if product.Status != pModel.StatusActive {
-		return internalErrors.ErrProductNotPurchasable
+		return false, internalErrors.ErrProductNotPurchasable
 	}
-	return nil
+	return product.TrackInventory, nil
 }
 
 func (m *MockProductRepo2) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error) {
@@ -420,6 +420,53 @@ func TestCreateOrder_RejectsWhenProductDeactivatedInsideTx(t *testing.T) {
 	assert.ErrorIs(t, err, internalErrors.ErrProductNotPurchasable)
 	assert.False(t, mockOrderRepo.OrderCreated)
 	assert.Equal(t, 0, mockProductRepo.DecrementCalls)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateOrder_UsesLockedTrackInventoryWhenEnabledMidCreate(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	mock.ExpectBegin()
+	mock.ExpectCommit()
+
+	mockUserRepo := &MockUserRepo{ShouldCreate: false}
+	product := activeProduct(1, "Pan", 2.50, 10)
+	product.TrackInventory = false // pre-tx snapshot: unlimited
+	mockProductRepo := &MockProductRepo2{
+		Products:     map[uint64]pModel.Product{1: product},
+		StockUpdates: make(map[uint64]uint64),
+	}
+	// Admin enables inventory tracking after GetProductsByIDs, before/at FOR UPDATE.
+	mockProductRepo.onAssertActive = func(id uint64) {
+		p := mockProductRepo.Products[id]
+		p.TrackInventory = true
+		mockProductRepo.Products[id] = p
+	}
+	mockOrderRepo := &MockOrderRepo2{DB: db}
+
+	service := Creator{
+		UserRepo:    mockUserRepo,
+		ProductRepo: mockProductRepo,
+		OrderRepo:   mockOrderRepo,
+	}
+
+	payload := oModel.CreateOrderPayload{
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-track-race",
+		Items: []oModel.CreateOrderItemInput{
+			{IdProduct: 1, Quantity: 3},
+		},
+		DeliveryDate: "2024-12-25",
+	}
+	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
+	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, mockProductRepo.DecrementCalls, "must decrement using locked track_inventory, not pre-tx snapshot")
+	assert.Equal(t, uint64(7), mockProductRepo.StockUpdates[1])
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

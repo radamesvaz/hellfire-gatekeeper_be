@@ -884,28 +884,45 @@ func TestProductRepository_AssertProductActiveTx(t *testing.T) {
 	ctx := context.Background()
 	const tenantID = uint64(1)
 
-	t.Run("active_ok", func(t *testing.T) {
+	t.Run("active_ok_returns_track_inventory", func(t *testing.T) {
 		mock.ExpectBegin()
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT status, track_inventory FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
 			WithArgs(tenantID, uint64(1)).
-			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("active"))
+			WillReturnRows(sqlmock.NewRows([]string{"status", "track_inventory"}).AddRow("active", true))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		require.NoError(t, repo.AssertProductActiveTx(ctx, tx, tenantID, 1))
+		trackInventory, err := repo.AssertProductActiveTx(ctx, tx, tenantID, 1)
+		require.NoError(t, err)
+		assert.True(t, trackInventory)
+		_ = tx.Rollback()
+		require.NoError(t, mock.ExpectationsWereMet())
+	})
+
+	t.Run("active_ok_untracked", func(t *testing.T) {
+		mock.ExpectBegin()
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT status, track_inventory FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
+			WithArgs(tenantID, uint64(1)).
+			WillReturnRows(sqlmock.NewRows([]string{"status", "track_inventory"}).AddRow("active", false))
+
+		tx, err := db.BeginTx(ctx, nil)
+		require.NoError(t, err)
+		trackInventory, err := repo.AssertProductActiveTx(ctx, tx, tenantID, 1)
+		require.NoError(t, err)
+		assert.False(t, trackInventory)
 		_ = tx.Rollback()
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
 
 	t.Run("inactive_rejected", func(t *testing.T) {
 		mock.ExpectBegin()
-		mock.ExpectQuery(regexp.QuoteMeta("SELECT status FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT status, track_inventory FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
 			WithArgs(tenantID, uint64(1)).
-			WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow("inactive"))
+			WillReturnRows(sqlmock.NewRows([]string{"status", "track_inventory"}).AddRow("inactive", true))
 
 		tx, err := db.BeginTx(ctx, nil)
 		require.NoError(t, err)
-		err = repo.AssertProductActiveTx(ctx, tx, tenantID, 1)
+		_, err = repo.AssertProductActiveTx(ctx, tx, tenantID, 1)
 		assert.ErrorIs(t, err, errors.ErrProductNotPurchasable)
 		_ = tx.Rollback()
 		require.NoError(t, mock.ExpectationsWereMet())

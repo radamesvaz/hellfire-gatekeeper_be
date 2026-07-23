@@ -289,6 +289,8 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.cleanupImagesIfDeleted(id, status)
+
 	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get id user from context", http.StatusInternalServerError)
@@ -430,13 +432,7 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if newStatus == pModel.StatusDeleted && h.ImageService != nil {
-		if delErr := h.ImageService.DeleteProductImages(id); delErr != nil {
-			logger.Warn().Err(delErr).
-				Uint64("product_id", id).
-				Msg("Best-effort DeleteProductImages after status=deleted failed")
-		}
-	}
+	h.cleanupImagesIfDeleted(id, newStatus)
 
 	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
@@ -458,6 +454,18 @@ func (h *ProductHandler) UpdateProductStatus(w http.ResponseWriter, r *http.Requ
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Product status updated successfully",
 	})
+}
+
+// cleanupImagesIfDeleted best-effort removes local product image files after soft-delete.
+func (h *ProductHandler) cleanupImagesIfDeleted(productID uint64, status pModel.ProductStatus) {
+	if status != pModel.StatusDeleted || h.ImageService == nil {
+		return
+	}
+	if delErr := h.ImageService.DeleteProductImages(productID); delErr != nil {
+		logger.Warn().Err(delErr).
+			Uint64("product_id", productID).
+			Msg("Best-effort DeleteProductImages after status=deleted failed")
+	}
 }
 
 // UpdateHistoryTable - Update the history table

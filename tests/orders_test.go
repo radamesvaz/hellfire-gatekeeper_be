@@ -1332,3 +1332,45 @@ func TestGetAllOrders_SearchAndUserFilter_MultiPageCursorContinuity(t *testing.T
 		assert.Greater(t, firstPage2.ID, lastPage1.ID)
 	}
 }
+
+func TestUpdateOrder_SuperAdminCancel_RestoresStock(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	productRepository := &productRepo.ProductRepository{DB: db}
+	orderHandler := handlers.OrderHandler{
+		Repo:        orderRepo,
+		ProductRepo: productRepository,
+	}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	authService := auth.New("testingsecret", 60)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+
+	tenantID := uint64(1)
+	superadminID := lookupUserIDByEmailAndRole(t, db, "superadmin@example.com", uModel.UserRoleSuperAdmin)
+	jwt, err := authService.GenerateJWT(superadminID, uModel.UserRoleSuperAdmin, "superadmin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	var stockBefore int
+	err = db.QueryRow(`SELECT stock FROM products WHERE tenant_id = $1 AND id_product = 2`, tenantID).Scan(&stockBefore)
+	require.NoError(t, err)
+
+	// Seed order 2 is pending with 2x product 2 (Suspiros).
+	req := httptest.NewRequest("PATCH", "/auth/orders/2", strings.NewReader(`{"status":"cancelled"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var stockAfter int
+	err = db.QueryRow(`SELECT stock FROM products WHERE tenant_id = $1 AND id_product = 2`, tenantID).Scan(&stockAfter)
+	require.NoError(t, err)
+	assert.Equal(t, stockBefore+2, stockAfter, "superadmin cancel must restore inventory like admin")
+}

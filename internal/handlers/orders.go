@@ -336,8 +336,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Check if user is admin for cancellation
-		isAdmin := userRole == 1 // Admin role ID is 1
+		// Admin and superadmin cancel restore inventory; clients do not.
+		isAdmin := middleware.IsAdminRole(userRole)
 
 		// Create status updater service with stock reversion capability
 		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)

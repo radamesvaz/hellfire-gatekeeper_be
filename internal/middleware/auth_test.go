@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -238,6 +239,13 @@ func TestGetUserRoleFromContext_ClientRole(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(2), role)
+}
+
+func TestIsAdminRole(t *testing.T) {
+	assert.True(t, IsAdminRole(uint64(uModel.UserRoleAdmin)))
+	assert.True(t, IsAdminRole(uint64(uModel.UserRoleSuperAdmin)))
+	assert.False(t, IsAdminRole(uint64(uModel.UserRoleClient)))
+	assert.False(t, IsAdminRole(0))
 }
 
 func TestRequireAdminRole_AllowsAdminAndSuperAdmin(t *testing.T) {

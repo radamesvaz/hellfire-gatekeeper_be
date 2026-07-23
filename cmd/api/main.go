@@ -481,8 +481,13 @@ func main() {
 		fmt.Fprint(w, "OK")
 	}).Methods("GET")
 
-	r.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
-	r.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
+	// Legacy public catalog + create-order: tenant via X-Tenant-Slug (same resolver as /t/{tenant_slug}/...).
+	legacyPublic := r.PathPrefix("").Subrouter()
+	legacyPublic.Use(middleware.TenantFromPathOrHeader(tenantRepo))
+	legacyPublic.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
+	legacyPublic.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
+	legacyPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
 	r.HandleFunc("/setup/bootstrap/tenant", bootstrapHandler.BootstrapTenant).Methods("POST")
 	r.HandleFunc("/public/tenant-register", tenantSignupHandler.RegisterTenantWithCode).Methods("POST")
 	// Auth endpoints (legacy single-tenant)
@@ -515,9 +520,11 @@ func main() {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
 
-	// Product + image mutations require admin or superadmin.
+	// Product reads (all statuses) + mutations require admin or superadmin.
 	authAdmin := auth.PathPrefix("").Subrouter()
 	authAdmin.Use(middleware.RequireAdminRole())
+	authAdmin.HandleFunc("/products", productHandler.GetAllProductsAdmin).Methods("GET")
+	authAdmin.HandleFunc("/products/{id}", productHandler.GetProductByIDAdmin).Methods("GET")
 	authAdmin.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
 	authAdmin.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
 	authAdmin.HandleFunc("/products/{id}", productHandler.UpdateProductStatus).Methods("PATCH")
@@ -558,9 +565,6 @@ func main() {
 	tPublic.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
 	tPublic.HandleFunc("/branding", tenantHandler.GetBranding).Methods("GET")
 	tPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
-
-	// Legacy: POST /orders (no tenant in path; handler falls back to tenant 1)
-	r.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// Wrap router with CORS
 	corsWrapped := handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders, allowCredentials)(r)

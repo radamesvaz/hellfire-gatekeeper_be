@@ -19,6 +19,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
@@ -351,6 +352,78 @@ func TestCreateOrder(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestLegacyCreateOrder_WithoutTenantMiddlewareReturns400(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	orderHandler := handlers.OrderHandler{
+		Repo:        &ordersRepository.OrderRepository{DB: db},
+		UserRepo:    userRepo.NewUserRepository(db),
+		ProductRepo: &productRepo.ProductRepository{DB: db},
+	}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`{
+		"name": "No Tenant",
+		"email": "notenancy@example.com",
+		"phone": "1234567890",
+		"delivery_date": "%v",
+		"delivery_direction": "https://maps.app.goo.gl/no-tenant",
+		"items": [{"id_product": 1, "quantity": 1}]
+	}`, deliveryDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "tenant context required")
+}
+
+func TestLegacyCreateOrder_WithXTenantSlugHeader(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	tenantRepo := tenantRepository.Repository{DB: db}
+	orderHandler := handlers.OrderHandler{
+		Repo:        &ordersRepository.OrderRepository{DB: db},
+		UserRepo:    userRepo.NewUserRepository(db),
+		ProductRepo: &productRepo.ProductRepository{DB: db},
+	}
+
+	router := mux.NewRouter()
+	legacy := router.PathPrefix("").Subrouter()
+	legacy.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
+	legacy.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`{
+		"name": "Header Tenant",
+		"email": "headertenant@example.com",
+		"phone": "1234567890",
+		"delivery_date": "%v",
+		"delivery_direction": "https://maps.app.goo.gl/header-tenant",
+		"items": [{"id_product": 1, "quantity": 1}]
+	}`, deliveryDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tenant-Slug", "default")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, `{"message": "Order created successfully"}`, rr.Body.String())
 }
 
 func TestCreateOrder_MissingDeliveryDirection(t *testing.T) {

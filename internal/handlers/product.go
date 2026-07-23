@@ -47,10 +47,18 @@ func requireTenantID(w http.ResponseWriter, r *http.Request) (uint64, bool) {
 	return tenantID, true
 }
 
-// GetAllProducts lists products with cursor pagination (query: limit, cursor, optional q).
-// q: case-insensitive name contains search; minimum 2 characters; omit or empty for no filter.
-// Public catalog: activeOnly=true.
+// GetAllProducts lists active products only (public catalog / legacy GET /products).
+// Query: limit, cursor, optional q (case-insensitive name contains; min 2 chars).
 func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) {
+	h.listProducts(w, r, true)
+}
+
+// GetAllProductsAdmin lists all product statuses for admin management (GET /auth/products).
+func (h *ProductHandler) GetAllProductsAdmin(w http.ResponseWriter, r *http.Request) {
+	h.listProducts(w, r, false)
+}
+
+func (h *ProductHandler) listProducts(w http.ResponseWriter, r *http.Request, activeOnly bool) {
 	ctx := r.Context()
 	tenantID, ok := requireTenantID(w, r)
 	if !ok {
@@ -84,7 +92,7 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 		afterID = &id
 	}
 
-	page, err := h.Repo.ListProductsPage(ctx, tenantID, limit, afterID, nameLikePattern, true)
+	page, err := h.Repo.ListProductsPage(ctx, tenantID, limit, afterID, nameLikePattern, activeOnly)
 	if err != nil {
 		http.Error(w, "Failed to get products", http.StatusInternalServerError)
 		return
@@ -94,8 +102,17 @@ func (h *ProductHandler) GetAllProducts(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(productsListResponse{Items: page.Items, NextCursor: page.NextCursor})
 }
 
-// GetProductByID - Get a product by ID (public catalog: activeOnly=true)
+// GetProductByID returns an active product by ID (public catalog).
 func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) {
+	h.getProductByID(w, r, true)
+}
+
+// GetProductByIDAdmin returns a product by ID regardless of status (GET /auth/products/{id}).
+func (h *ProductHandler) GetProductByIDAdmin(w http.ResponseWriter, r *http.Request) {
+	h.getProductByID(w, r, false)
+}
+
+func (h *ProductHandler) getProductByID(w http.ResponseWriter, r *http.Request, activeOnly bool) {
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	id, err := strconv.ParseUint(idStr, 10, 64)
@@ -109,7 +126,7 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	product, err := h.Repo.GetProductByID(ctx, tenantID, id, true)
+	product, err := h.Repo.GetProductByID(ctx, tenantID, id, activeOnly)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)

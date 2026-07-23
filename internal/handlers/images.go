@@ -108,10 +108,13 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if newThumbnail == "" {
-		newThumbnail = selectThumbnail(existingProduct.ThumbnailURL, allImageURLs)
-		if newThumbnail != "" {
-			if thumbErr := h.Repo.UpdateProductThumbnail(ctx, tenantID, productID, newThumbnail); thumbErr != nil {
+		selected := selectThumbnail(existingProduct.ThumbnailURL, allImageURLs)
+		if selected != "" {
+			if thumbErr := h.Repo.UpdateProductThumbnail(ctx, tenantID, productID, selected); thumbErr != nil {
 				logger.Warn().Err(thumbErr).Uint64("product_id", productID).Msg("Failed to set thumbnail after append")
+				// Keep newThumbnail empty so response/history match persisted state.
+			} else {
+				newThumbnail = selected
 			}
 		}
 	}

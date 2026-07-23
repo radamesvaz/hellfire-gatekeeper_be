@@ -193,6 +193,97 @@ func TestGetAllProducts(t *testing.T) {
 	assert.Equal(t, []interface{}{}, product2["image_urls"])
 }
 
+func TestPublicGetAllProducts_ExcludesInactiveAndDeleted(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+
+	_, err := db.Exec(`UPDATE products SET status = 'inactive' WHERE id_product = 1`)
+	require.NoError(t, err)
+	_, err = db.Exec(`UPDATE products SET status = 'deleted' WHERE id_product = 2`)
+	require.NoError(t, err)
+
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+	router.HandleFunc("/products/{id}", handler.GetProductByID).Methods("GET")
+
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, withTenantContext(httptest.NewRequest("GET", "/products", nil), 1))
+	require.Equal(t, http.StatusOK, listRR.Code)
+
+	var listBody struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(listRR.Body.Bytes(), &listBody))
+	assert.Len(t, listBody.Items, 0)
+
+	getRR := httptest.NewRecorder()
+	router.ServeHTTP(getRR, withTenantContext(httptest.NewRequest("GET", "/products/1", nil), 1))
+	assert.Equal(t, http.StatusNotFound, getRR.Code)
+}
+
+func TestAdminGetAllProducts_IncludesInactiveAndDeleted(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+
+	_, err := db.Exec(`UPDATE products SET status = 'inactive' WHERE id_product = 1`)
+	require.NoError(t, err)
+	_, err = db.Exec(`UPDATE products SET status = 'deleted' WHERE id_product = 2`)
+	require.NoError(t, err)
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	secret := "testingsecret"
+	authService := auth.New(secret, 60)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
+	authAdmin := authRouter.PathPrefix("").Subrouter()
+	authAdmin.Use(middleware.RequireAdminRole())
+	authAdmin.HandleFunc("/products", handler.GetAllProductsAdmin).Methods("GET")
+	authAdmin.HandleFunc("/products/{id}", handler.GetProductByIDAdmin).Methods("GET")
+
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	listReq := httptest.NewRequest("GET", "/auth/products", nil)
+	listReq.Header.Set("Authorization", "Bearer "+jwt)
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	require.Equal(t, http.StatusOK, listRR.Code)
+
+	var listBody struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(listRR.Body.Bytes(), &listBody))
+	require.Len(t, listBody.Items, 2)
+
+	statuses := map[string]bool{}
+	for _, item := range listBody.Items {
+		statuses[item["status"].(string)] = true
+	}
+	assert.True(t, statuses["inactive"])
+	assert.True(t, statuses["deleted"])
+
+	getReq := httptest.NewRequest("GET", "/auth/products/1", nil)
+	getReq.Header.Set("Authorization", "Bearer "+jwt)
+	getRR := httptest.NewRecorder()
+	router.ServeHTTP(getRR, getReq)
+	require.Equal(t, http.StatusOK, getRR.Code)
+
+	var product map[string]interface{}
+	require.NoError(t, json.Unmarshal(getRR.Body.Bytes(), &product))
+	assert.Equal(t, "inactive", product["status"])
+	assert.Equal(t, "Brownie Clásico", product["name"])
+}
+
 func TestGetAllProductsWithQNameContains(t *testing.T) {
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)
 	defer terminate()

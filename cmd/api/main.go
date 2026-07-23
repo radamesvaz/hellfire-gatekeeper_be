@@ -301,7 +301,8 @@ func main() {
 
 	// Product handler (only for product data)
 	productHandler := &h.ProductHandler{
-		Repo: productRepo,
+		Repo:         productRepo,
+		ImageService: imageService,
 	}
 
 	// Image handler (only for image management)
@@ -514,35 +515,17 @@ func main() {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
 
-	// TODO: cuando exista login de clientes, agrupar en subrouter con middleware de rol admin (tras AuthMiddleware):
-	//   POST   /auth/products
-	//   PUT    /auth/products/{id}
-	//   PATCH  /auth/products/{id}
-	//   PATCH  /auth/products/{id}/thumbnail
-	//   POST   /auth/products/{id}/thumbnail
-	//   POST   /auth/products/{id}/images
-	//   PUT    /auth/products/{id}/images
-	//   DELETE /auth/products/{id}/images
-	//   PATCH  /auth/branding/logo
-	//   PATCH  /auth/branding/colors
-	//   PATCH  /auth/branding/name
-	//   POST   /auth/invitations
-	//   POST   /auth/invitations/{id}/revoke
-	//   POST   /auth/invitations/{id}/resend
-	//   POST   /t/{tenant_slug}/auth/invitations
-	//   POST   /t/{tenant_slug}/auth/invitations/{id}/revoke
-	//   POST   /t/{tenant_slug}/auth/invitations/{id}/resend
-	// Product endpoints (data only)
-	auth.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
-	auth.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
-	auth.HandleFunc("/products/{id}", productHandler.UpdateProductStatus).Methods("PATCH")
-	auth.HandleFunc("/products/{id}/thumbnail", productHandler.UpdateProductThumbnail).Methods("PATCH")
-	auth.HandleFunc("/products/{id}/thumbnail", imageHandler.UploadProductThumbnail).Methods("POST")
-
-	// Image endpoints (image management)
-	auth.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
-	auth.HandleFunc("/products/{id}/images", imageHandler.ReplaceProductImages).Methods("PUT")
-	auth.HandleFunc("/products/{id}/images", imageHandler.DeleteProductImage).Methods("DELETE")
+	// Product + image mutations require admin or superadmin.
+	authAdmin := auth.PathPrefix("").Subrouter()
+	authAdmin.Use(middleware.RequireAdminRole())
+	authAdmin.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
+	authAdmin.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
+	authAdmin.HandleFunc("/products/{id}", productHandler.UpdateProductStatus).Methods("PATCH")
+	authAdmin.HandleFunc("/products/{id}/thumbnail", productHandler.UpdateProductThumbnail).Methods("PATCH")
+	authAdmin.HandleFunc("/products/{id}/thumbnail", imageHandler.UploadProductThumbnail).Methods("POST")
+	authAdmin.HandleFunc("/products/{id}/images", imageHandler.AddProductImages).Methods("POST")
+	authAdmin.HandleFunc("/products/{id}/images", imageHandler.ReplaceProductImages).Methods("PUT")
+	authAdmin.HandleFunc("/products/{id}/images", imageHandler.DeleteProductImage).Methods("DELETE")
 
 	// Order endpoints (authenticated: list, get, update)
 	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")

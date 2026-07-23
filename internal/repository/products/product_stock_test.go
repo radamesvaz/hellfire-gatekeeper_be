@@ -15,8 +15,8 @@ type MockProductRepository struct {
 	mock.Mock
 }
 
-func (m *MockProductRepository) GetProductByID(ctx context.Context, idProduct uint64) (pModel.Product, error) {
-	args := m.Called(ctx, idProduct)
+func (m *MockProductRepository) GetProductByID(ctx context.Context, idProduct uint64, activeOnly bool) (pModel.Product, error) {
+	args := m.Called(ctx, idProduct, activeOnly)
 	return args.Get(0).(pModel.Product), args.Error(1)
 }
 

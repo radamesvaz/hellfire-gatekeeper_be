@@ -31,6 +31,9 @@ var (
 
 const MaxThumbnailUploadBytes int64 = 5 * 1024 * 1024
 
+// MaxImageUploadBytes limits gallery image uploads (same as thumbnail).
+const MaxImageUploadBytes = MaxThumbnailUploadBytes
+
 // MaxTenantLogoUploadBytes limits tenant logo uploads (admin branding).
 const MaxTenantLogoUploadBytes int64 = 5 * 1024 * 1024
 
@@ -75,6 +78,9 @@ func (s *Service) SaveProductImages(productID uint64, files []*multipart.FileHea
 		// Validate file type
 		if !s.IsValidImageType(file) {
 			return nil, fmt.Errorf("invalid file type: %s", file.Filename)
+		}
+		if file.Size > MaxImageUploadBytes {
+			return nil, fmt.Errorf("%w: %s (%d > %d)", ErrThumbnailTooLarge, file.Filename, file.Size, MaxImageUploadBytes)
 		}
 
 		var imageURL string

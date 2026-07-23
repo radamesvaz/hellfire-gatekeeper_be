@@ -239,3 +239,41 @@ func TestGetUserRoleFromContext_ClientRole(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(2), role)
 }
+
+func TestRequireAdminRole_AllowsAdminAndSuperAdmin(t *testing.T) {
+	mw := RequireAdminRole()
+	var called bool
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for _, role := range []float64{1, 3} {
+		called = false
+		req := httptest.NewRequest(http.MethodPost, "/auth/products", nil)
+		req = req.WithContext(context.WithValue(req.Context(), UserClaimsKey, jwt.MapClaims{
+			"user_id": float64(1),
+			"role_id": role,
+		}))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code, "role %.0f", role)
+		assert.True(t, called)
+	}
+}
+
+func TestRequireAdminRole_RejectsClient(t *testing.T) {
+	mw := RequireAdminRole()
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/products", nil)
+	req = req.WithContext(context.WithValue(req.Context(), UserClaimsKey, jwt.MapClaims{
+		"user_id": float64(2),
+		"role_id": float64(2),
+	}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}

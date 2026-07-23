@@ -1,0 +1,5 @@
+ALTER TABLE products
+    ADD COLUMN available BOOLEAN DEFAULT TRUE;
+
+ALTER TABLE products_history
+    ADD COLUMN available BOOLEAN DEFAULT TRUE;

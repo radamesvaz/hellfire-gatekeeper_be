@@ -85,7 +85,7 @@ paths:
                         name: Suspiros
                         description: ""
                         price: 5
-                        available: true
+                        track_inventory: true
                         stock: 2
                         status: active
                         image_urls: []
@@ -258,14 +258,21 @@ components:
         price:
           type: number
           format: double
-        available:
+        track_inventory:
           type: boolean
+          description: |
+            When true, stock is decremented on order create and reverted on admin cancel.
+            When false, stock is not enforced (unlimited / service-style products).
         stock:
           type: integer
           format: int64
         status:
           type: string
-          description: p. ej. active, inactive, deleted
+          description: |
+            Product lifecycle. Public catalog endpoints only return `active`.
+            `inactive` hides from catalog but keeps the product; `deleted` soft-deletes
+            (admin may also clean up images).
+          enum: [active, inactive, deleted]
         image_urls:
           type: array
           items:

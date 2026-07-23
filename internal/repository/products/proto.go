@@ -8,26 +8,26 @@ import (
 
 // ProductResponse struct
 type ProductResponse struct {
-	ID          uint64               `json:"id_product" gorm:"primaryKey"`
-	Name        string               `json:"name" gorm:"not null;unique"`
-	Description string               `json:"description"`
-	Price       float64              `json:"price" gorm:"not null;check:price >= 0"`
-	Available   bool                 `json:"available"`
-	Stock       uint64               `json:"stock"`
-	Status      pModel.ProductStatus `json:"status"`
-	CreatedOn   *time.Time           `json:"created_on,omitempty"`
+	ID             uint64               `json:"id_product" gorm:"primaryKey"`
+	Name           string               `json:"name" gorm:"not null;unique"`
+	Description    string               `json:"description"`
+	Price          float64              `json:"price" gorm:"not null;check:price >= 0"`
+	TrackInventory bool                 `json:"track_inventory"`
+	Stock          uint64               `json:"stock"`
+	Status         pModel.ProductStatus `json:"status"`
+	CreatedOn      *time.Time           `json:"created_on,omitempty"`
 }
 
 // Marshal the product to ProductResponse
 func Marshal(product *pModel.Product) ProductResponse {
 	response := ProductResponse{
-		ID:          product.ID,
-		Name:        product.Name,
-		Description: product.Description,
-		Price:       product.Price,
-		Status:      product.Status,
-		Stock:       product.Stock,
-		Available:   product.Available,
+		ID:             product.ID,
+		Name:           product.Name,
+		Description:    product.Description,
+		Price:          product.Price,
+		Status:         product.Status,
+		Stock:          product.Stock,
+		TrackInventory: product.TrackInventory,
 	}
 
 	if product.CreatedOn.Valid {

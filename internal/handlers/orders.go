@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -43,7 +44,8 @@ func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 
 	ignoreStatus := r.URL.Query().Get("ignore_status") == "true"
@@ -132,7 +134,8 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 	order, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
@@ -178,10 +181,10 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tenant: from path (public POST /t/{tenant_slug}/orders) or from auth context; fallback 1 for legacy POST /orders.
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 	var tenantCfgRepo orderService.TenantConfigRepository = nil
 	if h.TenantRepo != nil {
@@ -190,7 +193,17 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo, tenantCfgRepo)
 	err = orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, appErrors.ErrProductNotFound):
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case errors.Is(err, appErrors.ErrProductNotPurchasable):
+			http.Error(w, err.Error(), http.StatusConflict)
+		case errors.Is(err, appErrors.ErrNotEnoughProductStock),
+			strings.Contains(err.Error(), "not enough product stock"):
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -270,7 +283,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 
 	// Get user ID from JWT token

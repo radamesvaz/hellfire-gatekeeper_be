@@ -27,15 +27,15 @@ func TestProductRepository_ListProductsPage(t *testing.T) {
 
 	t.Run("empty page", func(t *testing.T) {
 		rows := sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status",
 			"image_urls", "thumbnail_url", "created_on",
 		})
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on
 FROM products WHERE tenant_id = $1`)).
 			WithArgs(tenantID, limit+1).
 			WillReturnRows(rows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil, false)
 		require.NoError(t, err)
 		assert.Empty(t, page.Items)
 		assert.Nil(t, page.NextCursor)
@@ -44,17 +44,17 @@ FROM products WHERE tenant_id = $1`)).
 
 	t.Run("first page with rows id desc", func(t *testing.T) {
 		mockRows := sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status",
 			"image_urls", "thumbnail_url", "created_on",
 		}).AddRow("2", "1", "B", "d", 10, true, 0, "active", "[]", sql.NullString{}, createdOn).
 			AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn)
 
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on
 FROM products WHERE tenant_id = $1`)).
 			WithArgs(tenantID, limit+1).
 			WillReturnRows(mockRows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil, false)
 		require.NoError(t, err)
 		require.Len(t, page.Items, 2)
 		assert.Equal(t, uint64(2), page.Items[0].ID)
@@ -66,17 +66,17 @@ FROM products WHERE tenant_id = $1`)).
 	t.Run("has next page", func(t *testing.T) {
 		smallLimit := 1
 		mockRows := sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status",
 			"image_urls", "thumbnail_url", "created_on",
 		}).AddRow("2", "1", "B", "d", 10, true, 0, "active", "[]", sql.NullString{}, createdOn).
 			AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn)
 
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on
 FROM products WHERE tenant_id = $1`)).
 			WithArgs(tenantID, smallLimit+1).
 			WillReturnRows(mockRows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, nil, nil)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, nil, nil, false)
 		require.NoError(t, err)
 		require.Len(t, page.Items, 1)
 		assert.Equal(t, uint64(2), page.Items[0].ID)
@@ -88,16 +88,16 @@ FROM products WHERE tenant_id = $1`)).
 		smallLimit := 10
 		after := uint64(2)
 		mockRows := sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status",
 			"image_urls", "thumbnail_url", "created_on",
 		}).AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn)
 
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on
 FROM products WHERE tenant_id = $1 AND id_product < $2`)).
 			WithArgs(tenantID, after, smallLimit+1).
 			WillReturnRows(mockRows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, &after, nil)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, smallLimit, &after, nil, false)
 		require.NoError(t, err)
 		require.Len(t, page.Items, 1)
 		assert.Equal(t, uint64(1), page.Items[0].ID)
@@ -108,16 +108,16 @@ FROM products WHERE tenant_id = $1 AND id_product < $2`)).
 	t.Run("name contains filter", func(t *testing.T) {
 		likePat := "%own%"
 		mockRows := sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status",
 			"image_urls", "thumbnail_url", "created_on",
 		}).AddRow("2", "1", "Brownie", "d", 10, true, 0, "active", "[]", sql.NullString{}, createdOn)
 
-		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+		mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on
 FROM products WHERE tenant_id = $1 AND lower(name) LIKE $2 ESCAPE '\'`)).
 			WithArgs(tenantID, likePat, limit+1).
 			WillReturnRows(mockRows)
 
-		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, &likePat)
+		page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, &likePat, false)
 		require.NoError(t, err)
 		require.Len(t, page.Items, 1)
 		assert.Equal(t, "Brownie", page.Items[0].Name)
@@ -158,7 +158,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"name",
 				"description",
 				"price",
-				"available",
+				"track_inventory",
 				"stock",
 				"status",
 				"image_urls",
@@ -179,17 +179,17 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 			),
 			mockError: nil,
 			expected: pModel.Product{
-				ID:           1,
-				TenantID:     1,
-				Name:         "Torta de chocolate test",
-				Description:  "Test descripcion de la torta test",
-				Price:        30,
-				Available:    true,
-				Stock:        5,
-				Status:       "active",
-				ImageURLs:    []string{},
-				ThumbnailURL: "",
-				CreatedOn:    createdOn,
+				ID:             1,
+				TenantID:       1,
+				Name:           "Torta de chocolate test",
+				Description:    "Test descripcion de la torta test",
+				Price:          30,
+				TrackInventory: true,
+				Stock:          5,
+				Status:         "active",
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
+				CreatedOn:      createdOn,
 			},
 			idProductForLookup: 1,
 		},
@@ -201,7 +201,7 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 				"name",
 				"description",
 				"price",
-				"available",
+				"track_inventory",
 				"stock",
 				"status",
 				"image_urls",
@@ -220,19 +220,19 @@ func TestProductRepository_GetProductByID(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
+					regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
 				).
 					WithArgs(tenantID2, tt.idProductForLookup).
 					WillReturnError(sql.ErrNoRows)
 			} else {
 				mock.ExpectQuery(
-					regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
+					regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
 				).
 					WithArgs(tenantID2, tt.idProductForLookup).
 					WillReturnRows(tt.mockRows)
 			}
 
-			product, err := repo.GetProductByID(context.Background(), tenantID2, tt.idProductForLookup)
+			product, err := repo.GetProductByID(context.Background(), tenantID2, tt.idProductForLookup, false)
 			if tt.expectedError {
 				assertHTTPError(t, err, tt.errorStatus, tt.mockError.Error())
 			} else {
@@ -267,40 +267,68 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 		{
 			name: "HAPPY PATH: Creating a product",
 			payload: pModel.Product{
-				TenantID:     1,
-				Name:         "Producto prueba test OK",
-				Description:  "Esta es la descripcion del producto de prueba",
-				Price:        20.3,
-				Available:    true,
-				Stock:        66,
-				Status:       pModel.StatusActive,
-				ImageURLs:    []string{},
-				ThumbnailURL: "",
+				TenantID:       1,
+				Name:           "Producto prueba test OK",
+				Description:    "Esta es la descripcion del producto de prueba",
+				Price:          20.3,
+				TrackInventory: true,
+				Stock:          66,
+				Status:         pModel.StatusActive,
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
 			},
 			mockError: nil,
 			expected: pModel.Product{
-				ID:           1,
-				TenantID:     1,
-				Name:         "Producto prueba test OK",
-				Description:  "Esta es la descripcion del producto de prueba",
-				Price:        20.3,
-				Available:    true,
-				Stock:        66,
-				Status:       pModel.StatusActive,
-				ImageURLs:    []string{},
-				ThumbnailURL: "",
+				ID:             1,
+				TenantID:       1,
+				Name:           "Producto prueba test OK",
+				Description:    "Esta es la descripcion del producto de prueba",
+				Price:          20.3,
+				TrackInventory: true,
+				Stock:          66,
+				Status:         pModel.StatusActive,
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
+			},
+			expectedError: false,
+		},
+		{
+			name: "HAPPY PATH: Creating a product with zero price",
+			payload: pModel.Product{
+				TenantID:       1,
+				Name:           "Producto gratis",
+				Description:    "Producto con precio cero",
+				Price:          0,
+				TrackInventory: true,
+				Stock:          10,
+				Status:         pModel.StatusActive,
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
+			},
+			mockError: nil,
+			expected: pModel.Product{
+				ID:             1,
+				TenantID:       1,
+				Name:           "Producto gratis",
+				Description:    "Producto con precio cero",
+				Price:          0,
+				TrackInventory: true,
+				Stock:          10,
+				Status:         pModel.StatusActive,
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
 			},
 			expectedError: false,
 		},
 		{
 			name: "SAD PATH: Creating a product without a name",
 			payload: pModel.Product{
-				Name:         "",
-				Description:  "Esta es la descripcion del producto de prueba",
-				Price:        20.3,
-				Available:    true,
-				ImageURLs:    []string{},
-				ThumbnailURL: "",
+				Name:           "",
+				Description:    "Esta es la descripcion del producto de prueba",
+				Price:          20.3,
+				TrackInventory: true,
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -310,12 +338,12 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 		{
 			name: "SAD PATH: Creating a product without a description",
 			payload: pModel.Product{
-				Name:         "Name",
-				Description:  "",
-				Price:        20.3,
-				Available:    true,
-				ImageURLs:    []string{},
-				ThumbnailURL: "",
+				Name:           "Name",
+				Description:    "",
+				Price:          20.3,
+				TrackInventory: true,
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -323,14 +351,14 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 			expected:      pModel.Product{},
 		},
 		{
-			name: "SAD PATH: Creating a product without a price",
+			name: "SAD PATH: Creating a product with negative price",
 			payload: pModel.Product{
-				Name:         "Name",
-				Description:  "Esta es la descripcion del producto de prueba",
-				Price:        0,
-				Available:    true,
-				ImageURLs:    []string{},
-				ThumbnailURL: "",
+				Name:           "Name",
+				Description:    "Esta es la descripcion del producto de prueba",
+				Price:          -1,
+				TrackInventory: true,
+				ImageURLs:      []string{},
+				ThumbnailURL:   "",
 			},
 			expectedError: true,
 			mockError:     errors.ErrCreatingProduct,
@@ -345,7 +373,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 				mock.ExpectQuery(
 					regexp.QuoteMeta(
 						`INSERT INTO products 
-		(tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url) 
+		(tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_product`,
 					),
 				).
@@ -354,7 +382,7 @@ func TestProductRepository_CreateProduct(t *testing.T) {
 						tt.payload.Name,
 						tt.payload.Description,
 						tt.payload.Price,
-						tt.payload.Available,
+						tt.payload.TrackInventory,
 						tt.expected.Stock,
 						tt.payload.Status,
 						"[]", // JSON marshaled empty array for image_urls
@@ -409,7 +437,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"name",
 				"description",
 				"price",
-				"available",
+				"track_inventory",
 				"stock",
 				"status",
 				"created_on",
@@ -445,7 +473,7 @@ func TestProductRepository_UpdateProductStatus(t *testing.T) {
 				"name",
 				"description",
 				"price",
-				"available",
+				"track_inventory",
 				"stock",
 				"created_on",
 			}).AddRow(
@@ -533,7 +561,7 @@ func TestProductRepository_UpdateProductInvalidStatus(t *testing.T) {
 				"name",
 				"description",
 				"price",
-				"available",
+				"track_inventory",
 				"created_on",
 			}).AddRow(
 				"1",
@@ -602,7 +630,7 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 				"name",
 				"description",
 				"price",
-				"available",
+				"track_inventory",
 				"stock",
 				"status",
 				"created_on",
@@ -627,14 +655,14 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 			),
 			mockError: nil,
 			payload: pModel.Product{
-				ID:           1,
-				Name:         "Updated name",
-				Description:  "Updated description",
-				Price:        50,
-				Available:    false,
-				Stock:        5,
-				Status:       pModel.StatusInactive,
-				ThumbnailURL: "",
+				ID:             1,
+				Name:           "Updated name",
+				Description:    "Updated description",
+				Price:          50,
+				TrackInventory: false,
+				Stock:          5,
+				Status:         pModel.StatusInactive,
+				ThumbnailURL:   "",
 			},
 		},
 	}
@@ -643,15 +671,15 @@ func TestProductRepository_UpdateProduct(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.expectedError {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6, thumbnail_url = $7 WHERE tenant_id = $8 AND id_product = $9"),
+					regexp.QuoteMeta("UPDATE products SET name = $1, description = $2, price = $3, stock = $4, status = $5, track_inventory = $6, thumbnail_url = $7 WHERE tenant_id = $8 AND id_product = $9"),
 				).
-					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Stock, tt.payload.Status, nil, tenantID4, tt.payload.ID).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Stock, tt.payload.Status, tt.payload.TrackInventory, nil, tenantID4, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 0))
 			} else {
 				mock.ExpectExec(
-					regexp.QuoteMeta("UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6, thumbnail_url = $7 WHERE tenant_id = $8 AND id_product = $9"),
+					regexp.QuoteMeta("UPDATE products SET name = $1, description = $2, price = $3, stock = $4, status = $5, track_inventory = $6, thumbnail_url = $7 WHERE tenant_id = $8 AND id_product = $9"),
 				).
-					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Available, tt.payload.Stock, tt.payload.Status, nil, tenantID4, tt.payload.ID).
+					WithArgs(tt.payload.Name, tt.payload.Description, tt.payload.Price, tt.payload.Stock, tt.payload.Status, tt.payload.TrackInventory, nil, tenantID4, tt.payload.ID).
 					WillReturnResult(sqlmock.NewResult(0, 1))
 			}
 
@@ -739,11 +767,11 @@ func TestProductRepo_GetProductsByIDs(t *testing.T) {
 
 	const tenantID8 = uint64(1)
 	ids := []uint64{1, 2}
-	rows := sqlmock.NewRows([]string{"id_product", "tenant_id", "name", "price", "stock"}).
-		AddRow(1, tenantID8, "Torta Chocolate", 12.5, 5).
-		AddRow(2, tenantID8, "Torta Vainilla", 10.0, 3)
+	rows := sqlmock.NewRows([]string{"id_product", "tenant_id", "name", "price", "stock", "status", "track_inventory"}).
+		AddRow(1, tenantID8, "Torta Chocolate", 12.5, 5, "active", true).
+		AddRow(2, tenantID8, "Torta Vainilla", 10.0, 3, "active", false)
 
-	query := "SELECT id_product, tenant_id, name, price, stock FROM products WHERE tenant_id = $1 AND id_product IN ($2,$3)"
+	query := "SELECT id_product, tenant_id, name, price, stock, status, track_inventory FROM products WHERE tenant_id = $1 AND id_product IN ($2,$3)"
 
 	mock.ExpectQuery(regexp.QuoteMeta(query)).
 		WithArgs(tenantID8, 1, 2).
@@ -754,6 +782,8 @@ func TestProductRepo_GetProductsByIDs(t *testing.T) {
 	assert.Len(t, products, 2)
 	assert.Equal(t, "Torta Chocolate", products[0].Name)
 	assert.Equal(t, uint64(2), products[1].ID)
+	assert.True(t, products[0].TrackInventory)
+	assert.False(t, products[1].TrackInventory)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -807,6 +837,107 @@ func TestProductRepository_DecrementProductStockTx(t *testing.T) {
 		_ = tx.Rollback()
 		require.NoError(t, mock.ExpectationsWereMet())
 	})
+}
+
+func TestProductRepository_AppendProductImages(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	const tenantID = uint64(1)
+	const productID = uint64(2)
+	newURLs := []string{"/uploads/products/2/extra1.jpg", "/uploads/products/2/extra2.jpg"}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT image_urls, thumbnail_url FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE")).
+		WithArgs(tenantID, productID).
+		WillReturnRows(sqlmock.NewRows([]string{"image_urls", "thumbnail_url"}).
+			AddRow(`["/uploads/products/2/main.jpg"]`, "/uploads/products/2/main.jpg"))
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4")).
+		WithArgs(`["/uploads/products/2/main.jpg","/uploads/products/2/extra1.jpg","/uploads/products/2/extra2.jpg"]`, "/uploads/products/2/main.jpg", tenantID, productID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	allURLs, thumbnail, err := repo.AppendProductImages(context.Background(), tenantID, productID, newURLs)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"/uploads/products/2/main.jpg", "/uploads/products/2/extra1.jpg", "/uploads/products/2/extra2.jpg"}, allURLs)
+	assert.Equal(t, "/uploads/products/2/main.jpg", thumbnail)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProductRepository_ListProductsPage_ActiveOnly(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	createdOn := sql.NullTime{Time: time.Now(), Valid: true}
+	const tenantID = uint64(1)
+	limit := 20
+
+	mockRows := sqlmock.NewRows([]string{
+		"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status",
+		"image_urls", "thumbnail_url", "created_on",
+	}).AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn)
+
+	mock.ExpectQuery(regexp.QuoteMeta(`SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on
+FROM products WHERE tenant_id = $1 AND status = 'active'`)).
+		WithArgs(tenantID, limit+1).
+		WillReturnRows(mockRows)
+
+	page, err := repo.ListProductsPage(context.Background(), tenantID, limit, nil, nil, true)
+	require.NoError(t, err)
+	require.Len(t, page.Items, 1)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProductRepository_GetProductByID_ActiveOnly(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	createdOn := sql.NullTime{Time: time.Now(), Valid: true}
+
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2 AND status = 'active'"),
+	).
+		WithArgs(uint64(1), uint64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status",
+			"image_urls", "thumbnail_url", "created_on",
+		}).AddRow("1", "1", "A", "d", 5, true, 0, "active", "[]", sql.NullString{}, createdOn))
+
+	product, err := repo.GetProductByID(context.Background(), 1, 1, true)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(1), product.ID)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestProductRepository_RevertProductStockTx_UnlimitedProduct(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	repo := &ProductRepository{DB: db}
+	ctx := context.Background()
+	const tenantID = uint64(1)
+
+	mock.ExpectBegin()
+	mock.ExpectExec(regexp.QuoteMeta("UPDATE products SET stock = stock + $1 WHERE tenant_id = $2 AND id_product = $3 AND track_inventory = true")).
+		WithArgs(uint64(3), tenantID, uint64(1)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT track_inventory FROM products WHERE tenant_id = $1 AND id_product = $2")).
+		WithArgs(tenantID, uint64(1)).
+		WillReturnRows(sqlmock.NewRows([]string{"track_inventory"}).AddRow(false))
+
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	err = repo.RevertProductStockTx(ctx, tx, tenantID, 1, 3)
+	require.NoError(t, err)
+	_ = tx.Rollback()
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 // Validates the error to be of *HTTPError type, have the correct status and message

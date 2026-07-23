@@ -48,6 +48,7 @@ func TestGetAllOrders(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -179,6 +180,7 @@ func TestGetAllOrdersFilteredByIDUser(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -242,6 +244,7 @@ func TestGetOrderByID(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 
@@ -335,9 +338,10 @@ func TestCreateOrder(t *testing.T) {
     }
     `, deliveryDate.Format("2006-01-02"))
 
-	// Send the simulated request
+	// Send the simulated request (legacy /orders still requires tenant in context)
 	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req = withTenantContext(req, 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -463,6 +467,7 @@ func TestCreateOrder_WithOrderHistory(t *testing.T) {
 	// Send the simulated request
 	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req = withTenantContext(req, 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -517,6 +522,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -546,6 +552,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	// Create the order
 	createReq := httptest.NewRequest("POST", "/orders", strings.NewReader(createPayload))
 	createReq.Header.Set("Content-Type", "application/json")
+	createReq = withTenantContext(createReq, 1)
 	createRR := httptest.NewRecorder()
 	router.ServeHTTP(createRR, createReq)
 
@@ -631,6 +638,7 @@ func TestUpdateOrderStatus_OrderNotFound(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -673,6 +681,7 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -754,6 +763,7 @@ func TestUpdateOrder_InvalidPayload(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -816,6 +826,7 @@ func TestGetAllOrdersWithIgnoreStatus(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -879,6 +890,7 @@ func TestGetAllOrdersWithStatusFilter(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -955,6 +967,7 @@ func TestGetAllOrdersWithCombinedFilters(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -1000,6 +1013,7 @@ func TestGetAllOrders_WithSearchQuery(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -1042,6 +1056,7 @@ func TestGetAllOrders_OrderByCreatedOnAndCursor(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -1100,6 +1115,7 @@ func TestGetAllOrders_SearchWithCombinedFiltersAndCursor(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -1190,6 +1206,7 @@ func TestGetAllOrders_SearchAndUserFilter_MultiPageCursorContinuity(t *testing.T
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)

@@ -178,6 +178,24 @@ func GetUserRoleFromContext(ctx context.Context) (uint64, error) {
 	return uint64(roleIDFloat), nil
 }
 
+// RequireAdminRole allows UserRoleAdmin (1) and UserRoleSuperAdmin (3); otherwise 403.
+func RequireAdminRole() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			roleID, err := GetUserRoleFromContext(r.Context())
+			if err != nil {
+				http.Error(w, "Unauthorized: invalid token role", http.StatusUnauthorized)
+				return
+			}
+			if roleID != uint64(uModel.UserRoleAdmin) && roleID != uint64(uModel.UserRoleSuperAdmin) {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func GetTenantIDFromContext(ctx context.Context) (uint64, error) {
 	tenantID, ok := ctx.Value(TenantIDKey).(uint64)
 	if !ok {

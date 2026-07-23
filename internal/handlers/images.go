@@ -22,11 +22,19 @@ type ImageHandler struct {
 	ImageService *imagesService.Service
 }
 
+func requireImageTenantID(w http.ResponseWriter, r *http.Request) (uint64, bool) {
+	tenantID, err := middleware.GetTenantIDFromContext(r.Context())
+	if err != nil {
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return 0, false
+	}
+	return tenantID, true
+}
+
 // AddProductImages - Add images to a product
 func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get product ID from URL
 	idStr := mux.Vars(r)["id"]
 	productID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -34,14 +42,12 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Get tenant ID from context
-	tenantID, err := middleware.GetTenantIDFromContext(ctx)
-	if err != nil {
-		tenantID = 1
+	tenantID, ok := requireImageTenantID(w, r)
+	if !ok {
+		return
 	}
 
-	// Get existing product (validates existence and gets current data)
-	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID)
+	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -51,14 +57,12 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Parse multipart form
 	err = r.ParseMultipartForm(32 << 20) // 32 MB max
 	if err != nil {
 		http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 		return
 	}
 
-	// Get files from the parsed multipart form
 	if r.MultipartForm == nil || r.MultipartForm.File == nil {
 		http.Error(w, "No files provided", http.StatusBadRequest)
 		return
@@ -70,41 +74,57 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Validate image files
 	for _, file := range files {
 		if !h.ImageService.IsValidImageType(file) {
 			http.Error(w, fmt.Sprintf("Invalid image type: %s", file.Filename), http.StatusBadRequest)
 			return
 		}
+		if file.Size > imagesService.MaxImageUploadBytes {
+			http.Error(w, fmt.Sprintf("Image too large: %s", file.Filename), http.StatusBadRequest)
+			return
+		}
 	}
 
-	// Save new images
+	// Upload first, then DB; on DB fail delete newly uploaded files
 	newImageURLs, err := h.ImageService.SaveProductImages(productID, files)
 	if err != nil {
 		http.Error(w, "Failed to save images", http.StatusInternalServerError)
 		return
 	}
 
-	// Combine existing and new image URLs
-	allImageURLs := append(existingProduct.ImageURLs, newImageURLs...)
-	newThumbnail := selectThumbnail(existingProduct.ThumbnailURL, allImageURLs)
-
-	// Update product with all image URLs (existing + new)
-	err = h.Repo.UpdateProductImages(ctx, tenantID, productID, allImageURLs, newThumbnail)
+	allImageURLs, newThumbnail, err := h.Repo.AppendProductImages(ctx, tenantID, productID, newImageURLs)
 	if err != nil {
+		for _, url := range newImageURLs {
+			if delErr := h.ImageService.DeleteImage(url); delErr != nil {
+				logger.Warn().Err(delErr).Str("image_url", url).Msg("Failed to cleanup uploaded image after DB error")
+			}
+		}
+		if errors.Is(err, appErrors.ErrProductNotFound) {
+			http.Error(w, "Product not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
 	}
 
-	// Update history
+	if newThumbnail == "" {
+		newThumbnail = selectThumbnail(existingProduct.ThumbnailURL, allImageURLs)
+		if newThumbnail != "" {
+			if thumbErr := h.Repo.UpdateProductThumbnail(ctx, tenantID, productID, newThumbnail); thumbErr != nil {
+				logger.Warn().Err(thumbErr).Uint64("product_id", productID).Msg("Failed to set thumbnail after append")
+			}
+		}
+	}
+
 	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
 		return
 	}
 
-	product := pModel.Product{ID: productID, TenantID: tenantID, ImageURLs: allImageURLs, ThumbnailURL: newThumbnail}
-	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
+	existingProduct.ImageURLs = allImageURLs
+	existingProduct.ThumbnailURL = newThumbnail
+	err = h.UpdateHistoryTable(ctx, &existingProduct, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
 			Uint64("product_id", productID).
@@ -112,7 +132,6 @@ func (h *ImageHandler) AddProductImages(w http.ResponseWriter, r *http.Request) 
 			Msg("Error creating the history record for add images")
 	}
 
-	// Return response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := map[string]interface{}{
@@ -137,12 +156,12 @@ func (h *ImageHandler) UploadProductThumbnail(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	tenantID, err := middleware.GetTenantIDFromContext(ctx)
-	if err != nil {
-		tenantID = 1
+	tenantID, ok := requireImageTenantID(w, r)
+	if !ok {
+		return
 	}
 
-	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID)
+	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -179,6 +198,7 @@ func (h *ImageHandler) UploadProductThumbnail(w http.ResponseWriter, r *http.Req
 
 	updatedImageURLs, err := h.Repo.PrependImageAndSetThumbnail(ctx, tenantID, productID, thumbnailURL)
 	if err != nil {
+		_ = h.ImageService.DeleteImage(thumbnailURL)
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
 			return
@@ -218,11 +238,9 @@ func (h *ImageHandler) UploadProductThumbnail(w http.ResponseWriter, r *http.Req
 func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get product ID from URL path
 	vars := mux.Vars(r)
 	productIDStr := vars["id"]
 
-	// Get image URL from query parameter
 	imageURL := r.URL.Query().Get("imageUrl")
 	if imageURL == "" {
 		http.Error(w, "Image URL is required", http.StatusBadRequest)
@@ -235,14 +253,12 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Get tenant ID from context
-	tenantID, err := middleware.GetTenantIDFromContext(ctx)
-	if err != nil {
-		tenantID = 1
+	tenantID, ok := requireImageTenantID(w, r)
+	if !ok {
+		return
 	}
 
-	// Check if product exists
-	product, err := h.Repo.GetProductByID(ctx, tenantID, productID)
+	product, err := h.Repo.GetProductByID(ctx, tenantID, productID, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -252,7 +268,6 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Check if image exists in product
 	imageIndex := -1
 	for i, url := range product.ImageURLs {
 		if url == imageURL {
@@ -266,39 +281,35 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Remove image from slice
 	newImageURLs := make([]string, 0, len(product.ImageURLs)-1)
 	newImageURLs = append(newImageURLs, product.ImageURLs[:imageIndex]...)
 	newImageURLs = append(newImageURLs, product.ImageURLs[imageIndex+1:]...)
 
 	newThumbnail := selectThumbnail(product.ThumbnailURL, newImageURLs)
 
-	// Update product with new image URLs
 	err = h.Repo.UpdateProductImages(ctx, tenantID, productID, newImageURLs, newThumbnail)
 	if err != nil {
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
 	}
 
-	// Delete image file from filesystem
 	err = h.ImageService.DeleteImage(imageURL)
 	if err != nil {
 		logger.Warn().Err(err).
 			Str("image_url", imageURL).
 			Uint64("product_id", productID).
 			Msg("Failed to delete image file")
-		// Don't fail the request if file deletion fails
 	}
 
-	// Update history
 	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
 		return
 	}
 
-	updatedProduct := pModel.Product{ID: productID, TenantID: tenantID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
-	err = h.UpdateHistoryTable(ctx, &updatedProduct, productID, idUser, pModel.ActionUpdate)
+	product.ImageURLs = newImageURLs
+	product.ThumbnailURL = newThumbnail
+	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
 			Uint64("product_id", productID).
@@ -306,7 +317,6 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 			Msg("Error creating the history record for delete image")
 	}
 
-	// Return response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := map[string]interface{}{
@@ -324,7 +334,6 @@ func (h *ImageHandler) DeleteProductImage(w http.ResponseWriter, r *http.Request
 func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Get product ID from URL
 	idStr := mux.Vars(r)["id"]
 	productID, err := strconv.ParseUint(idStr, 10, 64)
 	if err != nil {
@@ -332,14 +341,12 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get tenant ID from context
-	tenantID, err := middleware.GetTenantIDFromContext(ctx)
-	if err != nil {
-		tenantID = 1
+	tenantID, ok := requireImageTenantID(w, r)
+	if !ok {
+		return
 	}
 
-	// Check if product exists
-	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID)
+	existingProduct, err := h.Repo.GetProductByID(ctx, tenantID, productID, false)
 	if err != nil {
 		if errors.Is(err, appErrors.ErrProductNotFound) {
 			http.Error(w, "Product not found", http.StatusNotFound)
@@ -349,14 +356,12 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Parse multipart form
 	err = r.ParseMultipartForm(32 << 20) // 32 MB max
 	if err != nil {
 		http.Error(w, "Failed to parse multipart form", http.StatusBadRequest)
 		return
 	}
 
-	// Get files from the parsed multipart form
 	if r.MultipartForm == nil || r.MultipartForm.File == nil {
 		http.Error(w, "No files provided", http.StatusBadRequest)
 		return
@@ -368,26 +373,20 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Validate image files
 	for _, file := range files {
 		if !h.ImageService.IsValidImageType(file) {
 			http.Error(w, fmt.Sprintf("Invalid image type: %s", file.Filename), http.StatusBadRequest)
 			return
 		}
-	}
-
-	// Delete existing images from filesystem
-	for _, imageURL := range existingProduct.ImageURLs {
-		err = h.ImageService.DeleteImage(imageURL)
-		if err != nil {
-			logger.Warn().Err(err).
-				Str("image_url", imageURL).
-				Uint64("product_id", productID).
-				Msg("Failed to delete existing image file")
+		if file.Size > imagesService.MaxImageUploadBytes {
+			http.Error(w, fmt.Sprintf("Image too large: %s", file.Filename), http.StatusBadRequest)
+			return
 		}
 	}
 
-	// Save new images
+	oldImageURLs := append([]string(nil), existingProduct.ImageURLs...)
+
+	// Upload NEW first, then DB update, THEN delete old files; on DB fail delete new uploads
 	newImageURLs, err := h.ImageService.SaveProductImages(productID, files)
 	if err != nil {
 		http.Error(w, "Failed to save images", http.StatusInternalServerError)
@@ -396,22 +395,35 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 
 	newThumbnail := selectThumbnail(existingProduct.ThumbnailURL, newImageURLs)
 
-	// Update product with new image URLs (replace all)
 	err = h.Repo.UpdateProductImages(ctx, tenantID, productID, newImageURLs, newThumbnail)
 	if err != nil {
+		for _, url := range newImageURLs {
+			if delErr := h.ImageService.DeleteImage(url); delErr != nil {
+				logger.Warn().Err(delErr).Str("image_url", url).Msg("Failed to cleanup new upload after DB error")
+			}
+		}
 		http.Error(w, "Failed to update product images", http.StatusInternalServerError)
 		return
 	}
 
-	// Update history
+	for _, imageURL := range oldImageURLs {
+		if delErr := h.ImageService.DeleteImage(imageURL); delErr != nil {
+			logger.Warn().Err(delErr).
+				Str("image_url", imageURL).
+				Uint64("product_id", productID).
+				Msg("Failed to delete old image file after replace")
+		}
+	}
+
 	idUser, err := middleware.GetUserIDFromContext(ctx)
 	if err != nil {
 		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
 		return
 	}
 
-	product := pModel.Product{ID: productID, TenantID: tenantID, ImageURLs: newImageURLs, ThumbnailURL: newThumbnail}
-	err = h.UpdateHistoryTable(ctx, &product, productID, idUser, pModel.ActionUpdate)
+	existingProduct.ImageURLs = newImageURLs
+	existingProduct.ThumbnailURL = newThumbnail
+	err = h.UpdateHistoryTable(ctx, &existingProduct, productID, idUser, pModel.ActionUpdate)
 	if err != nil {
 		logger.Warn().Err(err).
 			Uint64("product_id", productID).
@@ -419,7 +431,6 @@ func (h *ImageHandler) ReplaceProductImages(w http.ResponseWriter, r *http.Reque
 			Msg("Error creating the history record for replace images")
 	}
 
-	// Return response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := map[string]interface{}{
@@ -450,18 +461,18 @@ func selectThumbnail(current string, imageURLs []string) string {
 // UpdateHistoryTable - Update the history table (shared with ProductHandler)
 func (h *ImageHandler) UpdateHistoryTable(ctx context.Context, product *pModel.Product, idProduct uint64, idUser uint64, action pModel.ProductAction) error {
 	history := pModel.ProductHistory{
-		TenantID:     product.TenantID,
-		IDProduct:    idProduct,
-		Name:         product.Name,
-		Description:  product.Description,
-		Price:        product.Price,
-		Available:    product.Available,
-		Stock:        product.Stock,
-		Status:       product.Status,
-		ImageURLs:    product.ImageURLs,
-		ThumbnailURL: product.ThumbnailURL,
-		ModifiedBy:   idUser,
-		Action:       action,
+		TenantID:       product.TenantID,
+		IDProduct:      idProduct,
+		Name:           product.Name,
+		Description:    product.Description,
+		Price:          product.Price,
+		TrackInventory: product.TrackInventory,
+		Stock:          product.Stock,
+		Status:         product.Status,
+		ImageURLs:      product.ImageURLs,
+		ThumbnailURL:   product.ThumbnailURL,
+		ModifiedBy:     idUser,
+		Action:         action,
 	}
 
 	return h.Repo.CreateProductHistory(ctx, history.TenantID, history)

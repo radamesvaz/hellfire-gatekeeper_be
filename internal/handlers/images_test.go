@@ -41,10 +41,10 @@ func TestImageHandler_UploadProductThumbnail_Success(t *testing.T) {
 	userID := float64(77)
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
+		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
 	).WithArgs(tenantID, productID).WillReturnRows(
 		sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status", "image_urls", "thumbnail_url", "created_on",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status", "image_urls", "thumbnail_url", "created_on",
 		}).AddRow(
 			productID, tenantID, "Cake", "desc", 10.5, true, 3, "active", `["/uploads/products/10/main.jpg"]`, "/uploads/products/10/main.jpg", sql.NullTime{},
 		),
@@ -117,10 +117,10 @@ func TestImageHandler_UploadProductThumbnail_InvalidFileType(t *testing.T) {
 	userID := float64(77)
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
+		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
 	).WithArgs(tenantID, productID).WillReturnRows(
 		sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status", "image_urls", "thumbnail_url", "created_on",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status", "image_urls", "thumbnail_url", "created_on",
 		}).AddRow(
 			productID, tenantID, "Cake", "desc", 10.5, true, 3, "active", `[]`, nil, sql.NullTime{},
 		),

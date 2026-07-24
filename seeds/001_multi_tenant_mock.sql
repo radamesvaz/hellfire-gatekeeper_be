@@ -42,24 +42,24 @@ FROM tenants t
 WHERE t.slug IN ('default', 'panaderia-norte', 'pasteleria-centro')
 ON CONFLICT (tenant_id, email) DO NOTHING;
 
-INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+INSERT INTO products (name, description, price, track_inventory, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
 SELECT 'Tarta Negra Norte', 'Mock tarta chocolate', 12.50, TRUE, NOW(), 'active', 2, 20, NULL, NULL
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE tenant_id = 2 AND name = 'Tarta Negra Norte');
 
-INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+INSERT INTO products (name, description, price, track_inventory, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
 SELECT 'Pan Integral Norte', 'Mock pan integral', 4.00, TRUE, NOW(), 'active', 2, 50, NULL, NULL
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE tenant_id = 2 AND name = 'Pan Integral Norte');
 
-INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+INSERT INTO products (name, description, price, track_inventory, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
 SELECT 'Milhojas Centro', 'Mock milhojas', 18.00, TRUE, NOW(), 'active', 3, 15, NULL, NULL
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE tenant_id = 3 AND name = 'Milhojas Centro');
 
-INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+INSERT INTO products (name, description, price, track_inventory, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
 SELECT 'Cupcake Centro', 'Mock cupcake', 3.75, TRUE, NOW(), 'active', 3, 40, NULL, NULL
 WHERE NOT EXISTS (SELECT 1 FROM products WHERE tenant_id = 3 AND name = 'Cupcake Centro');
 
 INSERT INTO products_history (
-    tenant_id, id_product, name, description, price, available, stock, status, image_urls, thumbnail_url, modified_by, action
+    tenant_id, id_product, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, modified_by, action
 )
 SELECT
     p.tenant_id,
@@ -67,7 +67,7 @@ SELECT
     p.name,
     p.description,
     p.price,
-    p.available,
+    p.track_inventory,
     p.stock,
     p.status,
     p.image_urls,
@@ -318,7 +318,7 @@ JOIN products p ON p.tenant_id = 3 AND p.name = 'Cupcake Centro';
 -- Tenant 1 (default): catálogo y pedidos GET /products y GET /auth/orders.
 -- Tenants 2–3: catálogo GET /t/{slug}/products.
 
-INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+INSERT INTO products (name, description, price, track_inventory, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
 SELECT
     'seed_pagination_t1_' || lpad(n::text, 3, '0'),
     'Producto de seed para probar paginación (tenant default)',
@@ -336,7 +336,7 @@ WHERE NOT EXISTS (
     WHERE p.tenant_id = 1 AND p.name = 'seed_pagination_t1_' || lpad(n::text, 3, '0')
 );
 
-INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+INSERT INTO products (name, description, price, track_inventory, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
 SELECT
     'seed_pagination_t2_' || lpad(n::text, 3, '0'),
     'Producto de seed para probar paginación (Panadería Norte)',
@@ -354,7 +354,7 @@ WHERE NOT EXISTS (
     WHERE p.tenant_id = 2 AND p.name = 'seed_pagination_t2_' || lpad(n::text, 3, '0')
 );
 
-INSERT INTO products (name, description, price, available, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
+INSERT INTO products (name, description, price, track_inventory, created_on, status, tenant_id, stock, image_urls, thumbnail_url)
 SELECT
     'seed_pagination_t3_' || lpad(n::text, 3, '0'),
     'Producto de seed para probar paginación (Pastelería Centro)',
@@ -373,7 +373,7 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO products_history (
-    tenant_id, id_product, name, description, price, available, stock, status, image_urls, thumbnail_url, modified_by, action
+    tenant_id, id_product, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, modified_by, action
 )
 SELECT
     p.tenant_id,
@@ -381,7 +381,7 @@ SELECT
     p.name,
     p.description,
     p.price,
-    p.available,
+    p.track_inventory,
     p.stock,
     p.status,
     p.image_urls,
@@ -440,7 +440,7 @@ FROM orders o
 JOIN LATERAL (
     SELECT id_product, name, price
     FROM products
-    WHERE tenant_id = 1 AND available = TRUE
+    WHERE tenant_id = 1 AND status = 'active'
     ORDER BY id_product
     OFFSET 0
     LIMIT 1
@@ -485,7 +485,7 @@ FROM orders o
 JOIN LATERAL (
     SELECT id_product, name, price
     FROM products
-    WHERE tenant_id = 2 AND available = TRUE
+    WHERE tenant_id = 2 AND status = 'active'
     ORDER BY id_product DESC
     LIMIT 1
 ) p ON TRUE
@@ -529,7 +529,7 @@ FROM orders o
 JOIN LATERAL (
     SELECT id_product, name, price
     FROM products
-    WHERE tenant_id = 3 AND available = TRUE
+    WHERE tenant_id = 3 AND status = 'active'
     ORDER BY id_product ASC
     LIMIT 1
 ) p ON TRUE

@@ -59,12 +59,21 @@ paths:
     get:
       security: []
       tags: [Catalog]
-      summary: Listar productos (legacy / tenant por contexto)
+      summary: Listar productos (legacy / tenant por cabecera)
       description: |
-        Listado paginado. El tenant efectivo depende del contexto (p. ej. default si no hay tenant en la petición).
+        Listado paginado de productos **activos** únicamente (catálogo público).
+        Resuelve el tenant con la cabecera `X-Tenant-Slug`
+        (mismo middleware que `GET /t/{tenant_slug}/products`).
         Orden: **`id_product` descendente** (más alto primero).
+        Para listar inactive/deleted (admin), usa `GET /auth/products`.
       operationId: listProductsLegacy
       parameters:
+        - name: X-Tenant-Slug
+          in: header
+          required: true
+          schema:
+            type: string
+          example: default
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/CursorProducts"
         - $ref: "#/components/parameters/QueryQ"
@@ -85,7 +94,7 @@ paths:
                         name: Suspiros
                         description: ""
                         price: 5
-                        available: true
+                        track_inventory: true
                         stock: 2
                         status: active
                         image_urls: []
@@ -101,7 +110,9 @@ paths:
       tags: [Catalog]
       summary: Listar productos por tenant (slug en ruta)
       description: |
-        Mismo contrato que `GET /products`. Resuelve el tenant por `tenant_slug` (y/o cabecera `X-Tenant-Slug` según middleware).
+        Mismo contrato que `GET /products` (solo productos `active`).
+        Resuelve el tenant por `tenant_slug` (y/o cabecera `X-Tenant-Slug` según middleware).
+        Para administración (todos los estados), usa `GET /auth/products`.
       operationId: listProductsByTenantSlug
       parameters:
         - name: tenant_slug
@@ -124,6 +135,67 @@ paths:
           $ref: "#/components/responses/BadRequestText"
         "404":
           description: Tenant no encontrado (cuando aplica)
+
+  /auth/products:
+    get:
+      tags: [Catalog]
+      summary: Listar productos (admin, todos los estados)
+      description: |
+        Listado paginado para administración. Incluye `active`, `inactive` y `deleted`.
+        Requiere **Bearer JWT** con rol admin o superadmin.
+        Orden: **`id_product` descendente** (más alto primero).
+      operationId: listProductsAdmin
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/CursorProducts"
+        - $ref: "#/components/parameters/QueryQ"
+      responses:
+        "200":
+          description: Página de productos (cualquier status)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestText"
+        "401":
+          description: JWT ausente o inválido
+        "403":
+          description: Rol insuficiente (no admin/superadmin)
+
+  /auth/products/{id}:
+    get:
+      tags: [Catalog]
+      summary: Obtener producto por ID (admin, cualquier estado)
+      description: |
+        Devuelve el producto aunque esté `inactive` o `deleted`.
+        Requiere **Bearer JWT** con rol admin o superadmin.
+      operationId: getProductByIdAdmin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Producto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "401":
+          description: JWT ausente o inválido
+        "403":
+          description: Rol insuficiente (no admin/superadmin)
+        "404":
+          description: Producto no encontrado
 
   /auth/orders:
     get:
@@ -258,14 +330,21 @@ components:
         price:
           type: number
           format: double
-        available:
+        track_inventory:
           type: boolean
+          description: |
+            When true, stock is decremented on order create and reverted on admin cancel.
+            When false, stock is not enforced (unlimited / service-style products).
         stock:
           type: integer
           format: int64
         status:
           type: string
-          description: p. ej. active, inactive, deleted
+          description: |
+            Product lifecycle. Public catalog endpoints only return `active`.
+            `inactive` hides from catalog but keeps the product; `deleted` soft-deletes
+            (admin may also clean up images).
+          enum: [active, inactive, deleted]
         image_urls:
           type: array
           items:

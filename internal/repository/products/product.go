@@ -26,6 +26,7 @@ type ListProductsPageResult struct {
 // ListProductsPage returns up to limit products for the tenant, ordered by id_product descending.
 // If afterID is non-nil, only rows with id_product < *afterID are considered (next page).
 // If namePrefix is non-nil, only rows whose name contains the query text (case-insensitive) are included.
+// If activeOnly is true, only products with status = 'active' are included.
 // Fetches limit+1 rows internally to detect a following page.
 func (r *ProductRepository) ListProductsPage(
 	ctx context.Context,
@@ -33,16 +34,20 @@ func (r *ProductRepository) ListProductsPage(
 	limit int,
 	afterID *uint64,
 	namePrefix *string,
+	activeOnly bool,
 ) (ListProductsPageResult, error) {
 	logger.Debug().Uint64("tenant_id", tenantID).Int("limit", limit).Msg("Listing products page")
 	if limit < 1 {
 		return ListProductsPageResult{}, fmt.Errorf("limit must be at least 1")
 	}
 
-	q := `SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on
+	q := `SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on
 FROM products WHERE tenant_id = $1`
 	args := []interface{}{tenantID}
 	argPos := 2
+	if activeOnly {
+		q += " AND status = 'active'"
+	}
 	if namePrefix != nil && *namePrefix != "" {
 		q += fmt.Sprintf(" AND lower(name) LIKE $%d ESCAPE '\\'", argPos)
 		args = append(args, *namePrefix)
@@ -74,7 +79,7 @@ FROM products WHERE tenant_id = $1`
 			&product.Name,
 			&product.Description,
 			&product.Price,
-			&product.Available,
+			&product.TrackInventory,
 			&product.Stock,
 			&product.Status,
 			&imageURLsJSON,
@@ -130,16 +135,22 @@ FROM products WHERE tenant_id = $1`
 	return ListProductsPageResult{Items: products, NextCursor: next}, nil
 }
 
-// Getting a product by its ID for a tenant
-func (r *ProductRepository) GetProductByID(_ context.Context, tenantID, idProduct uint64) (pModel.Product, error) {
+// Getting a product by its ID for a tenant.
+// If activeOnly is true, only returns the product when status = 'active'.
+func (r *ProductRepository) GetProductByID(_ context.Context, tenantID, idProduct uint64, activeOnly bool) (pModel.Product, error) {
 	logger.Debug().Uint64("tenant_id", tenantID).Uint64("product_id", idProduct).Msg("Getting product by id")
 
 	product := pModel.Product{}
 	var imageURLsJSON sql.NullString
 	var thumbnailURL sql.NullString
 
+	q := "SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"
+	if activeOnly {
+		q += " AND status = 'active'"
+	}
+
 	err := r.DB.QueryRow(
-		"SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2",
+		q,
 		tenantID,
 		idProduct,
 	).Scan(
@@ -148,7 +159,7 @@ func (r *ProductRepository) GetProductByID(_ context.Context, tenantID, idProduc
 		&product.Name,
 		&product.Description,
 		&product.Price,
-		&product.Available,
+		&product.TrackInventory,
 		&product.Stock,
 		&product.Status,
 		&imageURLsJSON,
@@ -202,7 +213,7 @@ func (r *ProductRepository) GetProductsByIDs(ctx context.Context, tenantID uint6
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id_product, tenant_id, name, price, stock 
+		SELECT id_product, tenant_id, name, price, stock, status, track_inventory 
 		FROM products 
 		WHERE tenant_id = $1 AND id_product IN (%s)`, strings.Join(placeholders, ","))
 
@@ -215,7 +226,7 @@ func (r *ProductRepository) GetProductsByIDs(ctx context.Context, tenantID uint6
 	products := []pModel.Product{}
 	for rows.Next() {
 		var p pModel.Product
-		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.Price, &p.Stock); err != nil {
+		if err := rows.Scan(&p.ID, &p.TenantID, &p.Name, &p.Price, &p.Stock, &p.Status, &p.TrackInventory); err != nil {
 			return nil, fmt.Errorf("error scanning product: %w", err)
 		}
 		products = append(products, p)
@@ -233,7 +244,7 @@ func (r *ProductRepository) CreateProduct(_ context.Context, tenantID uint64, pr
 
 	createdProduct := pModel.Product{}
 
-	if product.Name == "" || product.Description == "" || product.Price == 0 {
+	if product.Name == "" || product.Description == "" {
 		logger.Warn().
 			Str("name", product.Name).
 			Msg("Invalid product data for creation")
@@ -259,10 +270,10 @@ func (r *ProductRepository) CreateProduct(_ context.Context, tenantID uint64, pr
 	var insertedID uint64
 	err = r.DB.QueryRow(
 		`INSERT INTO products 
-		(tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url) 
+		(tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id_product`,
 		tenantID,
-		product.Name, product.Description, product.Price, product.Available, product.Stock, product.Status, string(imageURLsJSON), thumbnailValue).Scan(&insertedID)
+		product.Name, product.Description, product.Price, product.TrackInventory, product.Stock, product.Status, string(imageURLsJSON), thumbnailValue).Scan(&insertedID)
 
 	if err != nil {
 		logger.Err(err).
@@ -276,7 +287,7 @@ func (r *ProductRepository) CreateProduct(_ context.Context, tenantID uint64, pr
 	createdProduct.Name = product.Name
 	createdProduct.Description = product.Description
 	createdProduct.Price = product.Price
-	createdProduct.Available = product.Available
+	createdProduct.TrackInventory = product.TrackInventory
 	createdProduct.Stock = product.Stock
 	createdProduct.Status = product.Status
 	createdProduct.ImageURLs = product.ImageURLs
@@ -367,13 +378,13 @@ func (r *ProductRepository) UpdateProduct(_ context.Context, tenantID uint64, pr
 	}
 
 	result, err := r.DB.Exec(
-		"UPDATE products SET name = $1, description = $2, price = $3, available = $4, stock = $5, status = $6, thumbnail_url = $7 WHERE tenant_id = $8 AND id_product = $9",
+		"UPDATE products SET name = $1, description = $2, price = $3, stock = $4, status = $5, track_inventory = $6, thumbnail_url = $7 WHERE tenant_id = $8 AND id_product = $9",
 		product.Name,
 		product.Description,
 		product.Price,
-		product.Available,
 		product.Stock,
 		product.Status,
+		product.TrackInventory,
 		thumbnailValue,
 		tenantID,
 		product.ID,
@@ -469,9 +480,13 @@ func (r *ProductRepository) RevertProductStock(ctx context.Context, tenantID, id
 	}
 
 	// Get current product to verify it exists and get current stock
-	product, err := r.GetProductByID(ctx, tenantID, idProduct)
+	product, err := r.GetProductByID(ctx, tenantID, idProduct, false)
 	if err != nil {
 		return fmt.Errorf("error getting product for stock revert: %w", err)
+	}
+
+	if !product.TrackInventory {
+		return nil
 	}
 
 	// Calculate new stock (current + quantity to revert)
@@ -494,11 +509,15 @@ func (r *ProductRepository) RevertProductStock(ctx context.Context, tenantID, id
 }
 
 // RevertProductStockTx adds stock back to a product within a transaction (atomic increment; for use in CancelExpiredOrders).
+// Only increments when track_inventory is true. Unlimited products (track_inventory=false) succeed as a no-op.
 func (r *ProductRepository) RevertProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantityToRevert uint64) error {
 	if quantityToRevert == 0 {
 		return nil
 	}
-	result, err := tx.ExecContext(ctx, "UPDATE products SET stock = stock + $1 WHERE tenant_id = $2 AND id_product = $3", quantityToRevert, tenantID, idProduct)
+	result, err := tx.ExecContext(ctx,
+		"UPDATE products SET stock = stock + $1 WHERE tenant_id = $2 AND id_product = $3 AND track_inventory = true",
+		quantityToRevert, tenantID, idProduct,
+	)
 	if err != nil {
 		return fmt.Errorf("error reverting product stock in tx: %w", err)
 	}
@@ -507,19 +526,35 @@ func (r *ProductRepository) RevertProductStockTx(ctx context.Context, tx *sql.Tx
 		return fmt.Errorf("error getting rows affected: %w", err)
 	}
 	if rows == 0 {
+		var trackInventory bool
+		err := tx.QueryRowContext(ctx,
+			"SELECT track_inventory FROM products WHERE tenant_id = $1 AND id_product = $2",
+			tenantID, idProduct,
+		).Scan(&trackInventory)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("product %d not found for stock revert", idProduct)
+		}
+		if err != nil {
+			return fmt.Errorf("error checking product for stock revert: %w", err)
+		}
+		if !trackInventory {
+			return nil
+		}
 		return fmt.Errorf("product %d not found for stock revert", idProduct)
 	}
 	return nil
 }
 
 // DecrementProductStockTx atomically decrements product stock within a transaction for a tenant.
-// It updates only if stock >= quantity (prevents overselling). Returns rows affected (1 = success, 0 = insufficient stock).
+// It updates only if the product is active and stock >= quantity (prevents overselling and
+// racing with deactivation). Returns rows affected (1 = success, 0 = insufficient stock or not active).
+// Callers should skip this when track_inventory is false; use AssertProductActiveTx instead.
 func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error) {
 	if quantity == 0 {
 		return 1, nil
 	}
 	result, err := tx.ExecContext(ctx,
-		"UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1",
+		"UPDATE products SET stock = stock - $1 WHERE tenant_id = $2 AND id_product = $3 AND stock >= $1 AND status = 'active'",
 		quantity, tenantID, idProduct,
 	)
 	if err != nil {
@@ -532,9 +567,31 @@ func (r *ProductRepository) DecrementProductStockTx(ctx context.Context, tx *sql
 	return rows, nil
 }
 
-// UpdateProductImages updates the image URLs and thumbnail for a product
+// AssertProductActiveTx locks the product row, ensures it is purchasable (status=active),
+// and returns the current track_inventory flag under that lock (not a pre-tx snapshot).
+func (r *ProductRepository) AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) (bool, error) {
+	var status pModel.ProductStatus
+	var trackInventory bool
+	err := tx.QueryRowContext(ctx,
+		"SELECT status, track_inventory FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE",
+		tenantID, idProduct,
+	).Scan(&status, &trackInventory)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, errors.ErrProductNotFound
+		}
+		return false, fmt.Errorf("error locking product for purchase: %w", err)
+	}
+	if status != pModel.StatusActive {
+		return false, errors.ErrProductNotPurchasable
+	}
+	return trackInventory, nil
+}
+
+// UpdateProductImages replaces image_urls and thumbnail_url under a FOR UPDATE lock
+// so concurrent append/delete/replace operations serialize on the product row.
 func (r *ProductRepository) UpdateProductImages(
-	_ context.Context,
+	ctx context.Context,
 	tenantID, idProduct uint64,
 	imageURLs []string,
 	thumbnailURL string,
@@ -544,7 +601,6 @@ func (r *ProductRepository) UpdateProductImages(
 		Int("image_count", len(imageURLs)).
 		Msg("Updating product images")
 
-	// Convert imageURLs to JSON
 	imageURLsJSON, err := json.Marshal(imageURLs)
 	if err != nil {
 		logger.Err(err).
@@ -560,20 +616,38 @@ func (r *ProductRepository) UpdateProductImages(
 		thumbnailValue = thumbnailURL
 	}
 
-	logger.Debug().
-		Uint64("product_id", idProduct).
-		Str("image_urls_json", string(imageURLsJSON)).
-		Str("thumbnail_url", thumbnailURL).
-		Msg("Marshaled image URLs JSON")
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
 
-	result, err := r.DB.Exec(
+	var existing string
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT image_urls FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE",
+		tenantID,
+		idProduct,
+	).Scan(&existing)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return errors.NewNotFound(errors.ErrProductNotFound)
+		}
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
 		"UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4",
 		string(imageURLsJSON),
 		thumbnailValue,
 		tenantID,
 		idProduct,
 	)
-
 	if err != nil {
 		logger.Err(err).
 			Uint64("product_id", idProduct).
@@ -587,13 +661,14 @@ func (r *ProductRepository) UpdateProductImages(
 			Uint64("product_id", idProduct).
 			Msg("Could not get the rows affected")
 	}
-
 	if rows == 0 {
-		logger.Debug().
-			Uint64("product_id", idProduct).
-			Msg("Product not found for image update")
 		return errors.NewNotFound(errors.ErrProductNotFound)
 	}
+
+	if err := tx.Commit(); err != nil {
+		return errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	tx = nil
 
 	logger.Info().
 		Uint64("product_id", idProduct).
@@ -601,6 +676,116 @@ func (r *ProductRepository) UpdateProductImages(
 		Int64("rows_affected", rows).
 		Msg("Product images updated successfully")
 	return nil
+}
+
+// RemoveProductImage removes one image URL under FOR UPDATE and recomputes thumbnail.
+// Concurrent appends wait on the lock, so newly added URLs are not dropped.
+func (r *ProductRepository) RemoveProductImage(
+	ctx context.Context,
+	tenantID, idProduct uint64,
+	imageURL string,
+) ([]string, string, error) {
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var imageURLsJSON sql.NullString
+	var thumbnailURL sql.NullString
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT image_urls, thumbnail_url FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE",
+		tenantID,
+		idProduct,
+	).Scan(&imageURLsJSON, &thumbnailURL)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, "", errors.NewNotFound(errors.ErrProductNotFound)
+		}
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	imageURLs := []string{}
+	if imageURLsJSON.Valid && imageURLsJSON.String != "" {
+		if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
+			return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+		}
+	}
+
+	imageIndex := -1
+	for i, url := range imageURLs {
+		if url == imageURL {
+			imageIndex = i
+			break
+		}
+	}
+	if imageIndex == -1 {
+		return nil, "", errors.NewNotFound(errors.ErrImageNotInProduct)
+	}
+
+	newImageURLs := make([]string, 0, len(imageURLs)-1)
+	newImageURLs = append(newImageURLs, imageURLs[:imageIndex]...)
+	newImageURLs = append(newImageURLs, imageURLs[imageIndex+1:]...)
+
+	currentThumbnail := ""
+	if thumbnailURL.Valid {
+		currentThumbnail = thumbnailURL.String
+	}
+	newThumbnail := selectThumbnailURL(currentThumbnail, newImageURLs)
+
+	updatedJSON, err := json.Marshal(newImageURLs)
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	var thumbnailValue interface{}
+	if newThumbnail == "" {
+		thumbnailValue = nil
+	} else {
+		thumbnailValue = newThumbnail
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		"UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4",
+		string(updatedJSON),
+		thumbnailValue,
+		tenantID,
+		idProduct,
+	)
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	if rows == 0 {
+		return nil, "", errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	tx = nil
+	return newImageURLs, newThumbnail, nil
+}
+
+func selectThumbnailURL(current string, imageURLs []string) string {
+	if len(imageURLs) == 0 {
+		return ""
+	}
+	for _, url := range imageURLs {
+		if url == current {
+			return current
+		}
+	}
+	return imageURLs[0]
 }
 
 // UpdateProductThumbnail updates only the thumbnail_url column for a product
@@ -724,4 +909,84 @@ func (r *ProductRepository) PrependImageAndSetThumbnail(ctx context.Context, ten
 	}
 	tx = nil
 	return updatedImageURLs, nil
+}
+
+// AppendProductImages appends image URLs to image_urls under a FOR UPDATE lock.
+// Returns the full image list and the current thumbnail_url after the update.
+func (r *ProductRepository) AppendProductImages(ctx context.Context, tenantID, idProduct uint64, newURLs []string) ([]string, string, error) {
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var imageURLsJSON sql.NullString
+	var thumbnailURL sql.NullString
+	err = tx.QueryRowContext(
+		ctx,
+		"SELECT image_urls, thumbnail_url FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE",
+		tenantID,
+		idProduct,
+	).Scan(&imageURLsJSON, &thumbnailURL)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, "", errors.NewNotFound(errors.ErrProductNotFound)
+		}
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	imageURLs := []string{}
+	if imageURLsJSON.Valid && imageURLsJSON.String != "" {
+		if err := json.Unmarshal([]byte(imageURLsJSON.String), &imageURLs); err != nil {
+			return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+		}
+	}
+
+	updatedImageURLs := append(append([]string{}, imageURLs...), newURLs...)
+	updatedJSON, err := json.Marshal(updatedImageURLs)
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	currentThumbnail := ""
+	if thumbnailURL.Valid {
+		currentThumbnail = thumbnailURL.String
+	}
+
+	var thumbnailValue interface{}
+	if currentThumbnail == "" {
+		thumbnailValue = nil
+	} else {
+		thumbnailValue = currentThumbnail
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		"UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4",
+		string(updatedJSON),
+		thumbnailValue,
+		tenantID,
+		idProduct,
+	)
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	if rows == 0 {
+		return nil, "", errors.NewNotFound(errors.ErrProductNotFound)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, "", errors.NewInternalServerError(errors.ErrUpdatingProductStatus)
+	}
+	tx = nil
+	return updatedImageURLs, currentThumbnail, nil
 }

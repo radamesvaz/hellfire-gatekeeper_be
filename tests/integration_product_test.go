@@ -33,6 +33,10 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
+func withTenantContext(req *http.Request, tenantID uint64) *http.Request {
+	return req.WithContext(context.WithValue(req.Context(), middleware.TenantIDKey, tenantID))
+}
+
 func setupPostgreSQLContainer(t *testing.T) (container testcontainers.Container, db *sql.DB, terminate func(), dsn string) {
 	ctx := context.Background()
 
@@ -151,7 +155,7 @@ func TestGetAllProducts(t *testing.T) {
 	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
 
 	// Send the simulated request
-	req := httptest.NewRequest("GET", "/products", nil)
+	req := withTenantContext(httptest.NewRequest("GET", "/products", nil), 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -173,7 +177,7 @@ func TestGetAllProducts(t *testing.T) {
 	assert.Equal(t, "Suspiros", product1["name"])
 	assert.Equal(t, "Suspiros tradicionales", product1["description"])
 	assert.Equal(t, float64(5), product1["price"])
-	assert.Equal(t, true, product1["available"])
+	assert.Equal(t, true, product1["track_inventory"])
 	assert.Equal(t, float64(2), product1["stock"])
 	assert.Equal(t, "active", product1["status"])
 	assert.Equal(t, []interface{}{}, product1["image_urls"])
@@ -183,10 +187,101 @@ func TestGetAllProducts(t *testing.T) {
 	assert.Equal(t, "Brownie Clásico", product2["name"])
 	assert.Equal(t, "Delicioso brownie de chocolate", product2["description"])
 	assert.Equal(t, 3.5, product2["price"])
-	assert.Equal(t, true, product2["available"])
+	assert.Equal(t, true, product2["track_inventory"])
 	assert.Equal(t, float64(6), product2["stock"])
 	assert.Equal(t, "active", product2["status"])
 	assert.Equal(t, []interface{}{}, product2["image_urls"])
+}
+
+func TestPublicGetAllProducts_ExcludesInactiveAndDeleted(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+
+	_, err := db.Exec(`UPDATE products SET status = 'inactive' WHERE id_product = 1`)
+	require.NoError(t, err)
+	_, err = db.Exec(`UPDATE products SET status = 'deleted' WHERE id_product = 2`)
+	require.NoError(t, err)
+
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+	router.HandleFunc("/products/{id}", handler.GetProductByID).Methods("GET")
+
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, withTenantContext(httptest.NewRequest("GET", "/products", nil), 1))
+	require.Equal(t, http.StatusOK, listRR.Code)
+
+	var listBody struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(listRR.Body.Bytes(), &listBody))
+	assert.Len(t, listBody.Items, 0)
+
+	getRR := httptest.NewRecorder()
+	router.ServeHTTP(getRR, withTenantContext(httptest.NewRequest("GET", "/products/1", nil), 1))
+	assert.Equal(t, http.StatusNotFound, getRR.Code)
+}
+
+func TestAdminGetAllProducts_IncludesInactiveAndDeleted(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	repo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &repo}
+
+	_, err := db.Exec(`UPDATE products SET status = 'inactive' WHERE id_product = 1`)
+	require.NoError(t, err)
+	_, err = db.Exec(`UPDATE products SET status = 'deleted' WHERE id_product = 2`)
+	require.NoError(t, err)
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	secret := "testingsecret"
+	authService := auth.New(secret, 60)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
+	authAdmin := authRouter.PathPrefix("").Subrouter()
+	authAdmin.Use(middleware.RequireAdminRole())
+	authAdmin.HandleFunc("/products", handler.GetAllProductsAdmin).Methods("GET")
+	authAdmin.HandleFunc("/products/{id}", handler.GetProductByIDAdmin).Methods("GET")
+
+	tenantID := uint64(1)
+	jwt, err := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	listReq := httptest.NewRequest("GET", "/auth/products", nil)
+	listReq.Header.Set("Authorization", "Bearer "+jwt)
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	require.Equal(t, http.StatusOK, listRR.Code)
+
+	var listBody struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(listRR.Body.Bytes(), &listBody))
+	require.Len(t, listBody.Items, 2)
+
+	statuses := map[string]bool{}
+	for _, item := range listBody.Items {
+		statuses[item["status"].(string)] = true
+	}
+	assert.True(t, statuses["inactive"])
+	assert.True(t, statuses["deleted"])
+
+	getReq := httptest.NewRequest("GET", "/auth/products/1", nil)
+	getReq.Header.Set("Authorization", "Bearer "+jwt)
+	getRR := httptest.NewRecorder()
+	router.ServeHTTP(getRR, getReq)
+	require.Equal(t, http.StatusOK, getRR.Code)
+
+	var product map[string]interface{}
+	require.NoError(t, json.Unmarshal(getRR.Body.Bytes(), &product))
+	assert.Equal(t, "inactive", product["status"])
+	assert.Equal(t, "Brownie Clásico", product["name"])
 }
 
 func TestGetAllProductsWithQNameContains(t *testing.T) {
@@ -201,7 +296,7 @@ func TestGetAllProductsWithQNameContains(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/products?q=spi", nil)
+	req := withTenantContext(httptest.NewRequest("GET", "/products?q=spi", nil), 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -214,7 +309,7 @@ func TestGetAllProductsWithQNameContains(t *testing.T) {
 	require.Len(t, body.Items, 1)
 	assert.Equal(t, "Suspiros", body.Items[0]["name"])
 
-	req = httptest.NewRequest("GET", "/products?q=zzzz", nil)
+	req = withTenantContext(httptest.NewRequest("GET", "/products?q=zzzz", nil), 1)
 	rr = httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -233,7 +328,7 @@ func TestGetAllProductsQNameTooShort(t *testing.T) {
 	router := mux.NewRouter()
 	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
 
-	req := httptest.NewRequest("GET", "/products?q=x", nil)
+	req := withTenantContext(httptest.NewRequest("GET", "/products?q=x", nil), 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
@@ -258,7 +353,7 @@ func TestGetProductByID(t *testing.T) {
 	router.HandleFunc("/products/{id}", handler.GetProductByID).Methods("GET")
 
 	// Send the simulated request
-	req := httptest.NewRequest("GET", "/products/1", nil)
+	req := withTenantContext(httptest.NewRequest("GET", "/products/1", nil), 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -274,7 +369,7 @@ func TestGetProductByID(t *testing.T) {
 	assert.Equal(t, "Brownie Clásico", product["name"])
 	assert.Equal(t, "Delicioso brownie de chocolate", product["description"])
 	assert.Equal(t, 3.5, product["price"])
-	assert.Equal(t, true, product["available"])
+	assert.Equal(t, true, product["track_inventory"])
 	assert.Equal(t, float64(6), product["stock"])
 	assert.Equal(t, "active", product["status"])
 	assert.Equal(t, []interface{}{}, product["image_urls"])
@@ -304,6 +399,7 @@ func TestCreateProduct(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
 
@@ -317,7 +413,7 @@ func TestCreateProduct(t *testing.T) {
 		"name": "Pie de parchita",
 		"description": "Base de galleta maria, decorado con merengue suizo",
 		"price": 18.0,
-		"available": true,
+		"track_inventory": true,
 		"stock": 6,
 		"status": "active"
 	  }`
@@ -329,7 +425,7 @@ func TestCreateProduct(t *testing.T) {
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, http.StatusCreated, rr.Code)
 
 	// Parse the response to verify structure
 	var response map[string]interface{}
@@ -371,6 +467,7 @@ func TestCreateProduct_TwoAdminsSameTenantCanCreate(t *testing.T) {
 	exp := 60
 	authService := auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/products", handler.CreateProduct).Methods("POST")
 
 	tenantID := uint64(1)
@@ -386,7 +483,7 @@ func TestCreateProduct_TwoAdminsSameTenantCanCreate(t *testing.T) {
 			"name": %q,
 			"description": "Created by admin",
 			"price": 10.0,
-			"available": true,
+			"track_inventory": true,
 			"stock": 1,
 			"status": "active"
 		}`, name)
@@ -400,10 +497,10 @@ func TestCreateProduct_TwoAdminsSameTenantCanCreate(t *testing.T) {
 	}
 
 	rrOne := createProduct(adminOneJWT, "Producto admin uno")
-	assert.Equal(t, http.StatusOK, rrOne.Code)
+	assert.Equal(t, http.StatusCreated, rrOne.Code)
 
 	rrTwo := createProduct(adminTwoJWT, "Producto admin dos")
-	assert.Equal(t, http.StatusOK, rrTwo.Code)
+	assert.Equal(t, http.StatusCreated, rrTwo.Code)
 
 	var responseOne map[string]interface{}
 	require.NoError(t, json.Unmarshal(rrOne.Body.Bytes(), &responseOne))
@@ -455,6 +552,7 @@ func TestCreateProductWithImages(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	// Add routes for both product and image handlers
 	authRouter.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
@@ -471,7 +569,7 @@ func TestCreateProductWithImages(t *testing.T) {
 		"name":        "Pie de parchita con imagen",
 		"description": "Base de galleta maria, decorado con merengue suizo",
 		"price":       18.0,
-		"available":   true,
+		"track_inventory": true,
 		"stock":       6,
 		"status":      "active",
 	}
@@ -487,11 +585,11 @@ func TestCreateProductWithImages(t *testing.T) {
 	router.ServeHTTP(rr, req)
 
 	// Verify product creation response
-	if rr.Code != http.StatusOK {
+	if rr.Code != http.StatusCreated {
 		t.Logf("Product creation response body: %s", rr.Body.String())
 		t.Logf("Product creation response status: %d", rr.Code)
 	}
-	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, http.StatusCreated, rr.Code)
 
 	// Parse product creation response
 	var productResponse map[string]interface{}
@@ -606,6 +704,7 @@ func TestUploadProductThumbnail(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/products", productHandler.CreateProduct).Methods("POST")
 	authRouter.HandleFunc("/products/{id}/thumbnail", imageHandler.UploadProductThumbnail).Methods("POST")
 
@@ -617,7 +716,7 @@ func TestUploadProductThumbnail(t *testing.T) {
 		"name": "Producto thumbnail dedicado",
 		"description": "Producto para probar endpoint de thumbnail",
 		"price": 7.5,
-		"available": true,
+		"track_inventory": true,
 		"stock": 4,
 		"status": "active"
 	}`
@@ -626,7 +725,7 @@ func TestUploadProductThumbnail(t *testing.T) {
 	createReq.Header.Set("Authorization", "Bearer "+jwt)
 	createRR := httptest.NewRecorder()
 	router.ServeHTTP(createRR, createReq)
-	require.Equal(t, http.StatusOK, createRR.Code)
+	require.Equal(t, http.StatusCreated, createRR.Code)
 
 	var createResp map[string]interface{}
 	err = json.Unmarshal(createRR.Body.Bytes(), &createResp)
@@ -655,7 +754,7 @@ func TestUploadProductThumbnail(t *testing.T) {
 	require.True(t, ok)
 	require.NotEmpty(t, thumbnailURL)
 
-	getReq := httptest.NewRequest("GET", fmt.Sprintf("/products/%s", productID), nil)
+	getReq := withTenantContext(httptest.NewRequest("GET", fmt.Sprintf("/products/%s", productID), nil), 1)
 	getRR := httptest.NewRecorder()
 	router.ServeHTTP(getRR, getReq)
 	require.Equal(t, http.StatusOK, getRR.Code)
@@ -695,6 +794,7 @@ func TestUpdateProduct(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/products/{id}", handler.UpdateProduct).Methods("PUT")
 
@@ -708,7 +808,7 @@ func TestUpdateProduct(t *testing.T) {
 		"name": "Pie de parchita - ACTUALIZADO",
 		"description": "Base de galleta maria, decorado con merengue suizo - actualizado",
 		"price": 18.0,
-		"available": true,
+		"track_inventory": true,
 		"stock": 6,
 		"status": "active"
 	  }`
@@ -752,6 +852,7 @@ func TestDeleteProduct(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/products/{id}", handler.UpdateProductStatus).Methods("PATCH")
 
@@ -821,6 +922,7 @@ func TestUpdateProductWithImages(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	// Add routes for both product and image handlers
 	authRouter.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
@@ -837,7 +939,7 @@ func TestUpdateProductWithImages(t *testing.T) {
 		"name":        "Brownie Clásico - ACTUALIZADO CON IMÁGENES",
 		"description": "Delicioso brownie de chocolate - ahora con imágenes",
 		"price":       4.0,
-		"available":   true,
+		"track_inventory": true,
 		"stock":       8,
 		"status":      "active",
 		"image_urls":  []string{}, // Empty initially
@@ -912,7 +1014,7 @@ func TestUpdateProductWithImages(t *testing.T) {
 
 	// Verify the product was updated in the database
 	ctx := context.Background()
-	updatedProduct, err := repository.GetProductByID(ctx, 1, 1)
+	updatedProduct, err := repository.GetProductByID(ctx, 1, 1, false)
 	require.NoError(t, err)
 
 	// Verify images were saved to Cloudinary
@@ -981,6 +1083,7 @@ func TestDeleteProductImage(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	// Add routes for both product and image handlers
 	authRouter.HandleFunc("/products/{id}", productHandler.UpdateProduct).Methods("PUT")
@@ -998,7 +1101,7 @@ func TestDeleteProductImage(t *testing.T) {
 		"name":        "Producto para Test de Eliminación",
 		"description": "Producto con múltiples imágenes para probar eliminación",
 		"price":       5.0,
-		"available":   true,
+		"track_inventory": true,
 		"stock":       10,
 		"status":      "active",
 		"image_urls":  []string{}, // Empty initially
@@ -1139,7 +1242,7 @@ func TestDeleteProductImage(t *testing.T) {
 
 	// Step 5: Verify the image was removed from the database
 	ctx := context.Background()
-	updatedProduct, err := repository.GetProductByID(ctx, 1, 1)
+	updatedProduct, err := repository.GetProductByID(ctx, 1, 1, false)
 	require.NoError(t, err)
 
 	assert.Len(t, updatedProduct.ImageURLs, 2) // Should have 2 images left

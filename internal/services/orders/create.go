@@ -27,6 +27,8 @@ type orderCreatorRepository interface {
 
 type productCreatorRepository interface {
 	GetProductsByIDs(ctx context.Context, tenantID uint64, ids []uint64) ([]pModel.Product, error)
+	// AssertProductActiveTx locks the row and returns the current track_inventory flag.
+	AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) (trackInventory bool, err error)
 	DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error)
 }
 
@@ -70,6 +72,24 @@ func NewCreator(
 	}
 }
 
+// mergeOrderItemsByProduct sums quantities for duplicate IdProduct lines.
+func mergeOrderItemsByProduct(items []oModel.CreateOrderItemInput) []oModel.CreateOrderItemInput {
+	if len(items) == 0 {
+		return items
+	}
+	merged := make([]oModel.CreateOrderItemInput, 0, len(items))
+	indexByProduct := make(map[uint64]int, len(items))
+	for _, item := range items {
+		if idx, ok := indexByProduct[item.IdProduct]; ok {
+			merged[idx].Quantity += item.Quantity
+			continue
+		}
+		indexByProduct[item.IdProduct] = len(merged)
+		merged = append(merged, item)
+	}
+	return merged
+}
+
 // CreateOrder creates a costumer order
 func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oModel.CreateOrderPayload, deliveryDate time.Time) error {
 	// Find user or create it if not found (scoped to tenant)
@@ -78,9 +98,11 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 		return fmt.Errorf("error getting or creating user: %w", err)
 	}
 
+	mergedItems := mergeOrderItemsByProduct(payload.Items)
+
 	// Get all of the products by their ID
-	productIDs := make([]uint64, len(payload.Items))
-	for i, item := range payload.Items {
+	productIDs := make([]uint64, len(mergedItems))
+	for i, item := range mergedItems {
 		productIDs[i] = item.IdProduct
 	}
 
@@ -95,12 +117,15 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 
 	productMap := make(map[uint64]pModel.Product)
 	for _, p := range products {
+		if p.Status != pModel.StatusActive {
+			return errors.ErrProductNotPurchasable
+		}
 		productMap[p.ID] = p
 	}
 
 	// Calculate the total price (stock is validated atomically in the tx below)
 	var totalPrice float64
-	for _, item := range payload.Items {
+	for _, item := range mergedItems {
 		product := productMap[item.IdProduct]
 		totalPrice += product.Price * float64(item.Quantity)
 	}
@@ -127,14 +152,22 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Atomic stock decrement: only proceeds if stock >= quantity for each item
-	for _, item := range payload.Items {
+	// Re-validate active status under row lock, then decrement stock for tracked inventory.
+	// Pre-tx TrackInventory/status from GetProductsByIDs are racy if an admin flips them mid-create.
+	for _, item := range mergedItems {
+		trackInventory, err := c.ProductRepo.AssertProductActiveTx(ctx, tx, tenantID, item.IdProduct)
+		if err != nil {
+			return err
+		}
+		if !trackInventory {
+			continue
+		}
 		rows, err := c.ProductRepo.DecrementProductStockTx(ctx, tx, tenantID, item.IdProduct, item.Quantity)
 		if err != nil {
 			return fmt.Errorf("error reserving stock: %w", err)
 		}
 		if rows == 0 {
-			return fmt.Errorf("not enough product stock")
+			return errors.ErrNotEnoughProductStock
 		}
 	}
 
@@ -155,8 +188,8 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 		return fmt.Errorf("error creating order: %w", err)
 	}
 
-	orderItems := make([]oModel.OrderItemRequest, len(payload.Items))
-	for i, item := range payload.Items {
+	orderItems := make([]oModel.OrderItemRequest, len(mergedItems))
+	for i, item := range mergedItems {
 		product := productMap[item.IdProduct]
 		orderItems[i] = oModel.OrderItemRequest{
 			IdOrder:             orderID,

@@ -19,6 +19,7 @@ import (
 	"github.com/radamesvaz/bakery-app/internal/middleware"
 	ordersRepository "github.com/radamesvaz/bakery-app/internal/repository/orders"
 	productRepo "github.com/radamesvaz/bakery-app/internal/repository/products"
+	tenantRepository "github.com/radamesvaz/bakery-app/internal/repository/tenant"
 	userRepo "github.com/radamesvaz/bakery-app/internal/repository/user"
 	"github.com/radamesvaz/bakery-app/internal/services/auth"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
@@ -48,6 +49,7 @@ func TestGetAllOrders(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -179,6 +181,7 @@ func TestGetAllOrdersFilteredByIDUser(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -242,6 +245,7 @@ func TestGetOrderByID(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
 
@@ -335,9 +339,10 @@ func TestCreateOrder(t *testing.T) {
     }
     `, deliveryDate.Format("2006-01-02"))
 
-	// Send the simulated request
+	// Send the simulated request (legacy /orders still requires tenant in context)
 	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req = withTenantContext(req, 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -347,6 +352,78 @@ func TestCreateOrder(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.JSONEq(t, expected, rr.Body.String())
+}
+
+func TestLegacyCreateOrder_WithoutTenantMiddlewareReturns400(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	orderHandler := handlers.OrderHandler{
+		Repo:        &ordersRepository.OrderRepository{DB: db},
+		UserRepo:    userRepo.NewUserRepository(db),
+		ProductRepo: &productRepo.ProductRepository{DB: db},
+	}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`{
+		"name": "No Tenant",
+		"email": "notenancy@example.com",
+		"phone": "1234567890",
+		"delivery_date": "%v",
+		"delivery_direction": "https://maps.app.goo.gl/no-tenant",
+		"items": [{"id_product": 1, "quantity": 1}]
+	}`, deliveryDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "tenant context required")
+}
+
+func TestLegacyCreateOrder_WithXTenantSlugHeader(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	tenantRepo := tenantRepository.Repository{DB: db}
+	orderHandler := handlers.OrderHandler{
+		Repo:        &ordersRepository.OrderRepository{DB: db},
+		UserRepo:    userRepo.NewUserRepository(db),
+		ProductRepo: &productRepo.ProductRepository{DB: db},
+	}
+
+	router := mux.NewRouter()
+	legacy := router.PathPrefix("").Subrouter()
+	legacy.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
+	legacy.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+
+	future := time.Now().AddDate(0, 1, 0)
+	deliveryDate := time.Date(future.Year(), future.Month(), future.Day(), 0, 0, 0, 0, time.UTC)
+	payload := fmt.Sprintf(`{
+		"name": "Header Tenant",
+		"email": "headertenant@example.com",
+		"phone": "1234567890",
+		"delivery_date": "%v",
+		"delivery_direction": "https://maps.app.goo.gl/header-tenant",
+		"items": [{"id_product": 1, "quantity": 1}]
+	}`, deliveryDate.Format("2006-01-02"))
+
+	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Tenant-Slug", "default")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.JSONEq(t, `{"message": "Order created successfully"}`, rr.Body.String())
 }
 
 func TestCreateOrder_MissingDeliveryDirection(t *testing.T) {
@@ -463,6 +540,7 @@ func TestCreateOrder_WithOrderHistory(t *testing.T) {
 	// Send the simulated request
 	req := httptest.NewRequest("POST", "/orders", strings.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
+	req = withTenantContext(req, 1)
 	rr := httptest.NewRecorder()
 	router.ServeHTTP(rr, req)
 
@@ -517,6 +595,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -546,6 +625,7 @@ func TestUpdateOrderStatus_Success(t *testing.T) {
 	// Create the order
 	createReq := httptest.NewRequest("POST", "/orders", strings.NewReader(createPayload))
 	createReq.Header.Set("Content-Type", "application/json")
+	createReq = withTenantContext(createReq, 1)
 	createRR := httptest.NewRecorder()
 	router.ServeHTTP(createRR, createReq)
 
@@ -631,6 +711,7 @@ func TestUpdateOrderStatus_OrderNotFound(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -673,6 +754,7 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -733,6 +815,50 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 	assert.False(t, actualPaid2, "Order paid status should be updated to false")
 }
 
+func TestUpdateOrder_StatusFailure_DoesNotUpdatePaid(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	authService := auth.New(secret, 60)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+
+	tenantID := uint64(1)
+	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, jwtErr)
+
+	ctx := context.Background()
+	var paidBefore bool
+	err := db.QueryRowContext(ctx, "SELECT paid FROM orders WHERE id_order = $1", 2).Scan(&paidBefore)
+	require.NoError(t, err)
+	require.False(t, paidBefore, "precondition: order 2 should start unpaid")
+
+	// Combined PATCH: paid would succeed, but status is invalid — paid must not stick.
+	updatePayload := `{"status": "invalid_status", "paid": true}`
+	updateReq := httptest.NewRequest("PATCH", "/auth/orders/2", strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR := httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	assert.Equal(t, http.StatusBadRequest, updateRR.Code)
+
+	var paidAfter bool
+	err = db.QueryRowContext(ctx, "SELECT paid FROM orders WHERE id_order = $1", 2).Scan(&paidAfter)
+	require.NoError(t, err)
+	assert.False(t, paidAfter, "paid must not be updated when status validation fails")
+}
+
 func TestUpdateOrder_InvalidPayload(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)
@@ -754,6 +880,7 @@ func TestUpdateOrder_InvalidPayload(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
@@ -816,6 +943,7 @@ func TestGetAllOrdersWithIgnoreStatus(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -879,6 +1007,7 @@ func TestGetAllOrdersWithStatusFilter(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -955,6 +1084,7 @@ func TestGetAllOrdersWithCombinedFilters(t *testing.T) {
 
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
@@ -1000,6 +1130,7 @@ func TestGetAllOrders_WithSearchQuery(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -1042,6 +1173,7 @@ func TestGetAllOrders_OrderByCreatedOnAndCursor(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -1100,6 +1232,7 @@ func TestGetAllOrders_SearchWithCombinedFiltersAndCursor(t *testing.T) {
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -1190,6 +1323,7 @@ func TestGetAllOrders_SearchAndUserFilter_MultiPageCursorContinuity(t *testing.T
 	exp := 60
 	var authService auth.Service = auth.New(secret, exp)
 	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
 	authRouter.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
 
 	tenantID := uint64(1)
@@ -1241,4 +1375,46 @@ func TestGetAllOrders_SearchAndUserFilter_MultiPageCursorContinuity(t *testing.T
 	if firstPage2.CreatedOn.Equal(lastPage1.CreatedOn) {
 		assert.Greater(t, firstPage2.ID, lastPage1.ID)
 	}
+}
+
+func TestUpdateOrder_SuperAdminCancel_RestoresStock(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	productRepository := &productRepo.ProductRepository{DB: db}
+	orderHandler := handlers.OrderHandler{
+		Repo:        orderRepo,
+		ProductRepo: productRepository,
+	}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+	authService := auth.New("testingsecret", 60)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+
+	tenantID := uint64(1)
+	superadminID := lookupUserIDByEmailAndRole(t, db, "superadmin@example.com", uModel.UserRoleSuperAdmin)
+	jwt, err := authService.GenerateJWT(superadminID, uModel.UserRoleSuperAdmin, "superadmin@example.com", &tenantID)
+	require.NoError(t, err)
+
+	var stockBefore int
+	err = db.QueryRow(`SELECT stock FROM products WHERE tenant_id = $1 AND id_product = 2`, tenantID).Scan(&stockBefore)
+	require.NoError(t, err)
+
+	// Seed order 2 is pending with 2x product 2 (Suspiros).
+	req := httptest.NewRequest("PATCH", "/auth/orders/2", strings.NewReader(`{"status":"cancelled"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+jwt)
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var stockAfter int
+	err = db.QueryRow(`SELECT stock FROM products WHERE tenant_id = $1 AND id_product = 2`, tenantID).Scan(&stockAfter)
+	require.NoError(t, err)
+	assert.Equal(t, stockBefore+2, stockAfter, "superadmin cancel must restore inventory like admin")
 }

@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	internalErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	pModel "github.com/radamesvaz/bakery-app/model/products"
 	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/DATA-DOG/go-sqlmock"
 )
 
 // Use the Creator type from the orders package
@@ -55,11 +55,20 @@ type MockProductRepo2 struct {
 	Products       map[uint64]pModel.Product
 	StockUpdates   map[uint64]uint64 // final stock after decrements (for assertions)
 	stockSnapshot  map[uint64]uint64 // mutable copy used by DecrementProductStockTx
+	LastIDs        []uint64          // IDs passed to GetProductsByIDs
+	DecrementCalls int
+	onAssertActive func(id uint64) // optional hook before status check (simulates mid-tx deactivation)
 }
 
 func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, tenantID uint64, ids []uint64) ([]pModel.Product, error) {
+	m.LastIDs = append([]uint64(nil), ids...)
+	seen := make(map[uint64]struct{}, len(ids))
 	var products []pModel.Product
 	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
 		if product, exists := m.Products[id]; exists {
 			products = append(products, product)
 		}
@@ -67,7 +76,22 @@ func (m *MockProductRepo2) GetProductsByIDs(ctx context.Context, tenantID uint64
 	return products, nil
 }
 
+func (m *MockProductRepo2) AssertProductActiveTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64) (bool, error) {
+	if m.onAssertActive != nil {
+		m.onAssertActive(idProduct)
+	}
+	product, exists := m.Products[idProduct]
+	if !exists {
+		return false, internalErrors.ErrProductNotFound
+	}
+	if product.Status != pModel.StatusActive {
+		return false, internalErrors.ErrProductNotPurchasable
+	}
+	return product.TrackInventory, nil
+}
+
 func (m *MockProductRepo2) DecrementProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantity uint64) (int64, error) {
+	m.DecrementCalls++
 	if m.stockSnapshot == nil {
 		m.stockSnapshot = make(map[uint64]uint64)
 		for id, p := range m.Products {
@@ -90,6 +114,7 @@ type MockOrderRepo2 struct {
 	OrderCreated   bool
 	OrderID        uint64
 	HistoryCreated bool
+	LastItems      []oModel.OrderItemRequest
 }
 
 func (m *MockOrderRepo2) BeginTx(ctx context.Context) (*sql.Tx, error) {
@@ -106,12 +131,24 @@ func (m *MockOrderRepo2) CreateOrder(ctx context.Context, tx *sql.Tx, order oMod
 }
 
 func (m *MockOrderRepo2) CreateOrderItems(ctx context.Context, tx *sql.Tx, tenantID uint64, items []oModel.OrderItemRequest) error {
+	m.LastItems = append([]oModel.OrderItemRequest(nil), items...)
 	return nil
 }
 
 func (m *MockOrderRepo2) CreateOrderHistoryTx(ctx context.Context, tx *sql.Tx, history oModel.OrderHistory) error {
 	m.HistoryCreated = true
 	return nil
+}
+
+func activeProduct(id uint64, name string, price float64, stock uint64) pModel.Product {
+	return pModel.Product{
+		ID:             id,
+		Name:           name,
+		Price:          price,
+		Stock:          stock,
+		Status:         pModel.StatusActive,
+		TrackInventory: true,
+	}
 }
 
 func TestFindOrCreateUser_CreatesUserIfNotExists(t *testing.T) {
@@ -183,8 +220,8 @@ func TestCreateOrder_UpdatesProductStock(t *testing.T) {
 	mockUserRepo := &MockUserRepo{ShouldCreate: false}
 	mockProductRepo := &MockProductRepo2{
 		Products: map[uint64]pModel.Product{
-			1: {ID: 1, Name: "Pan", Price: 2.50, Stock: 10},
-			2: {ID: 2, Name: "Leche", Price: 1.80, Stock: 5},
+			1: activeProduct(1, "Pan", 2.50, 10),
+			2: activeProduct(2, "Leche", 1.80, 5),
 		},
 		StockUpdates: make(map[uint64]uint64),
 	}
@@ -198,9 +235,9 @@ func TestCreateOrder_UpdatesProductStock(t *testing.T) {
 
 	ctx := context.Background()
 	payload := oModel.CreateOrderPayload{
-		Name:  "Cliente Test",
-		Email: "test@example.com",
-		Phone: "12345678",
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
 		DeliveryDirection: "https://maps.app.goo.gl/test-direction-1",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 3}, // Pan: 10 - 3 = 7
@@ -221,6 +258,218 @@ func TestCreateOrder_UpdatesProductStock(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestCreateOrder_MergesDuplicateProductLines(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	mock.ExpectBegin()
+	mock.ExpectCommit()
+
+	mockUserRepo := &MockUserRepo{ShouldCreate: false}
+	mockProductRepo := &MockProductRepo2{
+		Products: map[uint64]pModel.Product{
+			1: activeProduct(1, "Pan", 2.50, 10),
+		},
+		StockUpdates: make(map[uint64]uint64),
+	}
+	mockOrderRepo := &MockOrderRepo2{DB: db}
+
+	service := Creator{
+		UserRepo:    mockUserRepo,
+		ProductRepo: mockProductRepo,
+		OrderRepo:   mockOrderRepo,
+	}
+
+	payload := oModel.CreateOrderPayload{
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-merge",
+		Items: []oModel.CreateOrderItemInput{
+			{IdProduct: 1, Quantity: 2},
+			{IdProduct: 1, Quantity: 3},
+		},
+		Note:         "merged lines",
+		DeliveryDate: "2024-12-25",
+	}
+	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
+	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+
+	require.NoError(t, err)
+	assert.Equal(t, []uint64{1}, mockProductRepo.LastIDs)
+	assert.Equal(t, 1, mockProductRepo.DecrementCalls)
+	assert.Equal(t, uint64(5), mockProductRepo.StockUpdates[1]) // 10 - (2+3)
+	require.Len(t, mockOrderRepo.LastItems, 1)
+	assert.Equal(t, uint64(5), mockOrderRepo.LastItems[0].Quantity)
+	assert.Equal(t, "Pan", mockOrderRepo.LastItems[0].ProductNameSnapshot)
+	assert.Equal(t, 2.50, mockOrderRepo.LastItems[0].UnitPriceSnapshot)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateOrder_SkipsStockDecrementWhenNotTrackingInventory(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	mock.ExpectBegin()
+	mock.ExpectCommit()
+
+	mockUserRepo := &MockUserRepo{ShouldCreate: false}
+	product := activeProduct(1, "Servicio", 10, 0)
+	product.TrackInventory = false
+	mockProductRepo := &MockProductRepo2{
+		Products:     map[uint64]pModel.Product{1: product},
+		StockUpdates: make(map[uint64]uint64),
+	}
+	mockOrderRepo := &MockOrderRepo2{DB: db}
+
+	service := Creator{
+		UserRepo:    mockUserRepo,
+		ProductRepo: mockProductRepo,
+		OrderRepo:   mockOrderRepo,
+	}
+
+	payload := oModel.CreateOrderPayload{
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-no-stock",
+		Items: []oModel.CreateOrderItemInput{
+			{IdProduct: 1, Quantity: 100},
+		},
+		DeliveryDate: "2024-12-25",
+	}
+	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
+	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+
+	require.NoError(t, err)
+	assert.Equal(t, 0, mockProductRepo.DecrementCalls)
+	assert.Empty(t, mockProductRepo.StockUpdates)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateOrder_RejectsInactiveProduct(t *testing.T) {
+	mockUserRepo := &MockUserRepo{ShouldCreate: false}
+	product := activeProduct(1, "Pan", 2.50, 10)
+	product.Status = pModel.StatusInactive
+	mockProductRepo := &MockProductRepo2{
+		Products: map[uint64]pModel.Product{1: product},
+	}
+	mockOrderRepo := &MockOrderRepo2{}
+
+	service := Creator{
+		UserRepo:    mockUserRepo,
+		ProductRepo: mockProductRepo,
+		OrderRepo:   mockOrderRepo,
+	}
+
+	payload := oModel.CreateOrderPayload{
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-inactive",
+		Items: []oModel.CreateOrderItemInput{
+			{IdProduct: 1, Quantity: 1},
+		},
+		DeliveryDate: "2024-12-25",
+	}
+	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
+	err := service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+
+	assert.ErrorIs(t, err, internalErrors.ErrProductNotPurchasable)
+	assert.False(t, mockOrderRepo.OrderCreated)
+}
+
+func TestCreateOrder_RejectsWhenProductDeactivatedInsideTx(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	mock.ExpectBegin()
+	mock.ExpectRollback()
+
+	mockUserRepo := &MockUserRepo{ShouldCreate: false}
+	product := activeProduct(1, "Pan", 2.50, 10)
+	mockProductRepo := &MockProductRepo2{
+		Products: map[uint64]pModel.Product{1: product},
+	}
+	mockProductRepo.onAssertActive = func(id uint64) {
+		p := mockProductRepo.Products[id]
+		p.Status = pModel.StatusInactive
+		mockProductRepo.Products[id] = p
+	}
+	mockOrderRepo := &MockOrderRepo2{DB: db}
+
+	service := Creator{
+		UserRepo:    mockUserRepo,
+		ProductRepo: mockProductRepo,
+		OrderRepo:   mockOrderRepo,
+	}
+
+	payload := oModel.CreateOrderPayload{
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-race",
+		Items: []oModel.CreateOrderItemInput{
+			{IdProduct: 1, Quantity: 1},
+		},
+		DeliveryDate: "2024-12-25",
+	}
+	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
+	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+
+	assert.ErrorIs(t, err, internalErrors.ErrProductNotPurchasable)
+	assert.False(t, mockOrderRepo.OrderCreated)
+	assert.Equal(t, 0, mockProductRepo.DecrementCalls)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateOrder_UsesLockedTrackInventoryWhenEnabledMidCreate(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+	mock.ExpectBegin()
+	mock.ExpectCommit()
+
+	mockUserRepo := &MockUserRepo{ShouldCreate: false}
+	product := activeProduct(1, "Pan", 2.50, 10)
+	product.TrackInventory = false // pre-tx snapshot: unlimited
+	mockProductRepo := &MockProductRepo2{
+		Products:     map[uint64]pModel.Product{1: product},
+		StockUpdates: make(map[uint64]uint64),
+	}
+	// Admin enables inventory tracking after GetProductsByIDs, before/at FOR UPDATE.
+	mockProductRepo.onAssertActive = func(id uint64) {
+		p := mockProductRepo.Products[id]
+		p.TrackInventory = true
+		mockProductRepo.Products[id] = p
+	}
+	mockOrderRepo := &MockOrderRepo2{DB: db}
+
+	service := Creator{
+		UserRepo:    mockUserRepo,
+		ProductRepo: mockProductRepo,
+		OrderRepo:   mockOrderRepo,
+	}
+
+	payload := oModel.CreateOrderPayload{
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
+		DeliveryDirection: "https://maps.app.goo.gl/test-direction-track-race",
+		Items: []oModel.CreateOrderItemInput{
+			{IdProduct: 1, Quantity: 3},
+		},
+		DeliveryDate: "2024-12-25",
+	}
+	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
+	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, mockProductRepo.DecrementCalls, "must decrement using locked track_inventory, not pre-tx snapshot")
+	assert.Equal(t, uint64(7), mockProductRepo.StockUpdates[1])
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -231,7 +480,7 @@ func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {
 	mockUserRepo := &MockUserRepo{ShouldCreate: false}
 	mockProductRepo := &MockProductRepo2{
 		Products: map[uint64]pModel.Product{
-			1: {ID: 1, Name: "Pan", Price: 2.50, Stock: 2}, // Solo hay 2 panes
+			1: activeProduct(1, "Pan", 2.50, 2), // Solo hay 2 panes
 		},
 		StockUpdates: make(map[uint64]uint64),
 	}
@@ -245,9 +494,9 @@ func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {
 
 	ctx := context.Background()
 	payload := oModel.CreateOrderPayload{
-		Name:  "Cliente Test",
-		Email: "test@example.com",
-		Phone: "12345678",
+		Name:              "Cliente Test",
+		Email:             "test@example.com",
+		Phone:             "12345678",
 		DeliveryDirection: "https://maps.app.goo.gl/test-direction-2",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 5}, // Intenta comprar 5 panes pero solo hay 2
@@ -259,8 +508,7 @@ func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
 	err = service.CreateOrder(ctx, 1, payload, deliveryDate)
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not enough product stock")
+	assert.ErrorIs(t, err, internalErrors.ErrNotEnoughProductStock)
 	assert.False(t, mockOrderRepo.OrderCreated)
 	assert.False(t, mockOrderRepo.HistoryCreated)
 	assert.Empty(t, mockProductRepo.StockUpdates)
@@ -275,7 +523,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 	mockUserRepo := &MockUserRepo{ShouldCreate: false}
 	mockProductRepo := &MockProductRepo2{
 		Products: map[uint64]pModel.Product{
-			1: {ID: 1, Name: "Pan", Price: 2.50, Stock: 3}, // Solo hay 3 panes
+			1: activeProduct(1, "Pan", 2.50, 3), // Solo hay 3 panes
 		},
 		StockUpdates: make(map[uint64]uint64),
 	}
@@ -293,9 +541,9 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectCommit()
 	firstPayload := oModel.CreateOrderPayload{
-		Name:  "Cliente 1",
-		Email: "cliente1@example.com",
-		Phone: "12345678",
+		Name:              "Cliente 1",
+		Email:             "cliente1@example.com",
+		Phone:             "12345678",
 		DeliveryDirection: "https://maps.app.goo.gl/test-direction-3",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 3}, // Compra todos los 3 panes
@@ -315,9 +563,9 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectRollback()
 	secondPayload := oModel.CreateOrderPayload{
-		Name:  "Cliente 2",
-		Email: "cliente2@example.com",
-		Phone: "87654321",
+		Name:              "Cliente 2",
+		Email:             "cliente2@example.com",
+		Phone:             "87654321",
 		DeliveryDirection: "https://maps.app.goo.gl/test-direction-4",
 		Items: []oModel.CreateOrderItemInput{
 			{IdProduct: 1, Quantity: 1}, // Intenta comprar 1 pan pero no hay stock
@@ -327,8 +575,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 	}
 	deliveryDate2, _ := time.Parse("2006-01-02", secondPayload.DeliveryDate)
 	err2 := service.CreateOrder(ctx, 1, secondPayload, deliveryDate2)
-	assert.Error(t, err2)
-	assert.Contains(t, err2.Error(), "not enough product stock")
+	assert.ErrorIs(t, err2, internalErrors.ErrNotEnoughProductStock)
 	assert.False(t, mockOrderRepo.OrderCreated)
 	assert.False(t, mockOrderRepo.HistoryCreated)
 	require.NoError(t, mock.ExpectationsWereMet())

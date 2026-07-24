@@ -152,3 +152,89 @@ func TestPublicProductsUnknownTenantReturns404(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
+
+// Legacy public routes (no /t/{slug} prefix) must use TenantFromPathOrHeader so
+// X-Tenant-Slug populates context; otherwise handlers return 400.
+func TestLegacyPublicProducts_RequiresTenantMiddleware(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	productRepo := repository.ProductRepository{DB: db}
+	handler := handlers.ProductHandler{Repo: &productRepo}
+
+	router := mux.NewRouter()
+	router.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+	router.HandleFunc("/products/{id}", handler.GetProductByID).Methods("GET")
+
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, httptest.NewRequest("GET", "/products", nil))
+	assert.Equal(t, http.StatusBadRequest, listRR.Code)
+	assert.Contains(t, listRR.Body.String(), "tenant context required")
+
+	getRR := httptest.NewRecorder()
+	router.ServeHTTP(getRR, httptest.NewRequest("GET", "/products/1", nil))
+	assert.Equal(t, http.StatusBadRequest, getRR.Code)
+	assert.Contains(t, getRR.Body.String(), "tenant context required")
+}
+
+func TestLegacyPublicProducts_WithXTenantSlugHeader(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	productRepo := repository.ProductRepository{DB: db}
+	tenantRepo := tenantRepository.Repository{DB: db}
+	handler := handlers.ProductHandler{Repo: &productRepo}
+
+	router := mux.NewRouter()
+	legacy := router.PathPrefix("").Subrouter()
+	legacy.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
+	legacy.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+	legacy.HandleFunc("/products/{id}", handler.GetProductByID).Methods("GET")
+
+	listReq := httptest.NewRequest("GET", "/products", nil)
+	listReq.Header.Set("X-Tenant-Slug", "default")
+	listRR := httptest.NewRecorder()
+	router.ServeHTTP(listRR, listReq)
+	assert.Equal(t, http.StatusOK, listRR.Code)
+
+	var listBody struct {
+		Items []map[string]interface{} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(listRR.Body.Bytes(), &listBody))
+	assert.Len(t, listBody.Items, 2)
+
+	getReq := httptest.NewRequest("GET", "/products/1", nil)
+	getReq.Header.Set("X-Tenant-Slug", "default")
+	getRR := httptest.NewRecorder()
+	router.ServeHTTP(getRR, getReq)
+	assert.Equal(t, http.StatusOK, getRR.Code)
+
+	var product map[string]interface{}
+	require.NoError(t, json.Unmarshal(getRR.Body.Bytes(), &product))
+	assert.Equal(t, "Brownie Clásico", product["name"])
+}
+
+func TestLegacyPublicProducts_MissingTenantSlugHeaderReturns400(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	productRepo := repository.ProductRepository{DB: db}
+	tenantRepo := tenantRepository.Repository{DB: db}
+	handler := handlers.ProductHandler{Repo: &productRepo}
+
+	router := mux.NewRouter()
+	legacy := router.PathPrefix("").Subrouter()
+	legacy.Use(middleware.TenantFromPathOrHeader(&tenantRepo))
+	legacy.HandleFunc("/products", handler.GetAllProducts).Methods("GET")
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/products", nil))
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "X-Tenant-Slug")
+}

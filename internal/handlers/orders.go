@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -43,7 +44,8 @@ func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 
 	ignoreStatus := r.URL.Query().Get("ignore_status") == "true"
@@ -132,7 +134,8 @@ func (h *OrderHandler) GetOrderByID(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 	order, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
@@ -178,10 +181,10 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Tenant: from path (public POST /t/{tenant_slug}/orders) or from auth context; fallback 1 for legacy POST /orders.
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 	var tenantCfgRepo orderService.TenantConfigRepository = nil
 	if h.TenantRepo != nil {
@@ -190,7 +193,17 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo, tenantCfgRepo)
 	err = orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, appErrors.ErrProductNotFound):
+			http.Error(w, err.Error(), http.StatusNotFound)
+		case errors.Is(err, appErrors.ErrProductNotPurchasable):
+			http.Error(w, err.Error(), http.StatusConflict)
+		case errors.Is(err, appErrors.ErrNotEnoughProductStock),
+			strings.Contains(err.Error(), "not enough product stock"):
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			http.Error(w, fmt.Sprintf("Error creating the order: '%v'", err), http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -270,7 +283,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 
 	tenantID, err := middleware.GetTenantIDFromContext(ctx)
 	if err != nil {
-		tenantID = 1
+		http.Error(w, "tenant context required", http.StatusBadRequest)
+		return
 	}
 
 	// Get user ID from JWT token
@@ -283,7 +297,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	// Get the current order to track changes
 	currentOrder, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
-		if httpErr, ok := err.(*appErrors.HTTPError); ok {
+		var httpErr *appErrors.HTTPError
+		if errors.As(err, &httpErr) {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
 			return
 		}
@@ -291,9 +306,10 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update status if provided
+	// Validate status before any mutations so a combined status+paid PATCH cannot
+	// leave paid updated when status validation/update fails.
+	statusUpdated := false
 	if payload.Status != nil {
-		// Validate status enum values
 		validStatuses := []oModel.OrderStatus{
 			oModel.StatusPreparing,
 			oModel.StatusReady,
@@ -315,36 +331,35 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Get user role from context
 		userRole, err := middleware.GetUserRoleFromContext(ctx)
 		if err != nil {
 			http.Error(w, "Unauthorized: invalid token role", http.StatusUnauthorized)
 			return
 		}
 
-		// Check if user is admin for cancellation
-		isAdmin := userRole == 1 // Admin role ID is 1
+		// Admin and superadmin cancel restore inventory; clients do not.
+		isAdmin := middleware.IsAdminRole(userRole)
 
-		// Create status updater service with stock reversion capability
 		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
 
-		// Update the order status with stock reversion if admin cancels; optional cancellation reason when cancelling
-		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason)
+		// Status updater applies paid atomically (same TX) when payload.Paid is set,
+		// and persists history with the final paid flag.
+		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason, payload.Paid)
 		if err != nil {
-			if httpErr, ok := err.(*appErrors.HTTPError); ok {
+			var httpErr *appErrors.HTTPError
+			if errors.As(err, &httpErr) {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
 				return
 			}
 			http.Error(w, fmt.Sprintf("Error updating order status: %v", err), http.StatusInternalServerError)
 			return
 		}
-	}
-
-	// Update paid status if provided
-	if payload.Paid != nil {
+		statusUpdated = true
+	} else if payload.Paid != nil {
 		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
 		if err != nil {
-			if httpErr, ok := err.(*appErrors.HTTPError); ok {
+			var httpErr *appErrors.HTTPError
+			if errors.As(err, &httpErr) {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
 				return
 			}
@@ -353,31 +368,29 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create order history record for the update
-	orderModel := &oModel.Order{
-		ID:                currentOrder.ID,
-		IdUser:            currentOrder.IdUser,
-		Status:            currentOrder.Status,
-		Price:             currentOrder.Price,
-		Note:              currentOrder.Note,
-		DeliveryDirection: currentOrder.DeliveryDirection,
-		DeliveryDate:      currentOrder.DeliveryDate,
-		Paid:              currentOrder.Paid,
-	}
+	// Paid-only updates: write history here (status path already recorded history).
+	if !statusUpdated {
+		orderModel := &oModel.Order{
+			ID:                currentOrder.ID,
+			TenantID:          tenantID,
+			IdUser:            currentOrder.IdUser,
+			Status:            currentOrder.Status,
+			Price:             currentOrder.Price,
+			Note:              currentOrder.Note,
+			DeliveryDirection: currentOrder.DeliveryDirection,
+			DeliveryDate:      currentOrder.DeliveryDate,
+			Paid:              currentOrder.Paid,
+		}
+		if payload.Paid != nil {
+			orderModel.Paid = *payload.Paid
+		}
 
-	// Update the model with new values
-	if payload.Status != nil {
-		orderModel.Status = *payload.Status
-	}
-	if payload.Paid != nil {
-		orderModel.Paid = *payload.Paid
-	}
-
-	err = h.UpdateOrderHistoryTable(ctx, orderModel, idOrder, userID, oModel.ActionUpdate)
-	if err != nil {
-		logger.Warn().Err(err).
-			Uint64("order_id", idOrder).
-			Msg("Failed to create order history")
+		err = h.UpdateOrderHistoryTable(ctx, orderModel, idOrder, userID, oModel.ActionUpdate)
+		if err != nil {
+			logger.Warn().Err(err).
+				Uint64("order_id", idOrder).
+				Msg("Failed to create order history")
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

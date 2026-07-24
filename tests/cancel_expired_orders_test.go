@@ -133,10 +133,10 @@ func TestCancelExpiredOrders_Integration_MultiTenantIsolation(t *testing.T) {
 
 	// Create simple products for each tenant so that stock revert has valid rows.
 	var productAID, productBID uint64
-	err = db.QueryRowContext(ctx, `INSERT INTO products (tenant_id, name, description, price, available)
+	err = db.QueryRowContext(ctx, `INSERT INTO products (tenant_id, name, description, price, track_inventory)
 		VALUES ($1, 'Tenant A Product', 'test', 10.0, true) RETURNING id_product`, tenantAID).Scan(&productAID)
 	require.NoError(t, err)
-	err = db.QueryRowContext(ctx, `INSERT INTO products (tenant_id, name, description, price, available)
+	err = db.QueryRowContext(ctx, `INSERT INTO products (tenant_id, name, description, price, track_inventory)
 		VALUES ($1, 'Tenant B Product', 'test', 12.0, true) RETURNING id_product`, tenantBID).Scan(&productBID)
 	require.NoError(t, err)
 

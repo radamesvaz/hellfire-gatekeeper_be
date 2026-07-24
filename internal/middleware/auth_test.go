@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
+	uModel "github.com/radamesvaz/bakery-app/model/users"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -238,4 +239,49 @@ func TestGetUserRoleFromContext_ClientRole(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, uint64(2), role)
+}
+
+func TestIsAdminRole(t *testing.T) {
+	assert.True(t, IsAdminRole(uint64(uModel.UserRoleAdmin)))
+	assert.True(t, IsAdminRole(uint64(uModel.UserRoleSuperAdmin)))
+	assert.False(t, IsAdminRole(uint64(uModel.UserRoleClient)))
+	assert.False(t, IsAdminRole(0))
+}
+
+func TestRequireAdminRole_AllowsAdminAndSuperAdmin(t *testing.T) {
+	mw := RequireAdminRole()
+	var called bool
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	for _, role := range []float64{1, 3} {
+		called = false
+		req := httptest.NewRequest(http.MethodPost, "/auth/products", nil)
+		req = req.WithContext(context.WithValue(req.Context(), UserClaimsKey, jwt.MapClaims{
+			"user_id": float64(1),
+			"role_id": role,
+		}))
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code, "role %.0f", role)
+		assert.True(t, called)
+	}
+}
+
+func TestRequireAdminRole_RejectsClient(t *testing.T) {
+	mw := RequireAdminRole()
+	h := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/products", nil)
+	req = req.WithContext(context.WithValue(req.Context(), UserClaimsKey, jwt.MapClaims{
+		"user_id": float64(2),
+		"role_id": float64(2),
+	}))
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
 }

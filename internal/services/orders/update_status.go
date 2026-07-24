@@ -5,21 +5,28 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/radamesvaz/bakery-app/internal/errors"
 	"github.com/radamesvaz/bakery-app/internal/logger"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 )
 
 // OrderStatusRepository defines the interface for order status operations
 type OrderStatusRepository interface {
+	BeginTx(ctx context.Context) (*sql.Tx, error)
 	GetOrderByID(ctx context.Context, tenantID, id uint64) (oModel.OrderResponse, error)
 	UpdateOrderStatus(ctx context.Context, tenantID, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error
+	UpdateOrderStatusTx(ctx context.Context, tx *sql.Tx, tenantID, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error
+	UpdateOrderPaidStatusTx(ctx context.Context, tx *sql.Tx, tenantID, orderID uint64, paid bool) error
 	CreateOrderHistory(ctx context.Context, order oModel.OrderHistory) error
+	CreateOrderHistoryTx(ctx context.Context, tx *sql.Tx, order oModel.OrderHistory) error
 	GetOrderItemsByOrderID(ctx context.Context, tenantID, orderID uint64) ([]oModel.OrderItems, error)
+	GetOrderItemsByOrderIDTx(ctx context.Context, tx *sql.Tx, tenantID, orderID uint64) ([]oModel.OrderItems, error)
 }
 
 // ProductStockRepository defines the interface for product stock operations
 type ProductStockRepository interface {
 	RevertProductStock(ctx context.Context, tenantID, idProduct uint64, quantityToRevert uint64) error
+	RevertProductStockTx(ctx context.Context, tx *sql.Tx, tenantID, idProduct uint64, quantityToRevert uint64) error
 }
 
 type StatusUpdaterWithStock struct {
@@ -35,13 +42,23 @@ func NewStatusUpdaterWithStock(orderRepo OrderStatusRepository, productRepo Prod
 }
 
 func (s *StatusUpdaterWithStock) validateStatusTransition(currentStatus, newStatus oModel.OrderStatus) error {
-	// Allow all status transitions - no restrictions
+	if currentStatus == oModel.StatusCancelled {
+		if newStatus == oModel.StatusCancelled {
+			return errors.ErrOrderAlreadyCancelled
+		}
+		return errors.ErrInvalidStatusTransition
+	}
+	if currentStatus == oModel.StatusExpired {
+		return errors.ErrInvalidStatusTransition
+	}
 	return nil
 }
 
 // UpdateOrderStatusWithStockReversion updates order status and reverts stock if admin cancels order.
 // cancellationReason is optional; only used when newStatus is cancelled (e.g. user-provided reason or nil).
-func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, tenantID, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string) error {
+// paidOverride, when non-nil, updates paid in the same transaction as status and is used for history
+// (combined status+paid PATCH stays atomic).
+func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, tenantID, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string, paidOverride *bool) error {
 	// Get the current order
 	order, err := s.OrderRepo.GetOrderByID(ctx, tenantID, orderID)
 	if err != nil {
@@ -57,17 +74,58 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 	if newStatus == oModel.StatusCancelled {
 		effectiveCancellationReason = cancellationReason
 	}
+
+	paidForHistory := order.Paid
+	if paidOverride != nil {
+		paidForHistory = *paidOverride
+	}
+
+	needsStockRevert := isAdmin && newStatus == oModel.StatusCancelled
+	needsPaidUpdate := paidOverride != nil
+
+	// Use a transaction when status must stay atomic with stock reversion and/or paid.
+	if needsStockRevert || needsPaidUpdate {
+		return s.updateStatusInTx(ctx, tenantID, orderID, order, newStatus, userID, effectiveCancellationReason, paidOverride, paidForHistory, needsStockRevert)
+	}
+
 	err = s.OrderRepo.UpdateOrderStatus(ctx, tenantID, orderID, newStatus, effectiveCancellationReason)
 	if err != nil {
 		return fmt.Errorf("error updating order status: %w", err)
 	}
 
-	// If admin is cancelling the order, revert the stock
-	if isAdmin && newStatus == oModel.StatusCancelled {
-		err = s.revertOrderStock(ctx, tenantID, orderID)
-		if err != nil {
-			// If stock reversion fails, we should return the error
-			// This is because the order status has already been updated
+	s.writeOrderHistoryBestEffort(ctx, tenantID, orderID, order, newStatus, userID, effectiveCancellationReason, paidForHistory)
+	return nil
+}
+
+func (s *StatusUpdaterWithStock) updateStatusInTx(
+	ctx context.Context,
+	tenantID, orderID uint64,
+	order oModel.OrderResponse,
+	newStatus oModel.OrderStatus,
+	userID uint64,
+	cancellationReason *string,
+	paidOverride *bool,
+	paidForHistory bool,
+	needsStockRevert bool,
+) error {
+	tx, err := s.OrderRepo.BeginTx(ctx)
+	if err != nil {
+		return fmt.Errorf("error beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if err := s.OrderRepo.UpdateOrderStatusTx(ctx, tx, tenantID, orderID, newStatus, cancellationReason); err != nil {
+		return fmt.Errorf("error updating order status: %w", err)
+	}
+
+	if paidOverride != nil {
+		if err := s.OrderRepo.UpdateOrderPaidStatusTx(ctx, tx, tenantID, orderID, *paidOverride); err != nil {
+			return fmt.Errorf("error updating order paid status: %w", err)
+		}
+	}
+
+	if needsStockRevert {
+		if err := s.revertOrderStockTx(ctx, tx, tenantID, orderID); err != nil {
 			logger.Warn().Err(err).
 				Uint64("order_id", orderID).
 				Msg("Failed to revert stock for cancelled order")
@@ -75,50 +133,80 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 		}
 	}
 
-	// Create order history record (IdUser nil when order's user was deleted)
-	var orderHistoryIdUser *uint64
-	if order.IdUser != 0 {
-		orderHistoryIdUser = &order.IdUser
-	}
-	orderHistory := oModel.OrderHistory{
-		IDOrder: orderID,
-		IdUser:  orderHistoryIdUser,
-		Status:  newStatus,
-		Price:   order.Price,
-		Note:    order.Note,
-		DeliveryDate: sql.NullTime{
-			Time:  order.DeliveryDate,
-			Valid: !order.DeliveryDate.IsZero(),
-		},
-		Paid:               order.Paid,
-		CancellationReason: effectiveCancellationReason,
-		ModifiedBy:         userID,
-		Action:             oModel.ActionUpdate,
+	orderHistory := buildStatusUpdateHistory(tenantID, orderID, order, newStatus, userID, cancellationReason, paidForHistory)
+	if err := s.OrderRepo.CreateOrderHistoryTx(ctx, tx, orderHistory); err != nil {
+		logger.Warn().Err(err).
+			Uint64("order_id", orderID).
+			Str("new_status", string(newStatus)).
+			Msg("Failed to create order history")
+		// History is best-effort; still commit status/paid/stock
 	}
 
-	err = s.OrderRepo.CreateOrderHistory(ctx, orderHistory)
-	if err != nil {
-		// Log the error but don't fail the status update
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("error committing transaction: %w", err)
+	}
+	return nil
+}
+
+func (s *StatusUpdaterWithStock) writeOrderHistoryBestEffort(
+	ctx context.Context,
+	tenantID, orderID uint64,
+	order oModel.OrderResponse,
+	newStatus oModel.OrderStatus,
+	userID uint64,
+	cancellationReason *string,
+	paidForHistory bool,
+) {
+	orderHistory := buildStatusUpdateHistory(tenantID, orderID, order, newStatus, userID, cancellationReason, paidForHistory)
+	if err := s.OrderRepo.CreateOrderHistory(ctx, orderHistory); err != nil {
 		logger.Warn().Err(err).
 			Uint64("order_id", orderID).
 			Str("new_status", string(newStatus)).
 			Msg("Failed to create order history")
 	}
-
-	return nil
 }
 
-// revertOrderStock reverts the stock for all items in an order
-func (s *StatusUpdaterWithStock) revertOrderStock(ctx context.Context, tenantID, orderID uint64) error {
-	// Get all items for the order
-	items, err := s.OrderRepo.GetOrderItemsByOrderID(ctx, tenantID, orderID)
+func buildStatusUpdateHistory(
+	tenantID, orderID uint64,
+	order oModel.OrderResponse,
+	newStatus oModel.OrderStatus,
+	userID uint64,
+	cancellationReason *string,
+	paidForHistory bool,
+) oModel.OrderHistory {
+	var orderHistoryIdUser *uint64
+	if order.IdUser != 0 {
+		orderHistoryIdUser = &order.IdUser
+	}
+	return oModel.OrderHistory{
+		TenantID:          tenantID,
+		IDOrder:           orderID,
+		IdUser:            orderHistoryIdUser,
+		Status:            newStatus,
+		Price:             order.Price,
+		Note:              order.Note,
+		DeliveryDirection: order.DeliveryDirection,
+		DeliveryDate: sql.NullTime{
+			Time:  order.DeliveryDate,
+			Valid: !order.DeliveryDate.IsZero(),
+		},
+		Paid:               paidForHistory,
+		CancellationReason: cancellationReason,
+		ModifiedBy:         userID,
+		Action:             oModel.ActionUpdate,
+	}
+}
+
+// revertOrderStockTx reverts the stock for all items in an order within a transaction.
+// RevertProductStockTx is expected to no-op when track_inventory is false.
+func (s *StatusUpdaterWithStock) revertOrderStockTx(ctx context.Context, tx *sql.Tx, tenantID, orderID uint64) error {
+	items, err := s.OrderRepo.GetOrderItemsByOrderIDTx(ctx, tx, tenantID, orderID)
 	if err != nil {
 		return fmt.Errorf("error getting order items: %w", err)
 	}
 
-	// Revert stock for each item
 	for _, item := range items {
-		err = s.ProductRepo.RevertProductStock(ctx, tenantID, item.IdProduct, item.Quantity)
+		err = s.ProductRepo.RevertProductStockTx(ctx, tx, tenantID, item.IdProduct, item.Quantity)
 		if err != nil {
 			return fmt.Errorf("error reverting stock for product %d: %w", item.IdProduct, err)
 		}

@@ -41,10 +41,10 @@ func TestImageHandler_UploadProductThumbnail_Success(t *testing.T) {
 	userID := float64(77)
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
+		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
 	).WithArgs(tenantID, productID).WillReturnRows(
 		sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status", "image_urls", "thumbnail_url", "created_on",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status", "image_urls", "thumbnail_url", "created_on",
 		}).AddRow(
 			productID, tenantID, "Cake", "desc", 10.5, true, 3, "active", `["/uploads/products/10/main.jpg"]`, "/uploads/products/10/main.jpg", sql.NullTime{},
 		),
@@ -99,6 +99,84 @@ func TestImageHandler_UploadProductThumbnail_Success(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestImageHandler_AddProductImages_ThumbnailUpdateFailureKeepsResponseEmpty(t *testing.T) {
+	restore := disableCloudinaryForHandlerTests(t)
+	defer restore()
+
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	testDir := t.TempDir()
+	handler := &ImageHandler{
+		Repo:         &productsRepository.ProductRepository{DB: db},
+		ImageService: imagesService.New(testDir),
+	}
+
+	tenantID := uint64(1)
+	productID := uint64(10)
+	userID := float64(77)
+
+	// Product has images but no thumbnail yet.
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
+	).WithArgs(tenantID, productID).WillReturnRows(
+		sqlmock.NewRows([]string{
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status", "image_urls", "thumbnail_url", "created_on",
+		}).AddRow(
+			productID, tenantID, "Cake", "desc", 10.5, true, 3, "active", `[]`, nil, sql.NullTime{},
+		),
+	)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(
+		regexp.QuoteMeta("SELECT image_urls, thumbnail_url FROM products WHERE tenant_id = $1 AND id_product = $2 FOR UPDATE"),
+	).WithArgs(tenantID, productID).WillReturnRows(
+		sqlmock.NewRows([]string{"image_urls", "thumbnail_url"}).AddRow(`[]`, nil),
+	)
+	mock.ExpectExec(
+		regexp.QuoteMeta("UPDATE products SET image_urls = $1, thumbnail_url = $2 WHERE tenant_id = $3 AND id_product = $4"),
+	).WithArgs(sqlmock.AnyArg(), nil, tenantID, productID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	// Thumbnail persist fails after images were appended.
+	mock.ExpectExec(
+		regexp.QuoteMeta("UPDATE products SET thumbnail_url = $1 WHERE tenant_id = $2 AND id_product = $3"),
+	).WithArgs(sqlmock.AnyArg(), tenantID, productID).WillReturnError(assert.AnError)
+
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO products_history")).WithArgs(
+		tenantID,
+		productID,
+		"Cake",
+		"desc",
+		10.5,
+		true,
+		uint64(3),
+		"active",
+		sqlmock.AnyArg(),
+		nil, // persisted thumbnail is still empty
+		uint64(userID),
+		"update",
+	).WillReturnResult(sqlmock.NewResult(0, 1))
+
+	req := newMultipartImagesRequest(t, "images", "photo.jpg", []byte("fake image"))
+	req = mux.SetURLVars(req, map[string]string{"id": "10"})
+	ctx := context.WithValue(req.Context(), middleware.TenantIDKey, tenantID)
+	ctx = context.WithValue(ctx, middleware.UserClaimsKey, jwt.MapClaims{"user_id": userID})
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	handler.AddProductImages(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got map[string]interface{}
+	err = json.Unmarshal(rr.Body.Bytes(), &got)
+	require.NoError(t, err)
+	assert.Equal(t, "Images added successfully", got["message"])
+	assert.Empty(t, got["thumbnail"], "response must not claim a thumbnail that failed to persist")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestImageHandler_UploadProductThumbnail_InvalidFileType(t *testing.T) {
 	restore := disableCloudinaryForHandlerTests(t)
 	defer restore()
@@ -117,10 +195,10 @@ func TestImageHandler_UploadProductThumbnail_InvalidFileType(t *testing.T) {
 	userID := float64(77)
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, available, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
+		regexp.QuoteMeta("SELECT id_product, tenant_id, name, description, price, track_inventory, stock, status, image_urls, thumbnail_url, created_on FROM products WHERE tenant_id = $1 AND id_product = $2"),
 	).WithArgs(tenantID, productID).WillReturnRows(
 		sqlmock.NewRows([]string{
-			"id_product", "tenant_id", "name", "description", "price", "available", "stock", "status", "image_urls", "thumbnail_url", "created_on",
+			"id_product", "tenant_id", "name", "description", "price", "track_inventory", "stock", "status", "image_urls", "thumbnail_url", "created_on",
 		}).AddRow(
 			productID, tenantID, "Cake", "desc", 10.5, true, 3, "active", `[]`, nil, sql.NullTime{},
 		),
@@ -151,6 +229,21 @@ func newMultipartThumbnailRequest(t *testing.T, fieldName, filename, _ string, c
 	require.NoError(t, writer.Close())
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/products/10/thumbnail", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
+}
+
+func newMultipartImagesRequest(t *testing.T, fieldName, filename string, content []byte) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile(fieldName, filename)
+	require.NoError(t, err)
+	_, err = part.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/products/10/images", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req
 }

@@ -133,26 +133,7 @@ func (s *StatusUpdaterWithStock) updateStatusInTx(
 		}
 	}
 
-	var orderHistoryIdUser *uint64
-	if order.IdUser != 0 {
-		orderHistoryIdUser = &order.IdUser
-	}
-	orderHistory := oModel.OrderHistory{
-		TenantID: tenantID,
-		IDOrder:  orderID,
-		IdUser:   orderHistoryIdUser,
-		Status:   newStatus,
-		Price:    order.Price,
-		Note:     order.Note,
-		DeliveryDate: sql.NullTime{
-			Time:  order.DeliveryDate,
-			Valid: !order.DeliveryDate.IsZero(),
-		},
-		Paid:               paidForHistory,
-		CancellationReason: cancellationReason,
-		ModifiedBy:         userID,
-		Action:             oModel.ActionUpdate,
-	}
+	orderHistory := buildStatusUpdateHistory(tenantID, orderID, order, newStatus, userID, cancellationReason, paidForHistory)
 	if err := s.OrderRepo.CreateOrderHistoryTx(ctx, tx, orderHistory); err != nil {
 		logger.Warn().Err(err).
 			Uint64("order_id", orderID).
@@ -176,17 +157,35 @@ func (s *StatusUpdaterWithStock) writeOrderHistoryBestEffort(
 	cancellationReason *string,
 	paidForHistory bool,
 ) {
+	orderHistory := buildStatusUpdateHistory(tenantID, orderID, order, newStatus, userID, cancellationReason, paidForHistory)
+	if err := s.OrderRepo.CreateOrderHistory(ctx, orderHistory); err != nil {
+		logger.Warn().Err(err).
+			Uint64("order_id", orderID).
+			Str("new_status", string(newStatus)).
+			Msg("Failed to create order history")
+	}
+}
+
+func buildStatusUpdateHistory(
+	tenantID, orderID uint64,
+	order oModel.OrderResponse,
+	newStatus oModel.OrderStatus,
+	userID uint64,
+	cancellationReason *string,
+	paidForHistory bool,
+) oModel.OrderHistory {
 	var orderHistoryIdUser *uint64
 	if order.IdUser != 0 {
 		orderHistoryIdUser = &order.IdUser
 	}
-	orderHistory := oModel.OrderHistory{
-		TenantID: tenantID,
-		IDOrder:  orderID,
-		IdUser:   orderHistoryIdUser,
-		Status:   newStatus,
-		Price:    order.Price,
-		Note:     order.Note,
+	return oModel.OrderHistory{
+		TenantID:          tenantID,
+		IDOrder:           orderID,
+		IdUser:            orderHistoryIdUser,
+		Status:            newStatus,
+		Price:             order.Price,
+		Note:              order.Note,
+		DeliveryDirection: order.DeliveryDirection,
 		DeliveryDate: sql.NullTime{
 			Time:  order.DeliveryDate,
 			Valid: !order.DeliveryDate.IsZero(),
@@ -195,13 +194,6 @@ func (s *StatusUpdaterWithStock) writeOrderHistoryBestEffort(
 		CancellationReason: cancellationReason,
 		ModifiedBy:         userID,
 		Action:             oModel.ActionUpdate,
-	}
-
-	if err := s.OrderRepo.CreateOrderHistory(ctx, orderHistory); err != nil {
-		logger.Warn().Err(err).
-			Uint64("order_id", orderID).
-			Str("new_status", string(newStatus)).
-			Msg("Failed to create order history")
 	}
 }
 

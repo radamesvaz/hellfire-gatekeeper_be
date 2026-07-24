@@ -3,11 +3,13 @@ package orders
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/radamesvaz/bakery-app/internal/errors"
+	appErrors "github.com/radamesvaz/bakery-app/internal/errors"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -90,13 +92,13 @@ func TestValidateStatusTransition_RejectsFromCancelledOrExpired(t *testing.T) {
 	s := &StatusUpdaterWithStock{}
 
 	err := s.validateStatusTransition(oModel.StatusCancelled, oModel.StatusCancelled)
-	assert.ErrorIs(t, err, errors.ErrOrderAlreadyCancelled)
+	assert.ErrorIs(t, err, appErrors.ErrOrderAlreadyCancelled)
 
 	err = s.validateStatusTransition(oModel.StatusCancelled, oModel.StatusPreparing)
-	assert.ErrorIs(t, err, errors.ErrInvalidStatusTransition)
+	assert.ErrorIs(t, err, appErrors.ErrInvalidStatusTransition)
 
 	err = s.validateStatusTransition(oModel.StatusExpired, oModel.StatusPreparing)
-	assert.ErrorIs(t, err, errors.ErrInvalidStatusTransition)
+	assert.ErrorIs(t, err, appErrors.ErrInvalidStatusTransition)
 
 	err = s.validateStatusTransition(oModel.StatusPending, oModel.StatusPreparing)
 	assert.NoError(t, err)
@@ -237,7 +239,7 @@ func TestUpdateOrderStatus_StockRevertFails_ReturnsError(t *testing.T) {
 	mockOrderRepo.On("UpdateOrderStatusTx", mock.Anything, mock.Anything, tenantID, uint64(1), oModel.StatusCancelled, (*string)(nil)).Return(nil)
 	mockOrderRepo.On("GetOrderItemsByOrderIDTx", mock.Anything, mock.Anything, tenantID, uint64(1)).Return(orderItems, nil)
 
-	mockProductRepo.On("RevertProductStockTx", mock.Anything, mock.Anything, tenantID, uint64(1), uint64(3)).Return(errors.ErrDatabaseOperation)
+	mockProductRepo.On("RevertProductStockTx", mock.Anything, mock.Anything, tenantID, uint64(1), uint64(3)).Return(appErrors.ErrDatabaseOperation)
 
 	statusUpdater := &StatusUpdaterWithStock{
 		OrderRepo:   mockOrderRepo,
@@ -271,7 +273,7 @@ func TestUpdateOrderStatus_AlreadyCancelled_ReturnsError(t *testing.T) {
 	}
 
 	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusCancelled, 1, true, nil, nil)
-	assert.ErrorIs(t, err, errors.ErrOrderAlreadyCancelled)
+	assert.ErrorIs(t, err, appErrors.ErrOrderAlreadyCancelled)
 	mockProductRepo.AssertNotCalled(t, "RevertProductStockTx")
 }
 
@@ -284,12 +286,13 @@ func TestUpdateOrderStatus_PaidOverrideUsedInHistory(t *testing.T) {
 	mockProductRepo := new(MockProductRepositoryWithStock)
 
 	order := oModel.OrderResponse{
-		ID:       1,
-		TenantID: 1,
-		IdUser:   1,
-		Status:   oModel.StatusPending,
-		Price:    15.0,
-		Paid:     false,
+		ID:                1,
+		TenantID:          1,
+		IdUser:            1,
+		Status:            oModel.StatusPending,
+		Price:             15.0,
+		Paid:              false,
+		DeliveryDirection: "Calle Falsa 123",
 	}
 
 	const tenantID = uint64(1)
@@ -299,7 +302,10 @@ func TestUpdateOrderStatus_PaidOverrideUsedInHistory(t *testing.T) {
 	mockOrderRepo.On("UpdateOrderStatusTx", mock.Anything, mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).Return(nil)
 	mockOrderRepo.On("UpdateOrderPaidStatusTx", mock.Anything, mock.Anything, tenantID, uint64(1), true).Return(nil)
 	mockOrderRepo.On("CreateOrderHistoryTx", mock.Anything, mock.Anything, mock.MatchedBy(func(h oModel.OrderHistory) bool {
-		return h.Status == oModel.StatusPreparing && h.Paid == true && h.TenantID == tenantID
+		return h.Status == oModel.StatusPreparing &&
+			h.Paid == true &&
+			h.TenantID == tenantID &&
+			h.DeliveryDirection == "Calle Falsa 123"
 	})).Return(nil)
 	sqlMock.ExpectCommit()
 
@@ -311,6 +317,76 @@ func TestUpdateOrderStatus_PaidOverrideUsedInHistory(t *testing.T) {
 	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, &paidTrue)
 	require.NoError(t, err)
 	mockOrderRepo.AssertExpectations(t)
+	assert.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
+func TestUpdateOrderStatus_HistoryIncludesDeliveryDirection(t *testing.T) {
+	mockOrderRepo := new(MockOrderStatusRepositoryWithStock)
+	mockProductRepo := new(MockProductRepositoryWithStock)
+
+	order := oModel.OrderResponse{
+		ID:                1,
+		TenantID:          1,
+		IdUser:            1,
+		Status:            oModel.StatusPending,
+		Price:             15.0,
+		DeliveryDirection: "Av. Siempre Viva 742",
+	}
+
+	const tenantID = uint64(1)
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).Return(nil)
+	mockOrderRepo.On("CreateOrderHistory", mock.Anything, mock.MatchedBy(func(h oModel.OrderHistory) bool {
+		return h.DeliveryDirection == "Av. Siempre Viva 742" && h.Status == oModel.StatusPreparing
+	})).Return(nil)
+
+	statusUpdater := &StatusUpdaterWithStock{
+		OrderRepo:   mockOrderRepo,
+		ProductRepo: mockProductRepo,
+	}
+
+	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, nil)
+	require.NoError(t, err)
+	mockOrderRepo.AssertExpectations(t)
+}
+
+func TestUpdateOrderStatus_WrappedNotFound_PreservesHTTPError(t *testing.T) {
+	db, sqlMock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	mockOrderRepo := &MockOrderStatusRepositoryWithStock{DB: db}
+	mockProductRepo := new(MockProductRepositoryWithStock)
+
+	order := oModel.OrderResponse{
+		ID:     1,
+		Status: oModel.StatusPending,
+		Paid:   false,
+	}
+
+	const tenantID = uint64(1)
+	paidTrue := true
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	sqlMock.ExpectBegin()
+	mockOrderRepo.On("UpdateOrderStatusTx", mock.Anything, mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).
+		Return(appErrors.NewNotFound(appErrors.ErrOrderNotFound))
+	sqlMock.ExpectRollback()
+
+	statusUpdater := &StatusUpdaterWithStock{
+		OrderRepo:   mockOrderRepo,
+		ProductRepo: mockProductRepo,
+	}
+
+	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, &paidTrue)
+	require.Error(t, err)
+
+	// Direct type assert fails after fmt.Errorf wrap; errors.As must still recover 404.
+	_, ok := err.(*appErrors.HTTPError)
+	assert.False(t, ok, "wrapped error must not match direct type assert")
+
+	var httpErr *appErrors.HTTPError
+	require.True(t, errors.As(err, &httpErr))
+	assert.Equal(t, http.StatusNotFound, httpErr.StatusCode)
 	assert.NoError(t, sqlMock.ExpectationsWereMet())
 }
 

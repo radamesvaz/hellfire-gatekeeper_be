@@ -297,7 +297,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	// Get the current order to track changes
 	currentOrder, err := h.Repo.GetOrderByID(ctx, tenantID, idOrder)
 	if err != nil {
-		if httpErr, ok := err.(*appErrors.HTTPError); ok {
+		var httpErr *appErrors.HTTPError
+		if errors.As(err, &httpErr) {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)
 			return
 		}
@@ -345,7 +346,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		// and persists history with the final paid flag.
 		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason, payload.Paid)
 		if err != nil {
-			if httpErr, ok := err.(*appErrors.HTTPError); ok {
+			var httpErr *appErrors.HTTPError
+			if errors.As(err, &httpErr) {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
 				return
 			}
@@ -356,7 +358,8 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 	} else if payload.Paid != nil {
 		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
 		if err != nil {
-			if httpErr, ok := err.(*appErrors.HTTPError); ok {
+			var httpErr *appErrors.HTTPError
+			if errors.As(err, &httpErr) {
 				http.Error(w, httpErr.Error(), httpErr.StatusCode)
 				return
 			}

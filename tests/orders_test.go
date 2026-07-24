@@ -815,6 +815,50 @@ func TestUpdateOrder_StatusAndPaid(t *testing.T) {
 	assert.False(t, actualPaid2, "Order paid status should be updated to false")
 }
 
+func TestUpdateOrder_StatusFailure_DoesNotUpdatePaid(t *testing.T) {
+	_, db, terminate, dsn := setupPostgreSQLContainer(t)
+	defer terminate()
+
+	runMigrations(t, dsn)
+
+	orderRepo := &ordersRepository.OrderRepository{DB: db}
+	orderHandler := handlers.OrderHandler{Repo: orderRepo}
+
+	router := mux.NewRouter()
+	authRouter := router.PathPrefix("/auth").Subrouter()
+
+	secret := "testingsecret"
+	authService := auth.New(secret, 60)
+	authRouter.Use(middleware.AuthMiddleware(authService))
+	authRouter.Use(middleware.TenantMiddleware(nil))
+	authRouter.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+
+	tenantID := uint64(1)
+	jwt, jwtErr := authService.GenerateJWT(1, uModel.UserRoleAdmin, "admin@example.com", &tenantID)
+	require.NoError(t, jwtErr)
+
+	ctx := context.Background()
+	var paidBefore bool
+	err := db.QueryRowContext(ctx, "SELECT paid FROM orders WHERE id_order = $1", 2).Scan(&paidBefore)
+	require.NoError(t, err)
+	require.False(t, paidBefore, "precondition: order 2 should start unpaid")
+
+	// Combined PATCH: paid would succeed, but status is invalid — paid must not stick.
+	updatePayload := `{"status": "invalid_status", "paid": true}`
+	updateReq := httptest.NewRequest("PATCH", "/auth/orders/2", strings.NewReader(updatePayload))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Authorization", "Bearer "+jwt)
+	updateRR := httptest.NewRecorder()
+	router.ServeHTTP(updateRR, updateReq)
+
+	assert.Equal(t, http.StatusBadRequest, updateRR.Code)
+
+	var paidAfter bool
+	err = db.QueryRowContext(ctx, "SELECT paid FROM orders WHERE id_order = $1", 2).Scan(&paidAfter)
+	require.NoError(t, err)
+	assert.False(t, paidAfter, "paid must not be updated when status validation fails")
+}
+
 func TestUpdateOrder_InvalidPayload(t *testing.T) {
 	// setup
 	_, db, terminate, dsn := setupPostgreSQLContainer(t)

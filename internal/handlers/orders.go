@@ -305,22 +305,10 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply paid first so a combined status+paid PATCH can record history with the final paid flag.
-	if payload.Paid != nil {
-		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
-		if err != nil {
-			if httpErr, ok := err.(*appErrors.HTTPError); ok {
-				http.Error(w, httpErr.Error(), httpErr.StatusCode)
-				return
-			}
-			http.Error(w, fmt.Sprintf("Error updating order paid status: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
-
+	// Validate status before any mutations so a combined status+paid PATCH cannot
+	// leave paid updated when status validation/update fails.
 	statusUpdated := false
 	if payload.Status != nil {
-		// Validate status enum values
 		validStatuses := []oModel.OrderStatus{
 			oModel.StatusPreparing,
 			oModel.StatusReady,
@@ -342,7 +330,6 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Get user role from context
 		userRole, err := middleware.GetUserRoleFromContext(ctx)
 		if err != nil {
 			http.Error(w, "Unauthorized: invalid token role", http.StatusUnauthorized)
@@ -352,10 +339,10 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 		// Admin and superadmin cancel restore inventory; clients do not.
 		isAdmin := middleware.IsAdminRole(userRole)
 
-		// Create status updater service with stock reversion capability
 		statusUpdater := orderService.NewStatusUpdaterWithStock(h.Repo, h.ProductRepo)
 
-		// Status updater persists history (with paidOverride when paid was also patched).
+		// Status updater applies paid atomically (same TX) when payload.Paid is set,
+		// and persists history with the final paid flag.
 		err = statusUpdater.UpdateOrderStatusWithStockReversion(ctx, tenantID, idOrder, *payload.Status, userID, isAdmin, payload.CancellationReason, payload.Paid)
 		if err != nil {
 			if httpErr, ok := err.(*appErrors.HTTPError); ok {
@@ -366,6 +353,16 @@ func (h *OrderHandler) UpdateOrder(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		statusUpdated = true
+	} else if payload.Paid != nil {
+		err = h.Repo.UpdateOrderPaidStatus(ctx, tenantID, idOrder, *payload.Paid)
+		if err != nil {
+			if httpErr, ok := err.(*appErrors.HTTPError); ok {
+				http.Error(w, httpErr.Error(), httpErr.StatusCode)
+				return
+			}
+			http.Error(w, fmt.Sprintf("Error updating order paid status: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Paid-only updates: write history here (status path already recorded history).

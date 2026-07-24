@@ -974,9 +974,20 @@ func (r *OrderRepository) updateOrderStatusExec(ctx context.Context, exec interf
 
 // UpdateOrderPaidStatus updates the paid status of an order
 func (r *OrderRepository) UpdateOrderPaidStatus(ctx context.Context, tenantID, orderID uint64, paid bool) error {
+	return r.updateOrderPaidStatusExec(ctx, r.DB, tenantID, orderID, paid)
+}
+
+// UpdateOrderPaidStatusTx updates the paid status within a transaction.
+func (r *OrderRepository) UpdateOrderPaidStatusTx(ctx context.Context, tx *sql.Tx, tenantID, orderID uint64, paid bool) error {
+	return r.updateOrderPaidStatusExec(ctx, tx, tenantID, orderID, paid)
+}
+
+func (r *OrderRepository) updateOrderPaidStatusExec(ctx context.Context, exec interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, tenantID, orderID uint64, paid bool) error {
 	query := `UPDATE orders SET paid = $1 WHERE id_order = $2 AND tenant_id = $3`
 
-	result, err := r.DB.ExecContext(ctx, query, paid, orderID, tenantID)
+	result, err := exec.ExecContext(ctx, query, paid, orderID, tenantID)
 	if err != nil {
 		return fmt.Errorf("error updating order paid status: %w", err)
 	}

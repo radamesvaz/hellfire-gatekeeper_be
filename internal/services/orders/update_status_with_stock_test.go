@@ -3,6 +3,7 @@ package orders
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -42,6 +43,11 @@ func (m *MockOrderStatusRepositoryWithStock) UpdateOrderStatus(ctx context.Conte
 
 func (m *MockOrderStatusRepositoryWithStock) UpdateOrderStatusTx(ctx context.Context, tx *sql.Tx, tenantID, orderID uint64, status oModel.OrderStatus, cancellationReason *string) error {
 	args := m.Called(ctx, tx, tenantID, orderID, status, cancellationReason)
+	return args.Error(0)
+}
+
+func (m *MockOrderStatusRepositoryWithStock) UpdateOrderPaidStatusTx(ctx context.Context, tx *sql.Tx, tenantID, orderID uint64, paid bool) error {
+	args := m.Called(ctx, tx, tenantID, orderID, paid)
 	return args.Error(0)
 }
 
@@ -270,32 +276,73 @@ func TestUpdateOrderStatus_AlreadyCancelled_ReturnsError(t *testing.T) {
 }
 
 func TestUpdateOrderStatus_PaidOverrideUsedInHistory(t *testing.T) {
-	mockOrderRepo := new(MockOrderStatusRepositoryWithStock)
+	db, sqlMock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	mockOrderRepo := &MockOrderStatusRepositoryWithStock{DB: db}
 	mockProductRepo := new(MockProductRepositoryWithStock)
 
 	order := oModel.OrderResponse{
-		ID:     1,
+		ID:       1,
 		TenantID: 1,
-		IdUser: 1,
-		Status: oModel.StatusPending,
-		Price:  15.0,
-		Paid:   false,
+		IdUser:   1,
+		Status:   oModel.StatusPending,
+		Price:    15.0,
+		Paid:     false,
 	}
 
 	const tenantID = uint64(1)
 	paidTrue := true
 	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
-	mockOrderRepo.On("UpdateOrderStatus", mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).Return(nil)
-	mockOrderRepo.On("CreateOrderHistory", mock.Anything, mock.MatchedBy(func(h oModel.OrderHistory) bool {
+	sqlMock.ExpectBegin()
+	mockOrderRepo.On("UpdateOrderStatusTx", mock.Anything, mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).Return(nil)
+	mockOrderRepo.On("UpdateOrderPaidStatusTx", mock.Anything, mock.Anything, tenantID, uint64(1), true).Return(nil)
+	mockOrderRepo.On("CreateOrderHistoryTx", mock.Anything, mock.Anything, mock.MatchedBy(func(h oModel.OrderHistory) bool {
 		return h.Status == oModel.StatusPreparing && h.Paid == true && h.TenantID == tenantID
 	})).Return(nil)
+	sqlMock.ExpectCommit()
 
 	statusUpdater := &StatusUpdaterWithStock{
 		OrderRepo:   mockOrderRepo,
 		ProductRepo: mockProductRepo,
 	}
 
-	err := statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, &paidTrue)
+	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, &paidTrue)
 	require.NoError(t, err)
 	mockOrderRepo.AssertExpectations(t)
+	assert.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
+func TestUpdateOrderStatus_PaidOverride_StatusFails_DoesNotUpdatePaid(t *testing.T) {
+	db, sqlMock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	mockOrderRepo := &MockOrderStatusRepositoryWithStock{DB: db}
+	mockProductRepo := new(MockProductRepositoryWithStock)
+
+	order := oModel.OrderResponse{
+		ID:     1,
+		Status: oModel.StatusPending,
+		Paid:   false,
+	}
+
+	const tenantID = uint64(1)
+	paidTrue := true
+	mockOrderRepo.On("GetOrderByID", mock.Anything, tenantID, uint64(1)).Return(order, nil)
+	sqlMock.ExpectBegin()
+	mockOrderRepo.On("UpdateOrderStatusTx", mock.Anything, mock.Anything, tenantID, uint64(1), oModel.StatusPreparing, (*string)(nil)).
+		Return(fmt.Errorf("status update failed"))
+	sqlMock.ExpectRollback()
+
+	statusUpdater := &StatusUpdaterWithStock{
+		OrderRepo:   mockOrderRepo,
+		ProductRepo: mockProductRepo,
+	}
+
+	err = statusUpdater.UpdateOrderStatusWithStockReversion(context.Background(), tenantID, 1, oModel.StatusPreparing, 1, true, nil, &paidTrue)
+	require.Error(t, err)
+	mockOrderRepo.AssertNotCalled(t, "UpdateOrderPaidStatusTx")
+	assert.NoError(t, sqlMock.ExpectationsWereMet())
 }

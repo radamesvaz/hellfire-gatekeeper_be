@@ -8,7 +8,8 @@
 //	go run ./cmd/ai review -dry-run
 //	go run ./cmd/ai review -save
 //
-// Env overrides: OLLAMA_HOST (default http://localhost:11434), OLLAMA_MODEL (default qwen3:8b).
+// Env overrides: OLLAMA_HOST (default http://localhost:11434), OLLAMA_MODEL (default qwen3:8b),
+// OLLAMA_NUM_CTX (default 32768 — needed because Ollama's runtime default is often 4096).
 package main
 
 import (
@@ -100,6 +101,8 @@ func runReview(args []string) error {
 
 	fmt.Fprintf(os.Stderr, "diff: %s (%d bytes)\n", diffLabel, len(diff))
 	fmt.Fprintf(os.Stderr, "model: %s @ %s\n", *model, *host)
+	fmt.Fprintf(os.Stderr, "num_ctx: %d (override with OLLAMA_NUM_CTX)\n", ollamaNumCtx())
+	fmt.Fprintf(os.Stderr, "prompt: ~%d chars (~%d tokens est.)\n", len(prompt.combined()), len(prompt.combined())/4)
 
 	if *dryRun {
 		fmt.Println(prompt.combined())

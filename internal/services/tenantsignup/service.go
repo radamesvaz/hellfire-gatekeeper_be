@@ -106,10 +106,8 @@ func (s *TenantSignupService) RegisterTenantWithCode(ctx context.Context, req au
 		return authModel.PublicTenantRegisterResponse{}, err
 	}
 
-	baseSlug := strings.TrimSpace(strings.ToLower(req.TenantSlug))
-	if baseSlug == "" {
-		baseSlug = SlugifyTenantName(req.TenantName)
-	}
+	// Always derive from tenant name; never accept a client-provided slug.
+	baseSlug := SlugifyTenantName(req.TenantName)
 	if baseSlug == "" {
 		return authModel.PublicTenantRegisterResponse{}, ErrInvalidTenantSlug
 	}

@@ -91,11 +91,8 @@ func (h *TenantSignupHandler) RegisterTenantWithCode(w http.ResponseWriter, r *h
 		writeValidatorJSONError(w, err, "Invalid tenant name")
 		return
 	}
-	tenantSlug := strings.TrimSpace(strings.ToLower(req.TenantSlug))
-	if tenantSlug == "" {
-		tenantSlug = tenantSignupService.SlugifyTenantName(tenantName)
-	}
-	if tenantSlug == "" {
+	// Slug is always derived from tenant_name; any client-sent tenant_slug is ignored.
+	if tenantSignupService.SlugifyTenantName(tenantName) == "" {
 		http.Error(w, "Could not derive tenant slug from tenant name", http.StatusBadRequest)
 		return
 	}
@@ -117,7 +114,6 @@ func (h *TenantSignupHandler) RegisterTenantWithCode(w http.ResponseWriter, r *h
 	}
 
 	req.TenantName = tenantName
-	req.TenantSlug = tenantSlug
 	resp, err := h.Service.RegisterTenantWithCode(r.Context(), req)
 	if err != nil {
 		switch {

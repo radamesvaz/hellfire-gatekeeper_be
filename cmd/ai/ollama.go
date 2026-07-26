@@ -6,13 +6,21 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
+// defaultNumCtx is large enough for architecture + checklist + a typical working-tree
+// diff. Ollama's runtime default is often 4096, which silently truncates the middle
+// of the prompt (where the git diff lives) and makes the model claim "no diff".
+const defaultNumCtx = 32768
+
 type ollamaChatRequest struct {
 	Model    string          `json:"model"`
 	Stream   bool            `json:"stream"`
+	Think    bool            `json:"think"`
 	Messages []ollamaMessage `json:"messages"`
 	Options  map[string]any  `json:"options,omitempty"`
 }
@@ -27,21 +35,43 @@ type ollamaChatResponse struct {
 	Error   string        `json:"error,omitempty"`
 }
 
-func callOllama(host, model string, prompt reviewPrompt) (string, error) {
-	host = strings.TrimRight(host, "/")
-	url := host + "/api/chat"
+func ollamaNumCtx() int {
+	raw := strings.TrimSpace(os.Getenv("OLLAMA_NUM_CTX"))
+	if raw == "" {
+		return defaultNumCtx
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return defaultNumCtx
+	}
+	return n
+}
 
-	body, err := json.Marshal(ollamaChatRequest{
+func buildOllamaChatRequest(model string, prompt reviewPrompt, numCtx int) ollamaChatRequest {
+	if numCtx <= 0 {
+		numCtx = defaultNumCtx
+	}
+	return ollamaChatRequest{
 		Model:  model,
 		Stream: false,
+		// Qwen3 thinking burns context and is unnecessary for structured reviews.
+		Think: false,
 		Messages: []ollamaMessage{
 			{Role: "system", Content: prompt.System},
 			{Role: "user", Content: prompt.User},
 		},
 		Options: map[string]any{
 			"temperature": 0.1,
+			"num_ctx":     numCtx,
 		},
-	})
+	}
+}
+
+func callOllama(host, model string, prompt reviewPrompt) (string, error) {
+	host = strings.TrimRight(host, "/")
+	url := host + "/api/chat"
+
+	body, err := json.Marshal(buildOllamaChatRequest(model, prompt, ollamaNumCtx()))
 	if err != nil {
 		return "", err
 	}

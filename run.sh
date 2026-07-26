@@ -236,6 +236,12 @@ reset() {
 #   -host URL     Ollama base URL (default http://localhost:11434)
 #   -save         write review under .ai/reviews/ (already default via run.sh)
 #
+# Env:
+#   OLLAMA_NUM_CTX   context window for the review call (default 32768).
+#                    Ollama's own default is often 4096, which truncates the
+#                    git diff out of the prompt — raise this if reviews say
+#                    "no diff provided" despite a non-empty diff.
+#
 # Via ./run.sh, reviews are saved under .ai/reviews/ by default for all modes
 # except -dry-run. Pass flags as usual; -save is added automatically when missing.
 review() {

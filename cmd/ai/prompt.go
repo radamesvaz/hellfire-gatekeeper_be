@@ -47,17 +47,11 @@ func buildReviewPrompt(root, diff string) (reviewPrompt, error) {
 		}
 	}
 	user.WriteString("\n")
-	user.WriteString("# GIT DIFF TO REVIEW\n\n")
-	user.WriteString("```diff\n")
-	user.WriteString(diff)
-	if !strings.HasSuffix(diff, "\n") {
-		user.WriteByte('\n')
-	}
-	user.WriteString("```\n\n")
 	user.WriteString("# TASK\n")
-	user.WriteString("Review the git diff against the guidelines above.\n")
+	user.WriteString("Review the git diff below against the guidelines above.\n")
 	user.WriteString("Only flag issues with clear evidence in the diff.\n")
-	user.WriteString("Do not invent files, tools, or generic security TODOs.\n\n")
+	user.WriteString("Do not invent files, tools, or generic security TODOs.\n")
+	user.WriteString("If the diff section is missing or empty, Verdict must be WARN and Summary must say the diff was missing.\n\n")
 	user.WriteString("Severity:\n")
 	user.WriteString("- BLOCK = clear architecture/security/data violation\n")
 	user.WriteString("- WARN = likely issue or missing tests/migrations\n")
@@ -76,6 +70,14 @@ func buildReviewPrompt(root, diff string) (reviewPrompt, error) {
 	user.WriteString("1. Concrete fix for a finding above (must reference an ALLOWED PATH)\n")
 	user.WriteString("or\n")
 	user.WriteString("none\n\n")
+	// Keep the diff last so it survives Ollama's start+end truncation if num_ctx is too small.
+	user.WriteString("# GIT DIFF TO REVIEW\n\n")
+	user.WriteString("```diff\n")
+	user.WriteString(diff)
+	if !strings.HasSuffix(diff, "\n") {
+		user.WriteByte('\n')
+	}
+	user.WriteString("```\n\n")
 	user.WriteString("Begin now with ## Verdict\n")
 
 	return reviewPrompt{

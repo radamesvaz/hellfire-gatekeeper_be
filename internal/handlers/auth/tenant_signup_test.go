@@ -158,7 +158,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_Success(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id", "expires_at", "used_at", "revoked_at"}).
 			AddRow(uint64(5), time.Now().UTC().Add(2*time.Hour), nil, nil))
 	mock.ExpectQuery(`INSERT INTO tenants`).
-		WithArgs("Acme Bakery", "acme").
+		WithArgs("Acme Bakery", "acme-bakery").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(10)))
 	mock.ExpectQuery(`INSERT INTO users`).
 		WithArgs(uint64(10), 1, "Owner Admin", "owner@acme.com", "555-0101", sqlmock.AnyArg()).
@@ -170,7 +170,6 @@ func TestTenantSignupHandler_RegisterTenantWithCode_Success(t *testing.T) {
 
 	body := bytes.NewBufferString(`{
 		"tenant_name":"Acme Bakery",
-		"tenant_slug":"acme",
 		"admin_name":"Owner Admin",
 		"email":"owner@acme.com",
 		"phone":"555-0101",
@@ -189,6 +188,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_Success(t *testing.T) {
 	assert.Equal(t, uint64(10), resp.TenantID)
 	assert.Equal(t, uint64(100), resp.AdminID)
 	assert.Equal(t, "Acme Bakery", resp.TenantName)
+	assert.Equal(t, "acme-bakery", resp.TenantSlug)
 	assert.NotEmpty(t, resp.Token)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
@@ -235,7 +235,6 @@ func TestTenantSignupHandler_CreateSignupCode_DefaultTTL120(t *testing.T) {
 func validRegisterBody(oneTimeCode string) string {
 	return `{
 		"tenant_name":"Acme Bakery",
-		"tenant_slug":"acme",
 		"admin_name":"Owner Admin",
 		"email":"owner@acme.com",
 		"phone":"555-0101",
@@ -362,7 +361,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithUnknownOTC_Returns422(t 
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestTenantSignupHandler_RegisterTenantWithCode_WithoutSlug_DerivesFromName(t *testing.T) {
+func TestTenantSignupHandler_RegisterTenantWithCode_ProvidedSlug_IsIgnored(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer db.Close()
@@ -391,8 +390,10 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithoutSlug_DerivesFromName(
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
+	// Client-sent tenant_slug must be ignored; slug comes from tenant_name.
 	body := bytes.NewBufferString(`{
 		"tenant_name":"Acme Bakery",
+		"tenant_slug":"custom-client-slug",
 		"admin_name":"Owner Admin",
 		"email":"owner@acme.com",
 		"phone":"555-0101",
@@ -432,7 +433,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_AutoSuffix
 		WillReturnRows(sqlmock.NewRows([]string{"id", "expires_at", "used_at", "revoked_at"}).
 			AddRow(uint64(5), time.Now().UTC().Add(2*time.Hour), nil, nil))
 	mock.ExpectQuery(`INSERT INTO tenants`).
-		WithArgs("Acme Bakery", "acme").
+		WithArgs("Acme Bakery", "acme-bakery").
 		WillReturnError(&pq.Error{Code: "23505"})
 	mock.ExpectRollback()
 
@@ -442,7 +443,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_AutoSuffix
 		WillReturnRows(sqlmock.NewRows([]string{"id", "expires_at", "used_at", "revoked_at"}).
 			AddRow(uint64(5), time.Now().UTC().Add(2*time.Hour), nil, nil))
 	mock.ExpectQuery(`INSERT INTO tenants`).
-		WithArgs("Acme Bakery", "acme-2").
+		WithArgs("Acme Bakery", "acme-bakery-2").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(10)))
 	mock.ExpectQuery(`INSERT INTO users`).
 		WithArgs(uint64(10), 1, "Owner Admin", "owner@acme.com", "555-0101", sqlmock.AnyArg()).
@@ -462,7 +463,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateSlug_AutoSuffix
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 	var resp authModel.PublicTenantRegisterResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
-	assert.Equal(t, "acme-2", resp.TenantSlug)
+	assert.Equal(t, "acme-bakery-2", resp.TenantSlug)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -483,7 +484,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithDuplicateAdminEmail_Retu
 		WillReturnRows(sqlmock.NewRows([]string{"id", "expires_at", "used_at", "revoked_at"}).
 			AddRow(uint64(5), time.Now().UTC().Add(2*time.Hour), nil, nil))
 	mock.ExpectQuery(`INSERT INTO tenants`).
-		WithArgs("Acme Bakery", "acme").
+		WithArgs("Acme Bakery", "acme-bakery").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(10)))
 	mock.ExpectQuery(`INSERT INTO users`).
 		WithArgs(uint64(10), 1, "Owner Admin", "owner@acme.com", "555-0101", sqlmock.AnyArg()).
@@ -524,7 +525,7 @@ func TestTenantSignupHandler_RegisterTenantWithCode_WithRaceOnSameOTC_OnlyOneSuc
 		WillReturnRows(sqlmock.NewRows([]string{"id", "expires_at", "used_at", "revoked_at"}).
 			AddRow(uint64(5), time.Now().UTC().Add(2*time.Hour), nil, nil))
 	mock.ExpectQuery(`INSERT INTO tenants`).
-		WithArgs("Acme Bakery", "acme").
+		WithArgs("Acme Bakery", "acme-bakery").
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(uint64(10)))
 	mock.ExpectQuery(`INSERT INTO users`).
 		WithArgs(uint64(10), 1, "Owner Admin", "owner@acme.com", "555-0101", sqlmock.AnyArg()).

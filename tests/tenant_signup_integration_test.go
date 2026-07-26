@@ -162,7 +162,6 @@ func registerTenantPublic(
 	t *testing.T,
 	env *tenantSignupIntegrationEnv,
 	tenantName,
-	tenantSlug,
 	adminName,
 	email,
 	phone,
@@ -173,13 +172,12 @@ func registerTenantPublic(
 
 	payload := fmt.Sprintf(`{
 		"tenant_name":"%s",
-		"tenant_slug":"%s",
 		"admin_name":"%s",
 		"email":"%s",
 		"phone":"%s",
 		"password":"%s",
 		"one_time_code":"%s"
-	}`, tenantName, tenantSlug, adminName, email, phone, password, code)
+	}`, tenantName, adminName, email, phone, password, code)
 
 	req := httptest.NewRequest(http.MethodPost, "/public/tenant-register", bytes.NewBufferString(payload))
 	req.Header.Set("Content-Type", "application/json")
@@ -286,12 +284,11 @@ func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {
 	assert.Equal(t, 1, env.emailSender.calls)
 	assert.Contains(t, env.emailSender.last.RegisterURL, createdCode.Code)
 
-	slug := fmt.Sprintf("tenant-happy-%d", time.Now().UnixNano())
 	email := fmt.Sprintf("owner-happy-%d@test.com", time.Now().UnixNano())
 
 	rr := registerTenantPublic(
 		t, env,
-		"Tenant Happy", slug, "Owner Happy", email, "555-1010", "StrongPass123!",
+		"Tenant Happy", "Owner Happy", email, "555-1010", "StrongPass123!",
 		createdCode.Code,
 	)
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
@@ -299,7 +296,7 @@ func TestTenantSignupIntegration_RegisterWithCode_HappyPath(t *testing.T) {
 	var resp authModel.PublicTenantRegisterResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Equal(t, "Tenant registered successfully", resp.Message)
-	assert.Equal(t, slug, resp.TenantSlug)
+	assert.Equal(t, "tenant-happy", resp.TenantSlug)
 	assert.Equal(t, "Tenant Happy", resp.TenantName)
 	assert.Equal(t, email, resp.AdminEmail)
 	assert.NotEmpty(t, resp.Token)
@@ -341,20 +338,18 @@ func TestTenantSignupIntegration_RegisterWithCode_ReusedCodeReturns422(t *testin
 
 	createdCode := createSignupCodeInternal(t, env, "invitee-reuse@test.com", 120, "integration reused code")
 
-	firstSlug := fmt.Sprintf("tenant-reuse-a-%d", time.Now().UnixNano())
 	firstEmail := fmt.Sprintf("owner-reuse-a-%d@test.com", time.Now().UnixNano())
 	first := registerTenantPublic(
 		t, env,
-		"Tenant Reuse A", firstSlug, "Owner Reuse A", firstEmail, "555-2020", "StrongPass123!",
+		"Tenant Reuse A", "Owner Reuse A", firstEmail, "555-2020", "StrongPass123!",
 		createdCode.Code,
 	)
 	require.Equal(t, http.StatusCreated, first.Code, first.Body.String())
 
-	secondSlug := fmt.Sprintf("tenant-reuse-b-%d", time.Now().UnixNano())
 	secondEmail := fmt.Sprintf("owner-reuse-b-%d@test.com", time.Now().UnixNano())
 	second := registerTenantPublic(
 		t, env,
-		"Tenant Reuse B", secondSlug, "Owner Reuse B", secondEmail, "555-2021", "StrongPass123!",
+		"Tenant Reuse B", "Owner Reuse B", secondEmail, "555-2021", "StrongPass123!",
 		createdCode.Code,
 	)
 	assert.Equal(t, http.StatusUnprocessableEntity, second.Code, second.Body.String())
@@ -368,11 +363,10 @@ func TestTenantSignupIntegration_RegisterWithCode_ExpiredCodeReturns422(t *testi
 	expiredCode := "EXPIRED1-CODE0001"
 	insertSignupCodeForTest(t, env.db, expiredCode, time.Now().UTC().Add(-5*time.Minute), false)
 
-	slug := fmt.Sprintf("tenant-expired-%d", time.Now().UnixNano())
 	email := fmt.Sprintf("owner-expired-%d@test.com", time.Now().UnixNano())
 	rr := registerTenantPublic(
 		t, env,
-		"Tenant Expired", slug, "Owner Expired", email, "555-3030", "StrongPass123!",
+		"Tenant Expired", "Owner Expired", email, "555-3030", "StrongPass123!",
 		expiredCode,
 	)
 
@@ -387,11 +381,10 @@ func TestTenantSignupIntegration_RegisterWithCode_RevokedCodeReturns422(t *testi
 	revokedCode := "REVOKED1-CODE0002"
 	insertSignupCodeForTest(t, env.db, revokedCode, time.Now().UTC().Add(2*time.Hour), true)
 
-	slug := fmt.Sprintf("tenant-revoked-%d", time.Now().UnixNano())
 	email := fmt.Sprintf("owner-revoked-%d@test.com", time.Now().UnixNano())
 	rr := registerTenantPublic(
 		t, env,
-		"Tenant Revoked", slug, "Owner Revoked", email, "555-4040", "StrongPass123!",
+		"Tenant Revoked", "Owner Revoked", email, "555-4040", "StrongPass123!",
 		revokedCode,
 	)
 
@@ -403,12 +396,12 @@ func TestTenantSignupIntegration_RegisterWithCode_DuplicateSlugAutoSuffixes(t *t
 	env, cleanup := setupTenantSignupIntegrationEnv(t)
 	defer cleanup()
 
-	// Seeded tenant uses slug "default"; requesting the same slug should succeed as "default-2".
+	// Seeded tenant uses slug "default"; a name that slugifies to "default" should succeed as "default-2".
 	createdCode := createSignupCodeInternal(t, env, "invitee-dup-slug@test.com", 120, "integration duplicate slug")
 	ownerEmail := fmt.Sprintf("owner-collision-%d@test.com", time.Now().UnixNano())
 	rr := registerTenantPublic(
 		t, env,
-		"Default Tenant Collision", "default", "Owner Collision", ownerEmail, "555-5050", "StrongPass123!",
+		"Default", "Owner Collision", ownerEmail, "555-5050", "StrongPass123!",
 		createdCode.Code,
 	)
 
@@ -451,12 +444,10 @@ func TestTenantSignupIntegration_RegisterWithCode_ConcurrentSameCodeOnlyOneSucce
 		defer wg.Done()
 		<-start
 
-		slug := fmt.Sprintf("tenant-race-%s-%d", suffix, time.Now().UnixNano())
 		email := fmt.Sprintf("owner-race-%s-%d@test.com", suffix, time.Now().UnixNano())
 		rr := registerTenantPublic(
 			t, env,
 			"Tenant Race "+suffix,
-			slug,
 			"Owner Race "+suffix,
 			email,
 			"555-6060",

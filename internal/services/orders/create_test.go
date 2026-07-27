@@ -248,7 +248,7 @@ func TestCreateOrder_UpdatesProductStock(t *testing.T) {
 	}
 
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(ctx, 1, payload, deliveryDate)
+	_, err = service.CreateOrder(ctx, 1, payload, deliveryDate)
 
 	assert.NoError(t, err)
 	assert.True(t, mockOrderRepo.OrderCreated)
@@ -293,7 +293,7 @@ func TestCreateOrder_MergesDuplicateProductLines(t *testing.T) {
 		DeliveryDate: "2024-12-25",
 	}
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+	_, err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
 
 	require.NoError(t, err)
 	assert.Equal(t, []uint64{1}, mockProductRepo.LastIDs)
@@ -339,7 +339,7 @@ func TestCreateOrder_SkipsStockDecrementWhenNotTrackingInventory(t *testing.T) {
 		DeliveryDate: "2024-12-25",
 	}
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+	_, err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
 
 	require.NoError(t, err)
 	assert.Equal(t, 0, mockProductRepo.DecrementCalls)
@@ -373,7 +373,7 @@ func TestCreateOrder_RejectsInactiveProduct(t *testing.T) {
 		DeliveryDate: "2024-12-25",
 	}
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err := service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+	_, err := service.CreateOrder(context.Background(), 1, payload, deliveryDate)
 
 	assert.ErrorIs(t, err, internalErrors.ErrProductNotPurchasable)
 	assert.False(t, mockOrderRepo.OrderCreated)
@@ -415,7 +415,7 @@ func TestCreateOrder_RejectsWhenProductDeactivatedInsideTx(t *testing.T) {
 		DeliveryDate: "2024-12-25",
 	}
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+	_, err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
 
 	assert.ErrorIs(t, err, internalErrors.ErrProductNotPurchasable)
 	assert.False(t, mockOrderRepo.OrderCreated)
@@ -462,7 +462,7 @@ func TestCreateOrder_UsesLockedTrackInventoryWhenEnabledMidCreate(t *testing.T) 
 		DeliveryDate: "2024-12-25",
 	}
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
+	_, err = service.CreateOrder(context.Background(), 1, payload, deliveryDate)
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, mockProductRepo.DecrementCalls, "must decrement using locked track_inventory, not pre-tx snapshot")
@@ -506,7 +506,7 @@ func TestCreateOrder_RejectsOrderWhenInsufficientStock(t *testing.T) {
 	}
 
 	deliveryDate, _ := time.Parse("2006-01-02", payload.DeliveryDate)
-	err = service.CreateOrder(ctx, 1, payload, deliveryDate)
+	_, err = service.CreateOrder(ctx, 1, payload, deliveryDate)
 
 	assert.ErrorIs(t, err, internalErrors.ErrNotEnoughProductStock)
 	assert.False(t, mockOrderRepo.OrderCreated)
@@ -552,7 +552,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 		DeliveryDate: "2024-12-25",
 	}
 	deliveryDate, _ := time.Parse("2006-01-02", firstPayload.DeliveryDate)
-	err = service.CreateOrder(ctx, 1, firstPayload, deliveryDate)
+	_, err = service.CreateOrder(ctx, 1, firstPayload, deliveryDate)
 	assert.NoError(t, err)
 	assert.True(t, mockOrderRepo.OrderCreated)
 	assert.Equal(t, uint64(0), mockProductRepo.StockUpdates[1])
@@ -574,7 +574,7 @@ func TestCreateOrder_SecondOrderFailsAfterStockDepletion(t *testing.T) {
 		DeliveryDate: "2024-12-26",
 	}
 	deliveryDate2, _ := time.Parse("2006-01-02", secondPayload.DeliveryDate)
-	err2 := service.CreateOrder(ctx, 1, secondPayload, deliveryDate2)
+	_, err2 := service.CreateOrder(ctx, 1, secondPayload, deliveryDate2)
 	assert.ErrorIs(t, err2, internalErrors.ErrNotEnoughProductStock)
 	assert.False(t, mockOrderRepo.OrderCreated)
 	assert.False(t, mockOrderRepo.HistoryCreated)

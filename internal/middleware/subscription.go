@@ -14,7 +14,7 @@ type SubscriptionSnapshotReader interface {
 }
 
 // RequireOperableSubscription rejects requests when the tenant in context has subscription_status canceled.
-// Apply after AuthMiddleware and TenantMiddleware on business /auth routes.
+// Apply after tenant is resolved (Auth+TenantMiddleware on /auth, or TenantFromPathOrHeader on public create-order).
 func RequireOperableSubscription(reader SubscriptionSnapshotReader) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -52,7 +52,9 @@ tags:
   - name: Catalog
     description: Catálogo de productos (público o multi-tenant por ruta)
   - name: Orders
-    description: Listado de pedidos (autenticado)
+    description: |
+      Pedidos: create público (storefront) y gestión admin (`/auth/orders*`).
+      Admin requiere JWT **admin/superadmin** y suscripción no `canceled`.
 
 paths:
   /products:
@@ -200,9 +202,15 @@ paths:
   /auth/orders:
     get:
       tags: [Orders]
-      summary: Listar pedidos (autenticado)
+      summary: Listar pedidos (admin)
       description: |
-        Requiere **Bearer JWT** y tenant en contexto (middleware). Orden: **`created_on` ascendente**, desempate **`id_order` ascendente** (más antiguos primero).
+        Requiere **Bearer JWT** de **admin o superadmin**, tenant operable en contexto, y suscripción no `canceled`.
+        Orden: **`created_on` ascendente**, desempate **`id_order` ascendente** (más antiguos primero).
+
+        ### Transiciones de estado (PATCH)
+        Lineales: `pending → preparing → ready → delivered`.
+        `cancelled` solo desde `pending|preparing|ready` (restaura stock rastreado).
+        `deleted` solo desde `cancelled|expired|delivered` (no toca stock).
       operationId: listOrders
       security:
         - bearerAuth: []
@@ -239,6 +247,166 @@ paths:
           $ref: "#/components/responses/BadRequestText"
         "401":
           description: Sin token o token inválido
+        "403":
+          description: Rol insuficiente (no admin/superadmin) o suscripción cancelada
+
+  /auth/orders/{id}:
+    get:
+      tags: [Orders]
+      summary: Obtener pedido por ID (admin)
+      description: |
+        Requiere **Bearer JWT** de **admin o superadmin**.
+        Suscripción `canceled` → 403.
+      operationId: getOrderById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      responses:
+        "200":
+          description: Pedido con ítems
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderListItem"
+        "401":
+          description: Sin token o token inválido
+        "403":
+          description: Rol insuficiente o suscripción cancelada
+        "404":
+          description: Pedido no encontrado
+    patch:
+      tags: [Orders]
+      summary: Actualizar estado y/ o pago (admin)
+      description: |
+        Requiere **Bearer JWT** de **admin o superadmin**.
+
+        ### Transiciones de `status` permitidas
+        - Lineales: `pending → preparing → ready → delivered`
+        - Cancelar: `pending|preparing|ready → cancelled` (restaura stock rastreado)
+        - Soft-delete: `cancelled|expired|delivered → deleted` (no toca stock)
+
+        Saltos, retrocesos, `delivered → cancelled` y delete prematuro → **400**.
+        `expired` solo lo escribe el worker de ghost orders.
+      operationId: updateOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateOrderRequest"
+            examples:
+              nextStep:
+                value:
+                  status: preparing
+              cancel:
+                value:
+                  status: cancelled
+                  cancellation_reason: Cliente canceló
+              markPaid:
+                value:
+                  paid: true
+      responses:
+        "200":
+          description: Actualización correcta (mensaje texto o vacío según handler)
+        "400":
+          description: Payload inválido o transición de estado no permitida
+        "401":
+          description: Sin token o token inválido
+        "403":
+          description: Rol insuficiente o suscripción cancelada
+        "404":
+          description: Pedido no encontrado
+
+  /orders:
+    post:
+      security: []
+      tags: [Orders]
+      summary: Crear pedido (legacy / tenant por cabecera)
+      description: |
+        Create de storefront. Resuelve tenant con `X-Tenant-Slug`.
+        Si la suscripción del tenant es `canceled` (u otras condiciones de
+        disponibilidad), el middleware de tenant responde **404**.
+        Éxito: **201** con `id_order`.
+        `delivery_date` en `YYYY-MM-DD`; **hoy permitido** (día calendario local ≥ hoy).
+      operationId: createOrderLegacy
+      parameters:
+        - name: X-Tenant-Slug
+          in: header
+          required: true
+          schema:
+            type: string
+          example: default
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "201":
+          description: Pedido creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateOrderResponse"
+        "400":
+          description: Validación / fecha / tenant ausente
+        "404":
+          description: Tenant no disponible o producto no encontrado
+        "409":
+          description: Producto no comprable o stock insuficiente
+
+  /t/{tenant_slug}/orders:
+    post:
+      security: []
+      tags: [Orders]
+      summary: Crear pedido por tenant (slug en ruta)
+      description: |
+        Mismo contrato que `POST /orders` (legacy). Preferido para multi-tenant.
+      operationId: createOrderByTenantSlug
+      parameters:
+        - name: tenant_slug
+          in: path
+          required: true
+          schema:
+            type: string
+          example: default
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "201":
+          description: Pedido creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateOrderResponse"
+        "400":
+          description: Validación / fecha
+        "404":
+          description: Tenant no disponible o producto no encontrado
+        "409":
+          description: Producto no comprable o stock insuficiente
 
 components:
   securitySchemes:
@@ -444,3 +612,65 @@ components:
         - cancelled
         - expired
         - deleted
+
+    CreateOrderItem:
+      type: object
+      required: [id_product, quantity]
+      properties:
+        id_product:
+          type: integer
+          format: int64
+          minimum: 1
+        quantity:
+          type: integer
+          format: int64
+          minimum: 1
+
+    CreateOrderRequest:
+      type: object
+      required: [name, email, phone, delivery_date, delivery_direction, items]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        delivery_date:
+          type: string
+          description: Fecha calendario `YYYY-MM-DD`. Hoy permitido; días pasados → 400.
+          example: "2026-07-27"
+        delivery_direction:
+          type: string
+          description: Dirección o enlace de entrega
+        note:
+          type: string
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CreateOrderItem"
+
+    CreateOrderResponse:
+      type: object
+      required: [message, id_order]
+      properties:
+        message:
+          type: string
+          example: Order created successfully
+        id_order:
+          type: integer
+          format: int64
+          example: 42
+
+    UpdateOrderRequest:
+      type: object
+      description: Al menos uno de `status` o `paid` es obligatorio.
+      properties:
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        paid:
+          type: boolean
+        cancellation_reason:
+          type: string

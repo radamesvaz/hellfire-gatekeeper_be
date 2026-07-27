@@ -46,19 +46,62 @@ func (s *StatusUpdaterWithStock) validateStatusTransition(currentStatus, newStat
 		if newStatus == oModel.StatusCancelled {
 			return errors.ErrOrderAlreadyCancelled
 		}
+		if newStatus == oModel.StatusDeleted {
+			return nil
+		}
 		return errors.ErrInvalidStatusTransition
 	}
 	if currentStatus == oModel.StatusExpired {
+		if newStatus == oModel.StatusDeleted {
+			return nil
+		}
 		return errors.ErrInvalidStatusTransition
 	}
-	return nil
+	if currentStatus == oModel.StatusDeleted {
+		return errors.ErrInvalidStatusTransition
+	}
+	if currentStatus == oModel.StatusDelivered {
+		if newStatus == oModel.StatusDeleted {
+			return nil
+		}
+		if newStatus == oModel.StatusCancelled {
+			return errors.ErrOrderAlreadyDelivered
+		}
+		return errors.ErrInvalidStatusTransition
+	}
+
+	// From pending | preparing | ready
+	switch newStatus {
+	case oModel.StatusCancelled:
+		return nil
+	case oModel.StatusDeleted:
+		// Soft-delete only after cancelled | expired | delivered (never touches stock).
+		return errors.ErrInvalidStatusTransition
+	case oModel.StatusPreparing:
+		if currentStatus == oModel.StatusPending {
+			return nil
+		}
+	case oModel.StatusReady:
+		if currentStatus == oModel.StatusPreparing {
+			return nil
+		}
+	case oModel.StatusDelivered:
+		if currentStatus == oModel.StatusReady {
+			return nil
+		}
+	}
+	return errors.ErrInvalidStatusTransition
 }
 
-// UpdateOrderStatusWithStockReversion updates order status and reverts stock if admin cancels order.
-// cancellationReason is optional; only used when newStatus is cancelled (e.g. user-provided reason or nil).
+// UpdateOrderStatusWithStockReversion updates order status and reverts stock when the order is cancelled.
+// cancellationReason is optional; only used when newStatus is cancelled.
 // paidOverride, when non-nil, updates paid in the same transaction as status and is used for history
 // (combined status+paid PATCH stays atomic).
+// isAdmin is retained for call-site compatibility; HTTP auth already restricts PATCH to admins.
+// Cancel always restores tracked stock (FSM only allows cancel before delivered).
 func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context.Context, tenantID, orderID uint64, newStatus oModel.OrderStatus, userID uint64, isAdmin bool, cancellationReason *string, paidOverride *bool) error {
+	_ = isAdmin
+
 	// Get the current order
 	order, err := s.OrderRepo.GetOrderByID(ctx, tenantID, orderID)
 	if err != nil {
@@ -80,7 +123,8 @@ func (s *StatusUpdaterWithStock) UpdateOrderStatusWithStockReversion(ctx context
 		paidForHistory = *paidOverride
 	}
 
-	needsStockRevert := isAdmin && newStatus == oModel.StatusCancelled
+	// Cancel is only allowed pre-delivery (FSM). Always restore tracked stock on cancel.
+	needsStockRevert := newStatus == oModel.StatusCancelled
 	needsPaidUpdate := paidOverride != nil
 
 	// Use a transaction when status must stay atomic with stock reversion and/or paid.

@@ -90,12 +90,12 @@ func mergeOrderItemsByProduct(items []oModel.CreateOrderItemInput) []oModel.Crea
 	return merged
 }
 
-// CreateOrder creates a costumer order
-func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oModel.CreateOrderPayload, deliveryDate time.Time) error {
+// CreateOrder creates a customer order and returns the new order ID.
+func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oModel.CreateOrderPayload, deliveryDate time.Time) (uint64, error) {
 	// Find user or create it if not found (scoped to tenant)
 	user, err := c.GetOrCreateUser(ctx, tenantID, payload)
 	if err != nil {
-		return fmt.Errorf("error getting or creating user: %w", err)
+		return 0, fmt.Errorf("error getting or creating user: %w", err)
 	}
 
 	mergedItems := mergeOrderItemsByProduct(payload.Items)
@@ -108,17 +108,17 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 
 	products, err := c.ProductRepo.GetProductsByIDs(ctx, tenantID, productIDs)
 	if err != nil {
-		return fmt.Errorf("error getting products: %w", err)
+		return 0, fmt.Errorf("error getting products: %w", err)
 	}
 
 	if len(products) != len(productIDs) {
-		return errors.ErrProductNotFound
+		return 0, errors.ErrProductNotFound
 	}
 
 	productMap := make(map[uint64]pModel.Product)
 	for _, p := range products {
 		if p.Status != pModel.StatusActive {
-			return errors.ErrProductNotPurchasable
+			return 0, errors.ErrProductNotPurchasable
 		}
 		productMap[p.ID] = p
 	}
@@ -148,7 +148,7 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 
 	tx, err := c.OrderRepo.BeginTx(ctx)
 	if err != nil {
-		return fmt.Errorf("error beginning transaction: %w", err)
+		return 0, fmt.Errorf("error beginning transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -157,17 +157,17 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 	for _, item := range mergedItems {
 		trackInventory, err := c.ProductRepo.AssertProductActiveTx(ctx, tx, tenantID, item.IdProduct)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if !trackInventory {
 			continue
 		}
 		rows, err := c.ProductRepo.DecrementProductStockTx(ctx, tx, tenantID, item.IdProduct, item.Quantity)
 		if err != nil {
-			return fmt.Errorf("error reserving stock: %w", err)
+			return 0, fmt.Errorf("error reserving stock: %w", err)
 		}
 		if rows == 0 {
-			return errors.ErrNotEnoughProductStock
+			return 0, errors.ErrNotEnoughProductStock
 		}
 	}
 
@@ -185,7 +185,7 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 
 	orderID, err := c.OrderRepo.CreateOrder(ctx, tx, orderRequest)
 	if err != nil {
-		return fmt.Errorf("error creating order: %w", err)
+		return 0, fmt.Errorf("error creating order: %w", err)
 	}
 
 	orderItems := make([]oModel.OrderItemRequest, len(mergedItems))
@@ -200,7 +200,7 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 		}
 	}
 	if err := c.OrderRepo.CreateOrderItems(ctx, tx, tenantID, orderItems); err != nil {
-		return fmt.Errorf("error creating order items: %w", err)
+		return 0, fmt.Errorf("error creating order items: %w", err)
 	}
 
 	idUser := user.ID
@@ -226,9 +226,9 @@ func (c *Creator) CreateOrder(ctx context.Context, tenantID uint64, payload oMod
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("error committing transaction: %w", err)
+		return 0, fmt.Errorf("error committing transaction: %w", err)
 	}
-	return nil
+	return orderID, nil
 }
 
 func (c *Creator) GetOrCreateUser(ctx context.Context, tenantID uint64, payload oModel.CreateOrderPayload) (*uModel.User, error) {

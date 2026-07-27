@@ -169,14 +169,16 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Date Validations
-	deliveryDate, err := time.Parse("2006-01-02", payload.DeliveryDate)
+	// Date Validations (calendar day >= today in local timezone)
+	deliveryDate, err := time.ParseInLocation("2006-01-02", payload.DeliveryDate, time.Local)
 	if err != nil {
 		http.Error(w, "'delivery_date' must be in YYYY-MM-DD format", http.StatusBadRequest)
 		return
 	}
 
-	if deliveryDate.Before(time.Now()) {
+	now := time.Now().In(time.Local)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	if deliveryDate.Before(today) {
 		http.Error(w, "'delivery_date' can't be before present date", http.StatusBadRequest)
 		return
 	}
@@ -191,7 +193,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 		tenantCfgRepo = h.TenantRepo
 	}
 	orderCreator := orderService.NewCreator(h.Repo, h.UserRepo, h.ProductRepo, tenantCfgRepo)
-	err = orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
+	orderID, err := orderCreator.CreateOrder(ctx, tenantID, payload, deliveryDate)
 	if err != nil {
 		switch {
 		case errors.Is(err, appErrors.ErrProductNotFound):
@@ -208,9 +210,10 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Order created successfully",
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":  "Order created successfully",
+		"id_order": orderID,
 	})
 }
 

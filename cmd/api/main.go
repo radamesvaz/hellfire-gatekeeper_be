@@ -486,7 +486,9 @@ func main() {
 	legacyPublic.Use(middleware.TenantFromPathOrHeader(tenantRepo))
 	legacyPublic.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
 	legacyPublic.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
-	legacyPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+	legacyOrders := legacyPublic.PathPrefix("").Subrouter()
+	legacyOrders.Use(middleware.RequireOperableSubscription(tenantRepo))
+	legacyOrders.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	r.HandleFunc("/setup/bootstrap/tenant", bootstrapHandler.BootstrapTenant).Methods("POST")
 	r.HandleFunc("/public/tenant-register", tenantSignupHandler.RegisterTenantWithCode).Methods("POST")
@@ -520,7 +522,7 @@ func main() {
 		fmt.Fprint(w, "Token válido, acceso permitido")
 	}).Methods("GET")
 
-	// Product reads (all statuses) + mutations require admin or superadmin.
+	// Product reads (all statuses) + mutations + order management require admin or superadmin.
 	authAdmin := auth.PathPrefix("").Subrouter()
 	authAdmin.Use(middleware.RequireAdminRole())
 	authAdmin.HandleFunc("/products", productHandler.GetAllProductsAdmin).Methods("GET")
@@ -534,10 +536,10 @@ func main() {
 	authAdmin.HandleFunc("/products/{id}/images", imageHandler.ReplaceProductImages).Methods("PUT")
 	authAdmin.HandleFunc("/products/{id}/images", imageHandler.DeleteProductImage).Methods("DELETE")
 
-	// Order endpoints (authenticated: list, get, update)
-	auth.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
-	auth.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
-	auth.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
+	// Order endpoints (admin only: list, get, update)
+	authAdmin.HandleFunc("/orders", orderHandler.GetAllOrders).Methods("GET")
+	authAdmin.HandleFunc("/orders/{id}", orderHandler.GetOrderByID).Methods("GET")
+	authAdmin.HandleFunc("/orders/{id}", orderHandler.UpdateOrder).Methods("PATCH")
 
 	// Tenant branding: reads are public (see tPublic); mutations require auth
 	auth.HandleFunc("/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
@@ -564,7 +566,9 @@ func main() {
 	tPublic.HandleFunc("/products", productHandler.GetAllProducts).Methods("GET")
 	tPublic.HandleFunc("/products/{id}", productHandler.GetProductByID).Methods("GET")
 	tPublic.HandleFunc("/branding", tenantHandler.GetBranding).Methods("GET")
-	tPublic.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
+	tPublicOrders := tPublic.PathPrefix("").Subrouter()
+	tPublicOrders.Use(middleware.RequireOperableSubscription(tenantRepo))
+	tPublicOrders.HandleFunc("/orders", orderHandler.CreateOrder).Methods("POST")
 
 	// Wrap router with CORS
 	corsWrapped := handlers.CORS(allowedOrigins, allowedMethods, allowedHeaders, allowCredentials)(r)

@@ -163,6 +163,7 @@ func (c *ExpiredOrderCanceller) revertStockAndRecordHistoryTx(ctx context.Contex
 		Status:             oModel.StatusExpired,
 		Price:              order.Price,
 		Note:               order.Note,
+		DeliveryDirection:  order.DeliveryDirection,
 		Paid:               order.Paid,
 		CancellationReason: &reason,
 		ModifiedBy:         systemModifiedByID,

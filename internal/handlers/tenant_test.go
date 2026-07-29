@@ -31,10 +31,10 @@ func TestTenantHandler_GetBranding_Success(t *testing.T) {
 
 	tenantID := uint64(1)
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT name, logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
+		regexp.QuoteMeta("SELECT name, logo_url, primary_color, secondary_color, accent_color, whatsapp_phone FROM tenants WHERE id = $1"),
 	).WithArgs(tenantID).WillReturnRows(
-		sqlmock.NewRows([]string{"name", "logo_url", "primary_color", "secondary_color", "accent_color"}).
-			AddRow("Café Demo", "https://example.com/logo.png", "#111827", "#374151", "#F59E0B"),
+		sqlmock.NewRows([]string{"name", "logo_url", "primary_color", "secondary_color", "accent_color", "whatsapp_phone"}).
+			AddRow("Café Demo", "https://example.com/logo.png", "#111827", "#374151", "#F59E0B", "+584121234567"),
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/t/default/branding", nil)
@@ -54,6 +54,7 @@ func TestTenantHandler_GetBranding_Success(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "Café Demo", branding["tenant_name"])
 	assert.Equal(t, "https://example.com/logo.png", branding["logo_url"])
+	assert.Equal(t, "+584121234567", branding["whatsapp_phone"])
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -99,10 +100,10 @@ func TestTenantHandler_UpdateBrandingColors_Success(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	mock.ExpectQuery(
-		regexp.QuoteMeta("SELECT name, logo_url, primary_color, secondary_color, accent_color FROM tenants WHERE id = $1"),
+		regexp.QuoteMeta("SELECT name, logo_url, primary_color, secondary_color, accent_color, whatsapp_phone FROM tenants WHERE id = $1"),
 	).WithArgs(tenantID).WillReturnRows(
-		sqlmock.NewRows([]string{"name", "logo_url", "primary_color", "secondary_color", "accent_color"}).
-			AddRow("Tenant Two", nil, "#111827", "#374151", "#F59E0B"),
+		sqlmock.NewRows([]string{"name", "logo_url", "primary_color", "secondary_color", "accent_color", "whatsapp_phone"}).
+			AddRow("Tenant Two", nil, "#111827", "#374151", "#F59E0B", nil),
 	)
 
 	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/colors", strings.NewReader(payload))
@@ -221,6 +222,120 @@ func TestTenantHandler_UpdateTenantDisplayName_ClientForbidden(t *testing.T) {
 	handler.UpdateTenantDisplayName(rr, req)
 
 	require.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestTenantHandler_UpdateTenantWhatsAppPhone_AdminSuccess(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	mock.ExpectExec(regexp.QuoteMeta(
+		`UPDATE tenants SET whatsapp_phone = $1, updated_on = NOW() WHERE id = $2`,
+	)).WithArgs("+584121234567", tenantID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	payload := `{"whatsapp_phone":" +584121234567 "}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/whatsapp", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 1))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantWhatsAppPhone(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "+584121234567")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTenantHandler_UpdateTenantWhatsAppPhone_Clear_AdminSuccess(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	mock.ExpectExec(regexp.QuoteMeta(
+		`UPDATE tenants SET whatsapp_phone = $1, updated_on = NOW() WHERE id = $2`,
+	)).WithArgs(nil, tenantID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	payload := `{"whatsapp_phone":""}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/whatsapp", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 1))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantWhatsAppPhone(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestTenantHandler_UpdateTenantWhatsAppPhone_MissingField_BadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	payload := `{}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/whatsapp", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 1))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantWhatsAppPhone(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "whatsapp_phone")
+}
+
+func TestTenantHandler_UpdateTenantWhatsAppPhone_ClientForbidden(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	payload := `{"whatsapp_phone":"+584121234567"}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/whatsapp", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 2))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantWhatsAppPhone(rr, req)
+
+	require.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestTenantHandler_UpdateTenantWhatsAppPhone_TooLong(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	payload := `{"whatsapp_phone":"123456789012345678901"}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/whatsapp", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 1))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantWhatsAppPhone(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestTenantHandler_UpdateBrandingColors_InvalidColor(t *testing.T) {

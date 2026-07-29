@@ -23,12 +23,14 @@ type BrandingColors struct {
 // TenantBranding is the full branding snapshot (logo + palette) for a tenant.
 // Logo pixel dimensions are not stored; layout is fixed in CSS and uploads are validated on the server.
 // TenantName maps tenants.name (JSON key tenant_name for clients).
+// WhatsAppPhone is the storefront invoice contact (tenants.whatsapp_phone), not the admin user phone.
 type TenantBranding struct {
 	TenantName     string `json:"tenant_name"`
 	LogoURL        string `json:"logo_url"`
 	PrimaryColor   string `json:"primary_color"`
 	SecondaryColor string `json:"secondary_color"`
 	AccentColor    string `json:"accent_color"`
+	WhatsAppPhone  string `json:"whatsapp_phone"`
 }
 
 type UpdateBrandingColorsRequest struct {
@@ -236,13 +238,14 @@ func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (TenantBr
 	var displayName string
 	var logoURL sql.NullString
 	var primaryColor, secondaryColor, accentColor sql.NullString
+	var whatsappPhone sql.NullString
 
 	err := r.DB.QueryRowContext(ctx,
-		`SELECT name, logo_url, primary_color, secondary_color, accent_color
+		`SELECT name, logo_url, primary_color, secondary_color, accent_color, whatsapp_phone
 		 FROM tenants
 		 WHERE id = $1`,
 		tenantID,
-	).Scan(&displayName, &logoURL, &primaryColor, &secondaryColor, &accentColor)
+	).Scan(&displayName, &logoURL, &primaryColor, &secondaryColor, &accentColor, &whatsappPhone)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return TenantBranding{}, fmt.Errorf("tenant not found when reading branding: %d", tenantID)
@@ -256,6 +259,7 @@ func (r *Repository) GetBranding(ctx context.Context, tenantID uint64) (TenantBr
 		PrimaryColor:   nullStringToString(primaryColor),
 		SecondaryColor: nullStringToString(secondaryColor),
 		AccentColor:    nullStringToString(accentColor),
+		WhatsAppPhone:  nullStringToString(whatsappPhone),
 	}, nil
 }
 
@@ -288,6 +292,30 @@ func (r *Repository) UpdateTenantName(ctx context.Context, tenantID uint64, name
 	}
 	if n == 0 {
 		return fmt.Errorf("tenant not found when updating name: %d", tenantID)
+	}
+	return nil
+}
+
+// UpdateWhatsAppPhone sets tenants.whatsapp_phone. Empty string stores NULL (clears the number).
+func (r *Repository) UpdateWhatsAppPhone(ctx context.Context, tenantID uint64, phone string) error {
+	var value interface{}
+	if phone != "" {
+		value = phone
+	}
+	result, err := r.DB.ExecContext(ctx,
+		`UPDATE tenants SET whatsapp_phone = $1, updated_on = NOW() WHERE id = $2`,
+		value,
+		tenantID,
+	)
+	if err != nil {
+		return fmt.Errorf("updating whatsapp phone for tenant %d: %w", tenantID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected for whatsapp phone update %d: %w", tenantID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("tenant not found when updating whatsapp phone: %d", tenantID)
 	}
 	return nil
 }

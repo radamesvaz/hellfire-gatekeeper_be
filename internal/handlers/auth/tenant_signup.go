@@ -108,12 +108,18 @@ func (h *TenantSignupHandler) RegisterTenantWithCode(w http.ResponseWriter, r *h
 		writeValidatorJSONError(w, err, "Password does not meet security requirements")
 		return
 	}
+	whatsappPhone, err := v.NormalizeWhatsAppPhone(req.WhatsAppPhone)
+	if err != nil {
+		writeValidatorJSONError(w, err, "Invalid WhatsApp phone")
+		return
+	}
 	if strings.TrimSpace(req.OneTimeCode) == "" {
 		http.Error(w, "One time code is required", http.StatusBadRequest)
 		return
 	}
 
 	req.TenantName = tenantName
+	req.WhatsAppPhone = whatsappPhone
 	resp, err := h.Service.RegisterTenantWithCode(r.Context(), req)
 	if err != nil {
 		switch {

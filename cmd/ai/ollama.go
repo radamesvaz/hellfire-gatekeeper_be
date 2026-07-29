@@ -12,10 +12,13 @@ import (
 	"time"
 )
 
-// defaultNumCtx is large enough for architecture + checklist + a typical working-tree
-// diff. Ollama's runtime default is often 4096, which silently truncates the middle
-// of the prompt (where the git diff lives) and makes the model claim "no diff".
-const defaultNumCtx = 32768
+const (
+	// maxNumCtx caps KV-cache for ~8GB VRAM machines. 32k forces CPU spill/OOM thrash.
+	maxNumCtx = 16384
+	minNumCtx = 8192
+	// Extra room for the model's reply after the prompt tokens.
+	generationHeadroomTokens = 2048
+)
 
 type ollamaChatRequest struct {
 	Model    string          `json:"model"`
@@ -35,26 +38,44 @@ type ollamaChatResponse struct {
 	Error   string        `json:"error,omitempty"`
 }
 
-func ollamaNumCtx() int {
-	raw := strings.TrimSpace(os.Getenv("OLLAMA_NUM_CTX"))
-	if raw == "" {
-		return defaultNumCtx
+// fitNumCtx picks a context window big enough for the prompt, but not a fixed
+// oversized desk. OLLAMA_NUM_CTX always wins when set.
+func fitNumCtx(promptChars int) int {
+	if raw := strings.TrimSpace(os.Getenv("OLLAMA_NUM_CTX")); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err == nil && n > 0 {
+			return n
+		}
 	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return defaultNumCtx
+
+	est := promptChars/4 + generationHeadroomTokens
+	n := ((est + 1023) / 1024) * 1024
+	if n < minNumCtx {
+		n = minNumCtx
+	}
+	if n > maxNumCtx {
+		n = maxNumCtx
 	}
 	return n
 }
 
+// promptFitsContext reports whether estTokens plus reply headroom fit in numCtx
+// (the effective window passed to Ollama, including OLLAMA_NUM_CTX overrides).
+func promptFitsContext(estTokens, numCtx int) bool {
+	if numCtx <= 0 {
+		return false
+	}
+	return estTokens+generationHeadroomTokens <= numCtx
+}
+
 func buildOllamaChatRequest(model string, prompt reviewPrompt, numCtx int) ollamaChatRequest {
 	if numCtx <= 0 {
-		numCtx = defaultNumCtx
+		numCtx = maxNumCtx
 	}
 	return ollamaChatRequest{
 		Model:  model,
 		Stream: false,
-		// Qwen3 thinking burns context and is unnecessary for structured reviews.
+		// Thinking burns context; structured reviews don't need it.
 		Think: false,
 		Messages: []ollamaMessage{
 			{Role: "system", Content: prompt.System},
@@ -67,16 +88,16 @@ func buildOllamaChatRequest(model string, prompt reviewPrompt, numCtx int) ollam
 	}
 }
 
-func callOllama(host, model string, prompt reviewPrompt) (string, error) {
+func callOllama(host, model string, prompt reviewPrompt, numCtx int) (string, error) {
 	host = strings.TrimRight(host, "/")
 	url := host + "/api/chat"
 
-	body, err := json.Marshal(buildOllamaChatRequest(model, prompt, ollamaNumCtx()))
+	body, err := json.Marshal(buildOllamaChatRequest(model, prompt, numCtx))
 	if err != nil {
 		return "", err
 	}
 
-	client := &http.Client{Timeout: 10 * time.Minute}
+	client := &http.Client{Timeout: 15 * time.Minute}
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return "", err

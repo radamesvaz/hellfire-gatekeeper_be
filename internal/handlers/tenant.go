@@ -33,6 +33,11 @@ type updateTenantDisplayNameRequest struct {
 	TenantName string `json:"tenant_name"`
 }
 
+type updateTenantWhatsAppPhoneRequest struct {
+	// Pointer so missing JSON key (nil) is distinct from explicit "" (clear).
+	WhatsAppPhone *string `json:"whatsapp_phone"`
+}
+
 // GetBranding returns logo + colors for the tenant resolved by TenantFromPathOrHeader (public, no auth).
 // Use GET /t/{tenant_slug}/branding (or X-Tenant-Slug). Response includes tenant_slug for clients.
 func (h *TenantHandler) GetBranding(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +117,63 @@ func (h *TenantHandler) UpdateTenantDisplayName(w http.ResponseWriter, r *http.R
 		"tenant_id":   tenantID,
 		"tenant_slug": slug,
 		"tenant_name": name,
+	})
+}
+
+// UpdateTenantWhatsAppPhone sets tenants.whatsapp_phone for the tenant in context (admin only).
+// PATCH /auth/branding/whatsapp — body: {"whatsapp_phone":"..."}.
+// The whatsapp_phone field is required; empty string clears the number. Omitting the key is 400.
+func (h *TenantHandler) UpdateTenantWhatsAppPhone(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	tenantID, err := middleware.GetTenantIDFromContext(ctx)
+	if err != nil {
+		http.Error(w, "Failed to get tenant from context", http.StatusBadRequest)
+		return
+	}
+
+	// Tenant branding mutations are admin-only (role 1). Superadmin (role 3) is
+	// intentionally excluded here; product/order routes on authAdmin use IsAdminRole.
+	roleID, err := middleware.GetUserRoleFromContext(ctx)
+	if err != nil || roleID != uint64(uModel.UserRoleAdmin) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var req updateTenantWhatsAppPhoneRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.WhatsAppPhone == nil {
+		http.Error(w, "whatsapp_phone is required", http.StatusBadRequest)
+		return
+	}
+
+	phone, err := v.NormalizeWhatsAppPhone(*req.WhatsAppPhone)
+	if err != nil {
+		if httpErr, ok := err.(*ierrors.HTTPError); ok {
+			http.Error(w, httpErr.Error(), httpErr.StatusCode)
+			return
+		}
+		http.Error(w, "Invalid WhatsApp phone", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Repo.UpdateWhatsAppPhone(ctx, tenantID, phone); err != nil {
+		http.Error(w, "Failed to update WhatsApp phone", http.StatusInternalServerError)
+		return
+	}
+
+	slug, _ := middleware.GetTenantSlugFromContext(ctx)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"message":        "WhatsApp phone updated successfully",
+		"tenant_id":      tenantID,
+		"tenant_slug":    slug,
+		"whatsapp_phone": phone,
 	})
 }
 

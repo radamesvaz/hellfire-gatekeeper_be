@@ -545,6 +545,7 @@ func main() {
 	auth.HandleFunc("/branding/logo", tenantHandler.UploadTenantLogo).Methods("PATCH")
 	auth.HandleFunc("/branding/colors", tenantHandler.UpdateBrandingColors).Methods("PATCH")
 	auth.HandleFunc("/branding/name", tenantHandler.UpdateTenantDisplayName).Methods("PATCH")
+	auth.HandleFunc("/branding/whatsapp", tenantHandler.UpdateTenantWhatsAppPhone).Methods("PATCH")
 	auth.HandleFunc("/subscription", subscriptionHandler.GetSubscription).Methods("GET")
 
 	authInv := auth.PathPrefix("/invitations").Subrouter()

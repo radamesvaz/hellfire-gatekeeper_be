@@ -1,4 +1,4 @@
-// Command ai runs a local architecture review via Ollama (Qwen).
+// Command ai runs a local architecture review via Ollama.
 //
 // Prototype usage:
 //
@@ -8,8 +8,8 @@
 //	go run ./cmd/ai review -dry-run
 //	go run ./cmd/ai review -save
 //
-// Env overrides: OLLAMA_HOST (default http://localhost:11434), OLLAMA_MODEL (default qwen3:8b),
-// OLLAMA_NUM_CTX (default 32768 — needed because Ollama's runtime default is often 4096).
+// Env overrides: OLLAMA_HOST, OLLAMA_MODEL (default qwen2.5-coder:7b),
+// OLLAMA_NUM_CTX (optional; otherwise sized to the prompt, capped at 16384 for ~8GB VRAM).
 package main
 
 import (
@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"time"
 )
+
+const defaultReviewModel = "qwen2.5-coder:7b"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -49,16 +51,16 @@ Usage:
 
 Flags:
   -staged          review staged changes only (git diff --staged)
-  -base string     review merge-base diff against ref (e.g. main)
-  -model string    Ollama model (default: OLLAMA_MODEL or qwen3:8b)
+  -base string     review merge-base diff against ref (e.g. master)
+  -model string    Ollama model (default: OLLAMA_MODEL or qwen2.5-coder:7b)
   -host string     Ollama host (default: OLLAMA_HOST or http://localhost:11434)
   -dry-run         print assembled prompt; do not call Ollama
   -save            write review under .ai/reviews/
 
 Examples:
-  go run ./cmd/ai review
-  go run ./cmd/ai review -staged -save
-  go run ./cmd/ai review -base main -model qwen2.5-coder:7b
+  go run ./cmd/ai review -staged
+  go run ./cmd/ai review -base master -save
+  go run ./cmd/ai review -dry-run
 `)
 }
 
@@ -68,7 +70,7 @@ func runReview(args []string) error {
 
 	staged := fs.Bool("staged", false, "use staged diff")
 	base := fs.String("base", "", "diff against this git ref")
-	model := fs.String("model", envOr("OLLAMA_MODEL", "qwen3:8b"), "Ollama model name")
+	model := fs.String("model", envOr("OLLAMA_MODEL", defaultReviewModel), "Ollama model name")
 	host := fs.String("host", envOr("OLLAMA_HOST", "http://localhost:11434"), "Ollama base URL")
 	dryRun := fs.Bool("dry-run", false, "print prompt only")
 	save := fs.Bool("save", false, "save review to .ai/reviews")
@@ -99,17 +101,33 @@ func runReview(args []string) error {
 		return err
 	}
 
+	promptChars := len(prompt.combined())
+	estTokens := promptChars / 4
+	numCtx := fitNumCtx(promptChars)
+
 	fmt.Fprintf(os.Stderr, "diff: %s (%d bytes)\n", diffLabel, len(diff))
 	fmt.Fprintf(os.Stderr, "model: %s @ %s\n", *model, *host)
-	fmt.Fprintf(os.Stderr, "num_ctx: %d (override with OLLAMA_NUM_CTX)\n", ollamaNumCtx())
-	fmt.Fprintf(os.Stderr, "prompt: ~%d chars (~%d tokens est.)\n", len(prompt.combined()), len(prompt.combined())/4)
+	fmt.Fprintf(os.Stderr, "num_ctx: %d (override with OLLAMA_NUM_CTX)\n", numCtx)
+	fmt.Fprintf(os.Stderr, "prompt: ~%d chars (~%d tokens est.)\n", promptChars, estTokens)
+
+	if !promptFitsContext(estTokens, numCtx) {
+		return fmt.Errorf(
+			"prompt too large for local review (~%d tokens; effective context %d).\n"+
+				"Workarounds:\n"+
+				"  - review a smaller slice: ./run.sh review -staged\n"+
+				"  - after committing: ./run.sh review -base master\n"+
+				"  - docs/ and markdowns/ are already excluded from the diff\n"+
+				"  - or raise OLLAMA_NUM_CTX if your machine has enough VRAM/RAM",
+			estTokens, numCtx,
+		)
+	}
 
 	if *dryRun {
 		fmt.Println(prompt.combined())
 		return nil
 	}
 
-	review, err := callOllama(*host, *model, prompt)
+	review, err := callOllama(*host, *model, prompt, numCtx)
 	if err != nil {
 		return err
 	}

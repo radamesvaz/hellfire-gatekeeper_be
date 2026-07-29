@@ -23,13 +23,14 @@ type Repository struct {
 }
 
 type RegisterTenantWithCodeInput struct {
-	CodeHash     string
-	TenantName   string
-	TenantSlug   string
-	AdminName    string
-	AdminEmail   string
-	AdminPhone   string
-	PasswordHash string
+	CodeHash      string
+	TenantName    string
+	TenantSlug    string
+	AdminName     string
+	AdminEmail    string
+	AdminPhone    string
+	WhatsAppPhone string
+	PasswordHash  string
 }
 
 type RegisterTenantWithCodeResult struct {
@@ -112,12 +113,17 @@ func (r *Repository) RegisterTenantWithCode(
 	}
 
 	var tenantID uint64
+	var whatsappPhone interface{}
+	if in.WhatsAppPhone != "" {
+		whatsappPhone = in.WhatsAppPhone
+	}
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO tenants (name, slug, is_active, ghost_order_timeout_minutes, subscription_status, plan_code)
-		 VALUES ($1, $2, TRUE, 30, 'active', 'basic')
+		`INSERT INTO tenants (name, slug, is_active, ghost_order_timeout_minutes, subscription_status, plan_code, whatsapp_phone)
+		 VALUES ($1, $2, TRUE, 30, 'active', 'basic', $3)
 		 RETURNING id`,
 		in.TenantName,
 		in.TenantSlug,
+		whatsappPhone,
 	).Scan(&tenantID)
 	if err != nil {
 		if isUniqueViolation(err) {

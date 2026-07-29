@@ -18,13 +18,15 @@ type CreateSignupCodeResponse struct {
 
 // PublicTenantRegisterRequest is the body for POST /public/tenant-register.
 // Slug is derived from TenantName server-side; client-sent tenant_slug is ignored.
+// Phone is the admin user contact; WhatsAppPhone is the storefront invoice destination on the tenant.
 type PublicTenantRegisterRequest struct {
-	TenantName  string `json:"tenant_name"`
-	AdminName   string `json:"admin_name"`
-	Email       string `json:"email"`
-	Phone       string `json:"phone"`
-	Password    string `json:"password"`
-	OneTimeCode string `json:"one_time_code"`
+	TenantName    string `json:"tenant_name"`
+	AdminName     string `json:"admin_name"`
+	Email         string `json:"email"`
+	Phone         string `json:"phone"`
+	WhatsAppPhone string `json:"whatsapp_phone"`
+	Password      string `json:"password"`
+	OneTimeCode   string `json:"one_time_code"`
 }
 
 type PublicTenantRegisterResponse struct {

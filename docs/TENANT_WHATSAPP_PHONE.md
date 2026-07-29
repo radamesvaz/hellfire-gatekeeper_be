@@ -79,6 +79,7 @@ Unset → `""` (same null→empty pattern as `logo_url`).
 ```
 
 - Empty string clears the number (`NULL` in DB).
+- Omitting `whatsapp_phone` → **400** (`whatsapp_phone is required`).
 - Non-admin → `403`.
 - Longer than 20 chars → `400`.
 

@@ -50,3 +50,13 @@ func TestMaxNumCtx_Fits8GBVRAM(t *testing.T) {
 func TestDefaultReviewModel_IsCoder7b(t *testing.T) {
 	assert.Equal(t, "qwen2.5-coder:7b", defaultReviewModel)
 }
+
+func TestPromptFitsContext_UsesEffectiveNumCtx(t *testing.T) {
+	// Large OLLAMA_NUM_CTX override must allow prompts that exceed the 16k default cap.
+	assert.True(t, promptFitsContext(20_000, 32_768))
+	// Small override must reject prompts that would truncate inside that window.
+	assert.False(t, promptFitsContext(10_000, 8_192))
+	// Default 16k cap still rejects oversized prompts.
+	assert.False(t, promptFitsContext(16_000, maxNumCtx))
+	assert.True(t, promptFitsContext(12_000, maxNumCtx))
+}

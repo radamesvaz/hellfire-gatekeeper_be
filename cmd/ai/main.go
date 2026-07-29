@@ -110,14 +110,15 @@ func runReview(args []string) error {
 	fmt.Fprintf(os.Stderr, "num_ctx: %d (override with OLLAMA_NUM_CTX)\n", numCtx)
 	fmt.Fprintf(os.Stderr, "prompt: ~%d chars (~%d tokens est.)\n", promptChars, estTokens)
 
-	if estTokens+generationHeadroomTokens > maxNumCtx {
+	if !promptFitsContext(estTokens, numCtx) {
 		return fmt.Errorf(
-			"prompt too large for local review (~%d tokens; max context %d).\n"+
+			"prompt too large for local review (~%d tokens; effective context %d).\n"+
 				"Workarounds:\n"+
 				"  - review a smaller slice: ./run.sh review -staged\n"+
 				"  - after committing: ./run.sh review -base master\n"+
-				"  - docs/ and markdowns/ are already excluded from the diff",
-			estTokens, maxNumCtx,
+				"  - docs/ and markdowns/ are already excluded from the diff\n"+
+				"  - or raise OLLAMA_NUM_CTX if your machine has enough VRAM/RAM",
+			estTokens, numCtx,
 		)
 	}
 

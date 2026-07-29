@@ -277,6 +277,27 @@ func TestTenantHandler_UpdateTenantWhatsAppPhone_Clear_AdminSuccess(t *testing.T
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestTenantHandler_UpdateTenantWhatsAppPhone_MissingField_BadRequest(t *testing.T) {
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer db.Close()
+
+	handler := &TenantHandler{
+		Repo: &tenantRepository.Repository{DB: db},
+	}
+
+	tenantID := uint64(2)
+	payload := `{}`
+	req := httptest.NewRequest(http.MethodPatch, "/auth/branding/whatsapp", strings.NewReader(payload))
+	req = req.WithContext(authTenantContext(t, tenantID, "slug-two", 1))
+	rr := httptest.NewRecorder()
+
+	handler.UpdateTenantWhatsAppPhone(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "whatsapp_phone")
+}
+
 func TestTenantHandler_UpdateTenantWhatsAppPhone_ClientForbidden(t *testing.T) {
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)

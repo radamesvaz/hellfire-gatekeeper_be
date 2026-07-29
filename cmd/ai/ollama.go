@@ -59,6 +59,15 @@ func fitNumCtx(promptChars int) int {
 	return n
 }
 
+// promptFitsContext reports whether estTokens plus reply headroom fit in numCtx
+// (the effective window passed to Ollama, including OLLAMA_NUM_CTX overrides).
+func promptFitsContext(estTokens, numCtx int) bool {
+	if numCtx <= 0 {
+		return false
+	}
+	return estTokens+generationHeadroomTokens <= numCtx
+}
+
 func buildOllamaChatRequest(model string, prompt reviewPrompt, numCtx int) ollamaChatRequest {
 	if numCtx <= 0 {
 		numCtx = maxNumCtx

@@ -34,7 +34,8 @@ type updateTenantDisplayNameRequest struct {
 }
 
 type updateTenantWhatsAppPhoneRequest struct {
-	WhatsAppPhone string `json:"whatsapp_phone"`
+	// Pointer so missing JSON key (nil) is distinct from explicit "" (clear).
+	WhatsAppPhone *string `json:"whatsapp_phone"`
 }
 
 // GetBranding returns logo + colors for the tenant resolved by TenantFromPathOrHeader (public, no auth).
@@ -120,7 +121,8 @@ func (h *TenantHandler) UpdateTenantDisplayName(w http.ResponseWriter, r *http.R
 }
 
 // UpdateTenantWhatsAppPhone sets tenants.whatsapp_phone for the tenant in context (admin only).
-// PATCH /auth/branding/whatsapp — body: {"whatsapp_phone":"..."}. Empty string clears the number.
+// PATCH /auth/branding/whatsapp — body: {"whatsapp_phone":"..."}.
+// The whatsapp_phone field is required; empty string clears the number. Omitting the key is 400.
 func (h *TenantHandler) UpdateTenantWhatsAppPhone(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -141,8 +143,12 @@ func (h *TenantHandler) UpdateTenantWhatsAppPhone(w http.ResponseWriter, r *http
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	if req.WhatsAppPhone == nil {
+		http.Error(w, "whatsapp_phone is required", http.StatusBadRequest)
+		return
+	}
 
-	phone, err := v.NormalizeWhatsAppPhone(req.WhatsAppPhone)
+	phone, err := v.NormalizeWhatsAppPhone(*req.WhatsAppPhone)
 	if err != nil {
 		if httpErr, ok := err.(*ierrors.HTTPError); ok {
 			http.Error(w, httpErr.Error(), httpErr.StatusCode)

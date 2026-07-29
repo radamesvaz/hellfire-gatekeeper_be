@@ -187,3 +187,27 @@ func TestNormalizeAndValidateTenantDisplayName(t *testing.T) {
 		assert.Equal(t, errors.ErrTenantNameTooLong, httpErr.Err)
 	})
 }
+
+func TestNormalizeWhatsAppPhone(t *testing.T) {
+	t.Run("HAPPY PATH: trims", func(t *testing.T) {
+		got, err := NormalizeWhatsAppPhone(" +584121234567 ")
+		require.NoError(t, err)
+		assert.Equal(t, "+584121234567", got)
+	})
+
+	t.Run("HAPPY PATH: empty allowed", func(t *testing.T) {
+		got, err := NormalizeWhatsAppPhone("   ")
+		require.NoError(t, err)
+		assert.Equal(t, "", got)
+	})
+
+	t.Run("SAD PATH: too long", func(t *testing.T) {
+		long := strings.Repeat("1", MaxWhatsAppPhoneRunes+1)
+		_, err := NormalizeWhatsAppPhone(long)
+		require.Error(t, err)
+		httpErr, ok := err.(*errors.HTTPError)
+		require.True(t, ok)
+		assert.Equal(t, http.StatusBadRequest, httpErr.StatusCode)
+		assert.Equal(t, errors.ErrWhatsAppPhoneTooLong, httpErr.Err)
+	})
+}

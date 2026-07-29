@@ -115,6 +115,7 @@ func (s *TenantSignupService) RegisterTenantWithCode(ctx context.Context, req au
 	codeHash := s.AuthService.HashOneTimeToken(req.OneTimeCode)
 	adminName := strings.TrimSpace(req.AdminName)
 	adminPhone := strings.TrimSpace(req.Phone)
+	whatsappPhone := strings.TrimSpace(req.WhatsAppPhone)
 
 	var (
 		result repo.RegisterTenantWithCodeResult
@@ -123,13 +124,14 @@ func (s *TenantSignupService) RegisterTenantWithCode(ctx context.Context, req au
 	for attempt := 1; attempt <= maxTenantSlugSuffixAttempts; attempt++ {
 		slug = TenantSlugCandidate(baseSlug, attempt)
 		result, err = s.Repo.RegisterTenantWithCode(ctx, repo.RegisterTenantWithCodeInput{
-			CodeHash:     codeHash,
-			TenantName:   req.TenantName,
-			TenantSlug:   slug,
-			AdminName:    adminName,
-			AdminEmail:   adminEmail,
-			AdminPhone:   adminPhone,
-			PasswordHash: hashedPassword,
+			CodeHash:      codeHash,
+			TenantName:    req.TenantName,
+			TenantSlug:    slug,
+			AdminName:     adminName,
+			AdminEmail:    adminEmail,
+			AdminPhone:    adminPhone,
+			WhatsAppPhone: whatsappPhone,
+			PasswordHash:  hashedPassword,
 		})
 		if err == nil {
 			break

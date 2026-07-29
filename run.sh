@@ -203,44 +203,40 @@ reset() {
   echo "✅ Project is up and running!"
 }
 
-# Local architecture review via Ollama (default model: qwen3:8b).
+# Local architecture review via Ollama (default model: qwen2.5-coder:7b).
+# Tuned for ~8GB VRAM / 24GB RAM: num_ctx auto-fits and caps at 16384.
 # Requires Ollama running locally (http://localhost:11434).
 #
 # What each mode reviews (and whether Ollama is called):
 #
-#   ./run.sh review
-#     Diff: working tree vs HEAD + untracked (new files not yet git-added).
-#     Calls Ollama and saves under .ai/reviews/.
-#     Use when: "review what I have dirty on disk right now".
-#
 #   ./run.sh review -staged
 #     Diff: only the git index (git diff --staged).
-#     Ignores unstaged and untracked changes. Saves under .ai/reviews/.
-#     Use when: "review what I'm about to commit".
+#     Preferred daily mode on this hardware — small, predictable prompts.
+#     Saves under .ai/reviews/.
 #
 #   ./run.sh review -base master
 #     Diff: master...HEAD (commits on your branch vs the default branch).
 #     -base main also works: it resolves to master when main does not exist.
-#     Ignores a dirty working tree; looks at branch history. Saves under .ai/reviews/.
-#     Use when: "review the PR / whole feature vs master".
+#     Use when work is already committed/pushed. Saves under .ai/reviews/.
 #     Mutually exclusive with -staged.
+#
+#   ./run.sh review
+#     Diff: working tree vs HEAD + untracked (docs/ and markdowns/ excluded).
+#     Can get large; prefer -staged or -base on big dirty trees.
 #
 #   ./run.sh review -dry-run
 #     Does NOT call Ollama. Prints the assembled prompt (guidelines + diff).
-#     Does NOT save a review file.
 #     Use when: debugging prompt size/content without spending model time.
-#     Combinable, e.g. ./run.sh review -base master -dry-run
 #
 # Other useful flags (forwarded to cmd/ai):
-#   -model NAME   override model (default qwen3:8b, or OLLAMA_MODEL)
+#   -model NAME   override model (default qwen2.5-coder:7b, or OLLAMA_MODEL)
 #   -host URL     Ollama base URL (default http://localhost:11434)
 #   -save         write review under .ai/reviews/ (already default via run.sh)
 #
 # Env:
-#   OLLAMA_NUM_CTX   context window for the review call (default 32768).
-#                    Ollama's own default is often 4096, which truncates the
-#                    git diff out of the prompt — raise this if reviews say
-#                    "no diff provided" despite a non-empty diff.
+#   OLLAMA_MODEL     default model override
+#   OLLAMA_NUM_CTX   optional fixed context. When unset, sized to the prompt
+#                    (min 8192, max 16384) so 8GB VRAM stays GPU-bound.
 #
 # Via ./run.sh, reviews are saved under .ai/reviews/ by default for all modes
 # except -dry-run. Pass flags as usual; -save is added automatically when missing.
@@ -316,6 +312,6 @@ case "$1" in
     echo -e "${YELLOW}   integration - Run integration tests${NC}"
     echo -e "${YELLOW}   tests      - Run all tests${NC}"
     echo -e "${YELLOW}   reset      - Reset project (full rebuild)${NC}"
-    echo -e "${YELLOW}   review     - Local architecture review with Ollama (saves under .ai/reviews/)${NC}"
+    echo -e "${YELLOW}   review     - Local architecture review (default: qwen2.5-coder:7b, prefer -staged / -base master)${NC}"
     ;;
 esac

@@ -9,6 +9,18 @@ import (
 	"strings"
 )
 
+// reviewDiffPathspecs limits architecture review to code-ish paths.
+// Big docs (docs/, markdowns/) blow local Ollama RAM without helping layer checks.
+func reviewDiffPathspecs() []string {
+	return []string{
+		"--",
+		".",
+		":(exclude)docs",
+		":(exclude)markdowns",
+		":(exclude).ai/reviews",
+	}
+}
+
 func getGitDiff(root string, staged bool, base string) (diff string, label string, err error) {
 	var args []string
 	switch {
@@ -29,6 +41,7 @@ func getGitDiff(root string, staged bool, base string) (diff string, label strin
 		args = []string{"diff", "HEAD"}
 		label = "working tree vs HEAD"
 	}
+	args = append(args, reviewDiffPathspecs()...)
 
 	out, err := runGit(root, args...)
 	if err != nil {
@@ -203,6 +216,8 @@ func shouldSkipUntracked(path string) bool {
 	p := strings.ToLower(filepathToSlash(path))
 	switch {
 	case strings.HasPrefix(p, ".ai/reviews/"):
+		return true
+	case strings.HasPrefix(p, "docs/"), strings.HasPrefix(p, "markdowns/"):
 		return true
 	case strings.HasSuffix(p, ".exe"):
 		return true

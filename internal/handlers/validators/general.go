@@ -46,6 +46,7 @@ func ValidatePassword(password string) error {
 }
 
 const MaxTenantDisplayNameRunes = 255
+const MaxWhatsAppPhoneRunes = 20
 
 // NormalizeAndValidateTenantDisplayName trims whitespace and validates non-empty length for tenants.name (API: tenant_name).
 func NormalizeAndValidateTenantDisplayName(raw string) (string, error) {
@@ -55,6 +56,15 @@ func NormalizeAndValidateTenantDisplayName(raw string) (string, error) {
 	}
 	if utf8.RuneCountInString(s) > MaxTenantDisplayNameRunes {
 		return "", errors.NewBadRequest(errors.ErrTenantNameTooLong)
+	}
+	return s, nil
+}
+
+// NormalizeWhatsAppPhone trims whitespace. Empty is allowed (unset / clear). Max length matches tenants.whatsapp_phone.
+func NormalizeWhatsAppPhone(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if utf8.RuneCountInString(s) > MaxWhatsAppPhoneRunes {
+		return "", errors.NewBadRequest(errors.ErrWhatsAppPhoneTooLong)
 	}
 	return s, nil
 }

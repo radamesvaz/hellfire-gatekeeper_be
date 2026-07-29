@@ -132,6 +132,8 @@ func (h *TenantHandler) UpdateTenantWhatsAppPhone(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Tenant branding mutations are admin-only (role 1). Superadmin (role 3) is
+	// intentionally excluded here; product/order routes on authAdmin use IsAdminRole.
 	roleID, err := middleware.GetUserRoleFromContext(ctx)
 	if err != nil || roleID != uint64(uModel.UserRoleAdmin) {
 		http.Error(w, "Forbidden", http.StatusForbidden)

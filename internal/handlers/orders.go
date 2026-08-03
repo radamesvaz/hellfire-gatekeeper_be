@@ -37,7 +37,8 @@ type ordersListResponse struct {
 	NextCursor *string                `json:"next_cursor"`
 }
 
-// GetAllOrders lists orders with cursor pagination (query: limit, cursor, optional id_user) and filters ignore_status, status.
+// GetAllOrders lists orders newest-first with cursor pagination (query: limit, cursor, optional id_user)
+// and filters ignore_status, status, q.
 // id_user: positive integer filters orders for that user within the tenant; omit for all users.
 func (h *OrderHandler) GetAllOrders(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()

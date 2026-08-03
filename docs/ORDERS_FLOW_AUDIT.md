@@ -153,7 +153,7 @@ Mapped errors:
 
 ### List / get
 
-- Cursor pagination (`created_on ASC, id_order ASC`).
+- Cursor pagination (`created_on DESC, id_order DESC` — newest first).
 - Filters: `ignore_status`, `status`, `id_user`, `q` (user name/email; numeric also matches `id_order`).
 - Default list hides `deleted`.
 - Joins items; returns snapshots as `name` / `unit_price`.

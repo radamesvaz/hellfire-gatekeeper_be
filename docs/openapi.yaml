@@ -27,7 +27,7 @@ info:
 
     **Productos:** cursor opaco **versión 1**, keyset sobre `id_product` descendente. Solo aplica al listado de productos.
 
-    **Órdenes:** cursor opaco **versión 2**, keyset sobre `(created_on ASC, id_order ASC)`. **No** es intercambiable con el de productos.
+    **Órdenes:** cursor opaco **versión 3**, keyset sobre `(created_on DESC, id_order DESC)` (más recientes primero). **No** es intercambiable con el de productos ni con cursores v2.
 
     El cliente debe tratar `cursor` y `next_cursor` como **cadenas opacas** (p. ej. Base64-URL); no dependas de su estructura interna.
 
@@ -205,7 +205,7 @@ paths:
       summary: Listar pedidos (admin)
       description: |
         Requiere **Bearer JWT** de **admin o superadmin**, tenant operable en contexto, y suscripción no `canceled`.
-        Orden: **`created_on` ascendente**, desempate **`id_order` ascendente** (más antiguos primero).
+        Orden: **`created_on` descendente**, desempate **`id_order` descendente** (más recientes primero).
 
         ### Transiciones de estado (PATCH)
         Lineales: `pending → preparing → ready → delivered`.
@@ -434,7 +434,7 @@ components:
     CursorOrders:
       name: cursor
       in: query
-      description: Cursor opaco (órdenes, v2). Omitir en la primera página. **No** usar el cursor de productos.
+      description: Cursor opaco (órdenes, v3). Omitir en la primera página. **No** usar el cursor de productos ni cursores v2.
       schema:
         type: string
     QueryQ:

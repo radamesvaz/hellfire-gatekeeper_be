@@ -1,6 +1,7 @@
 package pagination
 
 import (
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -24,4 +25,13 @@ func TestDecodeOrderCursor_WrongVersion(t *testing.T) {
 	require.NoError(t, err)
 	_, err = DecodeOrderCursor(s)
 	assert.Error(t, err)
+}
+
+func TestDecodeOrderCursor_RejectsLegacyV2(t *testing.T) {
+	// Hand-built v2 payload (ASC era); must not decode under newest-first (v3).
+	raw := []byte(`{"v":2,"id":2,"ts":"2025-04-14T10:00:00.123456789Z"}`)
+	s := base64.RawURLEncoding.EncodeToString(raw)
+	_, err := DecodeOrderCursor(s)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported order cursor version")
 }

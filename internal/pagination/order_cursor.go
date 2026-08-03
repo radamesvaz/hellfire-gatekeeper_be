@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
-const orderCursorVersion = 2
+// orderCursorVersion 3: list is created_on DESC, id_order DESC (newest first).
+// Version 2 (ASC) cursors are rejected.
+const orderCursorVersion = 3
 
 type orderCursorPayload struct {
 	V  int    `json:"v"`
@@ -16,13 +18,13 @@ type orderCursorPayload struct {
 	TS string `json:"ts"` // RFC3339Nano, UTC
 }
 
-// OrderKeyset marks a position in the orders list ordered by created_on ASC, id_order ASC.
+// OrderKeyset marks a position in the orders list ordered by created_on DESC, id_order DESC.
 type OrderKeyset struct {
 	CreatedOn time.Time
 	ID        uint64
 }
 
-// EncodeOrderCursor builds the opaque cursor for the last visible order on a page (creation order).
+// EncodeOrderCursor builds the opaque cursor for the last visible order on a page (newest-first).
 func EncodeOrderCursor(createdOn time.Time, id uint64) (string, error) {
 	if id == 0 {
 		return "", errors.New("pagination: invalid order cursor id")
@@ -36,7 +38,7 @@ func EncodeOrderCursor(createdOn time.Time, id uint64) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// DecodeOrderCursor parses a cursor from EncodeOrderCursor (version 2 only).
+// DecodeOrderCursor parses a cursor from EncodeOrderCursor (version 3 only).
 func DecodeOrderCursor(s string) (OrderKeyset, error) {
 	var zero OrderKeyset
 	if s == "" {

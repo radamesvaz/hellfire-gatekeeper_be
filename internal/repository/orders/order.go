@@ -103,14 +103,14 @@ func (r *OrderRepository) GetOrdersWithFilters(
 	return ordersFromJoinRows(rows, orderJoinSortIDAsc)
 }
 
-// ListOrdersPageResult is one page of orders (cursor on created_on ASC, id_order ASC).
+// ListOrdersPageResult is one page of orders (cursor on created_on DESC, id_order DESC).
 type ListOrdersPageResult struct {
 	Items      []oModel.OrderResponse
 	NextCursor *string
 }
 
 // ListOrdersWithFiltersPage returns orders for the tenant with the same status semantics as GetOrdersWithFilters,
-// ordered by creation time ascending (then id_order), paginated with an opaque cursor (see pagination.OrderKeyset).
+// ordered by creation time descending (then id_order), paginated with an opaque cursor (see pagination.OrderKeyset).
 func (r *OrderRepository) ListOrdersWithFiltersPage(
 	ctx context.Context,
 	tenantID uint64,
@@ -178,7 +178,7 @@ func (r *OrderRepository) ListOrdersWithFiltersPage(
         LEFT JOIN users u ON o.id_user = u.id_user
         INNER JOIN order_items oi ON o.id_order = oi.id_order
         WHERE o.tenant_id = $1 AND o.id_order = ANY($2::bigint[])
-        ORDER BY o.created_on ASC, o.id_order ASC, oi.id_order_item ASC
+        ORDER BY o.created_on DESC, o.id_order DESC, oi.id_order_item ASC
 	`
 	rows, err := r.DB.QueryContext(ctx, detailQuery, tenantID, pq.Array(ids))
 	if err != nil {
@@ -186,7 +186,7 @@ func (r *OrderRepository) ListOrdersWithFiltersPage(
 	}
 	defer rows.Close()
 
-	orders, err := ordersFromJoinRows(rows, orderJoinSortCreatedOnAscIDAsc)
+	orders, err := ordersFromJoinRows(rows, orderJoinSortCreatedOnDescIDDesc)
 	if err != nil {
 		return ListOrdersPageResult{}, err
 	}
@@ -239,11 +239,12 @@ func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *str
 	if after != nil {
 		tArg := idx
 		idArg := idx + 1
-		q += fmt.Sprintf(" AND (o.created_on > $%d OR (o.created_on = $%d AND o.id_order > $%d))", tArg, tArg, idArg)
+		// Newest-first: next page is strictly older than the cursor keyset.
+		q += fmt.Sprintf(" AND (o.created_on < $%d OR (o.created_on = $%d AND o.id_order < $%d))", tArg, tArg, idArg)
 		args = append(args, after.CreatedOn, after.ID)
 		idx += 2
 	}
-	q += fmt.Sprintf(" ORDER BY o.created_on ASC, o.id_order ASC LIMIT $%d", idx)
+	q += fmt.Sprintf(" ORDER BY o.created_on DESC, o.id_order DESC LIMIT $%d", idx)
 	args = append(args, limit)
 	return q, args
 }
@@ -253,7 +254,7 @@ type orderJoinSort int
 const (
 	orderJoinSortIDAsc orderJoinSort = iota
 	orderJoinSortIDDesc
-	orderJoinSortCreatedOnAscIDAsc
+	orderJoinSortCreatedOnDescIDDesc
 )
 
 func ordersFromJoinRows(rows *sql.Rows, sortMode orderJoinSort) ([]oModel.OrderResponse, error) {
@@ -362,16 +363,16 @@ func ordersFromJoinRows(rows *sql.Rows, sortMode orderJoinSort) ([]oModel.OrderR
 		sort.Slice(orders, func(i, j int) bool { return orders[i].ID < orders[j].ID })
 	case orderJoinSortIDDesc:
 		sort.Slice(orders, func(i, j int) bool { return orders[i].ID > orders[j].ID })
-	case orderJoinSortCreatedOnAscIDAsc:
+	case orderJoinSortCreatedOnDescIDDesc:
 		sort.SliceStable(orders, func(i, j int) bool {
 			a, b := orders[i], orders[j]
-			if a.CreatedOn.Before(b.CreatedOn) {
+			if a.CreatedOn.After(b.CreatedOn) {
 				return true
 			}
-			if b.CreatedOn.Before(a.CreatedOn) {
+			if b.CreatedOn.After(a.CreatedOn) {
 				return false
 			}
-			return a.ID < b.ID
+			return a.ID > b.ID
 		})
 	default:
 		sort.Slice(orders, func(i, j int) bool { return orders[i].ID < orders[j].ID })

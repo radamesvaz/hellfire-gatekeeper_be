@@ -12,6 +12,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/radamesvaz/bakery-app/internal/errors"
+	"github.com/radamesvaz/bakery-app/internal/pagination"
 	oModel "github.com/radamesvaz/bakery-app/model/orders"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -848,11 +849,26 @@ func TestOrderRepository_BuildOrderIDPageQuery_WithSearch(t *testing.T) {
 	assert.True(t, strings.Contains(q, "EXISTS (SELECT 1 FROM users u"))
 	assert.True(t, strings.Contains(q, "u.name ILIKE"))
 	assert.True(t, strings.Contains(q, "u.email ILIKE"))
-	assert.True(t, strings.Contains(q, "ORDER BY o.created_on ASC, o.id_order ASC"))
+	assert.True(t, strings.Contains(q, "ORDER BY o.created_on DESC, o.id_order DESC"))
 	require.Len(t, args, 3)
 	assert.Equal(t, uint64(1), args[0])
 	assert.Equal(t, "%client%", args[1])
 	assert.Equal(t, 21, args[2])
+}
+
+func TestOrderRepository_BuildOrderIDPageQuery_WithCursorNewestFirst(t *testing.T) {
+	after := &pagination.OrderKeyset{
+		CreatedOn: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC),
+		ID:        9,
+	}
+	q, args := buildOrderIDPageQuery(1, false, nil, after, nil, nil, 21)
+	assert.True(t, strings.Contains(q, "o.created_on <"))
+	assert.True(t, strings.Contains(q, "o.id_order <"))
+	assert.True(t, strings.Contains(q, "ORDER BY o.created_on DESC, o.id_order DESC"))
+	require.Len(t, args, 4)
+	assert.Equal(t, after.CreatedOn, args[1])
+	assert.Equal(t, after.ID, args[2])
+	assert.Equal(t, 21, args[3])
 }
 
 func TestOrderRepository_BuildOrderIDPageQuery_WithNumericSearch(t *testing.T) {

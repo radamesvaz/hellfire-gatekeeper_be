@@ -9,6 +9,7 @@ Backend changes the frontend must adopt for checkout and admin order management.
 | Area | What changed |
 |------|----------------|
 | `/auth/orders*` | **Admin / superadmin only** (client JWT → **403**) |
+| `GET /auth/orders` sort | **Newest first** (`created_on DESC`); cursor **v3** (v2 invalid) |
 | Status workflow | **Linear only:** `pending → preparing → ready → delivered` |
 | Cancel | Only from `pending` / `preparing` / `ready` — **not** from `delivered` |
 | Soft-delete | Only from `cancelled` / `expired` / `delivered` — never touches stock |
@@ -125,6 +126,15 @@ Default `GET /auth/orders` still hides `deleted` unless `ignore_status=true` or 
 
 ---
 
+## 4b. List sort — newest first
+
+`GET /auth/orders` returns orders by **`created_on` DESC** (tie-break `id_order` DESC).
+
+- First page = most recent orders (also when using `q` / `status` / `id_user`).
+- Order cursor is **version 3**. Old v2 cursors are rejected (**400** `Invalid cursor`) — drop any cached `next_cursor` and refetch from page 1.
+
+---
+
 ## 5. Migration checklist (FE)
 
 - [ ] Ensure admin order screens use **admin JWT** (not client)
@@ -136,6 +146,7 @@ Default `GET /auth/orders` still hides `deleted` unless `ignore_status=true` or 
 - [ ] Allow selecting **today** as delivery date
 - [ ] Handle **404** on public create when subscription canceled (“store unavailable”)
 - [ ] Sold-out / 409 handling unchanged from product hardening
+- [ ] Admin order list: assume **newest first**; discard stale order cursors (v2 → v3)
 
 ---
 

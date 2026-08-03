@@ -1217,7 +1217,8 @@ func TestGetAllOrders_OrderByCreatedOnAndCursor(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &firstPage))
 	require.Len(t, firstPage.Items, 2)
 	require.NotNil(t, firstPage.NextCursor)
-	assert.True(t, !firstPage.Items[1].CreatedOn.Before(firstPage.Items[0].CreatedOn))
+	// Newest first within the page.
+	assert.True(t, !firstPage.Items[1].CreatedOn.After(firstPage.Items[0].CreatedOn))
 
 	req = httptest.NewRequest("GET", "/auth/orders?limit=2&cursor="+*firstPage.NextCursor, nil)
 	req.Header.Set("Authorization", "Bearer "+jwt)
@@ -1231,9 +1232,10 @@ func TestGetAllOrders_OrderByCreatedOnAndCursor(t *testing.T) {
 
 	lastFirst := firstPage.Items[len(firstPage.Items)-1]
 	firstSecond := secondPage.Items[0]
-	assert.True(t, firstSecond.CreatedOn.After(lastFirst.CreatedOn) || firstSecond.CreatedOn.Equal(lastFirst.CreatedOn))
+	// Next page continues with older orders.
+	assert.True(t, firstSecond.CreatedOn.Before(lastFirst.CreatedOn) || firstSecond.CreatedOn.Equal(lastFirst.CreatedOn))
 	if firstSecond.CreatedOn.Equal(lastFirst.CreatedOn) {
-		assert.Greater(t, firstSecond.ID, lastFirst.ID)
+		assert.Less(t, firstSecond.ID, lastFirst.ID)
 	}
 }
 
@@ -1389,12 +1391,12 @@ func TestGetAllOrders_SearchAndUserFilter_MultiPageCursorContinuity(t *testing.T
 	assert.NotZero(t, page2.Items[0].ID)
 	assert.NotEqual(t, page1.Items[0].ID, page2.Items[0].ID)
 
-	// Continuity and ordering across pages.
+	// Continuity and ordering across pages (newest first → older on next page).
 	lastPage1 := page1.Items[len(page1.Items)-1]
 	firstPage2 := page2.Items[0]
-	assert.True(t, firstPage2.CreatedOn.After(lastPage1.CreatedOn) || firstPage2.CreatedOn.Equal(lastPage1.CreatedOn))
+	assert.True(t, firstPage2.CreatedOn.Before(lastPage1.CreatedOn) || firstPage2.CreatedOn.Equal(lastPage1.CreatedOn))
 	if firstPage2.CreatedOn.Equal(lastPage1.CreatedOn) {
-		assert.Greater(t, firstPage2.ID, lastPage1.ID)
+		assert.Less(t, firstPage2.ID, lastPage1.ID)
 	}
 }
 

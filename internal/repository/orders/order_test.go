@@ -843,6 +843,11 @@ func assertHTTPError(t *testing.T, err error, expectedStatus int, expectedMessag
 	}
 }
 
+func TestOrderRepository_BuildOrderIDPageQuery_RequiresOrderItems(t *testing.T) {
+	q, _ := buildOrderIDPageQuery(1, false, nil, nil, nil, nil, 21)
+	assert.True(t, strings.Contains(q, "EXISTS (SELECT 1 FROM order_items oi WHERE oi.id_order = o.id_order)"))
+}
+
 func TestOrderRepository_BuildOrderIDPageQuery_WithSearch(t *testing.T) {
 	q, args := buildOrderIDPageQuery(1, false, nil, nil, nil, ptrString("client"), 21)
 	assert.False(t, strings.Contains(q, "o.note ILIKE"))

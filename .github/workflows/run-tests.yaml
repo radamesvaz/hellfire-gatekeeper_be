@@ -53,8 +53,24 @@ jobs:
 
       # Fresh Postgres per test via testcontainers (not a shared / dirty database).
       # POSTGRES_* and DB_PORT are required by tests/setupPostgreSQLContainer.
+      # CLOUDINARY_* is required: product image integration tests assert real Cloudinary URLs
+      # (without them the image service falls back to /uploads/ and those tests fail).
+      - name: Require Cloudinary secrets
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: |
+          if [ -z "$CLOUDINARY_CLOUD_NAME" ] || [ -z "$CLOUDINARY_API_KEY" ] || [ -z "$CLOUDINARY_API_SECRET" ]; then
+            echo "Set repository secrets CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET."
+            exit 1
+          fi
+
       - name: Set up environment file
         run: |
+          echo "CLOUDINARY_CLOUD_NAME=${{ secrets.CLOUDINARY_CLOUD_NAME }}" >> .env
+          echo "CLOUDINARY_API_KEY=${{ secrets.CLOUDINARY_API_KEY }}" >> .env
+          echo "CLOUDINARY_API_SECRET=${{ secrets.CLOUDINARY_API_SECRET }}" >> .env
           echo "DB_PORT=5432" >> .env
           echo "POSTGRES_USER=test" >> .env
           echo "POSTGRES_PASSWORD=test" >> .env

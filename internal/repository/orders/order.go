@@ -205,7 +205,7 @@ func (r *OrderRepository) ListOrdersWithFiltersPage(
 }
 
 func buildOrderIDPageQuery(tenantID uint64, ignoreStatus bool, statusFilter *string, after *pagination.OrderKeyset, filterUserID *uint64, searchQuery *string, limit int) (string, []interface{}) {
-	q := `SELECT o.id_order FROM orders o WHERE o.tenant_id = $1`
+	q := `SELECT o.id_order FROM orders o WHERE o.tenant_id = $1 AND EXISTS (SELECT 1 FROM order_items oi WHERE oi.id_order = o.id_order)`
 	args := []interface{}{tenantID}
 	idx := 2
 	if statusFilter != nil {

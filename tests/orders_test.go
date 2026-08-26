@@ -69,64 +69,6 @@ func TestGetAllOrders(t *testing.T) {
 	expected := `{
   "items": [
     {
-      "id_order": 1,
-      "id_user": 2,
-      "user_name": "Client",
-      "phone": "66-6666",
-      "status": "delivered",
-      "tenant_id": 1,
-      "total_price": 57,
-      "note": "make it bright",
-      "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
-      "OrderItems": [
-        {
-          "id_order_item": 1,
-          "id_order": 1,
-          "id_product": 1,
-          "name": "Brownie Clásico",
-          "quantity": 2,
-          "unit_price": 3.5
-        },
-        {
-          "id_order_item": 2,
-          "id_order": 1,
-          "id_product": 2,
-          "name": "Suspiros",
-          "quantity": 10,
-          "unit_price": 5
-        }
-      ],
-      "created_on": "2025-04-01T10:00:00Z",
-      "delivery_date": "2025-04-05T00:00:00Z",
-      "expires_at": "0001-01-01T00:00:00Z",
-      "paid": false
-    },
-    {
-      "id_order": 2,
-      "id_user": 2,
-      "user_name": "Client",
-      "phone": "66-6666",
-      "status": "pending",
-      "tenant_id": 1,
-      "total_price": 10,
-      "note": "deliver at the door",
-      "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
-      "OrderItems": [
-        {
-          "id_order_item": 3,
-          "id_order": 2,
-          "id_product": 2,
-          "name": "Suspiros",
-          "quantity": 2,
-          "unit_price": 5
-        }
-      ],
-      "created_on": "2025-04-14T10:00:00Z",
-      "delivery_date": "2025-04-20T00:00:00Z",
-      "expires_at": "2025-04-14T10:30:00Z",
-      "paid": false
-    },
-    {
       "id_order": 3,
       "id_user": 2,
       "user_name": "Client",
@@ -156,6 +98,64 @@ func TestGetAllOrders(t *testing.T) {
       ],
       "created_on": "2025-04-20T10:00:00Z",
       "delivery_date": "2025-04-25T00:00:00Z",
+      "expires_at": "0001-01-01T00:00:00Z",
+      "paid": false
+    },
+    {
+      "id_order": 2,
+      "id_user": 2,
+      "user_name": "Client",
+      "phone": "66-6666",
+      "status": "pending",
+      "tenant_id": 1,
+      "total_price": 10,
+      "note": "deliver at the door",
+      "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
+      "OrderItems": [
+        {
+          "id_order_item": 3,
+          "id_order": 2,
+          "id_product": 2,
+          "name": "Suspiros",
+          "quantity": 2,
+          "unit_price": 5
+        }
+      ],
+      "created_on": "2025-04-14T10:00:00Z",
+      "delivery_date": "2025-04-20T00:00:00Z",
+      "expires_at": "2025-04-14T10:30:00Z",
+      "paid": false
+    },
+    {
+      "id_order": 1,
+      "id_user": 2,
+      "user_name": "Client",
+      "phone": "66-6666",
+      "status": "delivered",
+      "tenant_id": 1,
+      "total_price": 57,
+      "note": "make it bright",
+      "delivery_direction": "https://maps.app.goo.gl/JewH99BXywGvtHQW6",
+      "OrderItems": [
+        {
+          "id_order_item": 1,
+          "id_order": 1,
+          "id_product": 1,
+          "name": "Brownie Clásico",
+          "quantity": 2,
+          "unit_price": 3.5
+        },
+        {
+          "id_order_item": 2,
+          "id_order": 1,
+          "id_product": 2,
+          "name": "Suspiros",
+          "quantity": 10,
+          "unit_price": 5
+        }
+      ],
+      "created_on": "2025-04-01T10:00:00Z",
+      "delivery_date": "2025-04-05T00:00:00Z",
       "expires_at": "0001-01-01T00:00:00Z",
       "paid": false
     }
